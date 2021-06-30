@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import sh
 import os
 import multiprocessing
@@ -15,8 +17,14 @@ def print_help():
 def parse_repo(soure, target):
     try:
         target_git = sh.git.bake("--no-pager", _cwd=source)
+        cve_related = target_git.log("--grep='CVE'", "--format='%h'")
+        cve_commit_list = str(cve_related.stdout)[2:-3].split('\\n')
+        # remove str(b'')
         only_modified = target_git.diff("--diff-filter=M","--name-only", )
-    pass
+    
+    except Exception:
+        print(Exception)
+
 
 
 if __name__ == '__main__':
