@@ -1,0 +1,58 @@
+diff --git a/tools/arch/powerpc/include/uapi/asm/kvm.h b/tools/arch/powerpc/include/uapi/asm/kvm.h
+index 61d6049f4c1e..637b7263cb86 100644
+--- a/tools/arch/powerpc/include/uapi/asm/kvm.h
++++ b/tools/arch/powerpc/include/uapi/asm/kvm.h
+@@ -443,6 +443,31 @@ struct kvm_ppc_rmmu_info {
+ 	__u32	ap_encodings[8];
+ };
+ 
++/* For KVM_PPC_GET_CPU_CHAR */
++struct kvm_ppc_cpu_char {
++	__u64	character;		/* characteristics of the CPU */
++	__u64	behaviour;		/* recommended software behaviour */
++	__u64	character_mask;		/* valid bits in character */
++	__u64	behaviour_mask;		/* valid bits in behaviour */
++};
++
++/*
++ * Values for character and character_mask.
++ * These are identical to the values used by H_GET_CPU_CHARACTERISTICS.
++ */
++#define KVM_PPC_CPU_CHAR_SPEC_BAR_ORI31		(1ULL << 63)
++#define KVM_PPC_CPU_CHAR_BCCTRL_SERIALISED	(1ULL << 62)
++#define KVM_PPC_CPU_CHAR_L1D_FLUSH_ORI30	(1ULL << 61)
++#define KVM_PPC_CPU_CHAR_L1D_FLUSH_TRIG2	(1ULL << 60)
++#define KVM_PPC_CPU_CHAR_L1D_THREAD_PRIV	(1ULL << 59)
++#define KVM_PPC_CPU_CHAR_BR_HINT_HONOURED	(1ULL << 58)
++#define KVM_PPC_CPU_CHAR_MTTRIG_THR_RECONF	(1ULL << 57)
++#define KVM_PPC_CPU_CHAR_COUNT_CACHE_DIS	(1ULL << 56)
++
++#define KVM_PPC_CPU_BEHAV_FAVOUR_SECURITY	(1ULL << 63)
++#define KVM_PPC_CPU_BEHAV_L1D_FLUSH_PR		(1ULL << 62)
++#define KVM_PPC_CPU_BEHAV_BNDS_CHK_SPEC_BAR	(1ULL << 61)
++
+ /* Per-vcpu XICS interrupt controller state */
+ #define KVM_REG_PPC_ICP_STATE	(KVM_REG_PPC | KVM_REG_SIZE_U64 | 0x8c)
+ 
+diff --git a/tools/include/uapi/linux/kvm.h b/tools/include/uapi/linux/kvm.h
+index 496e59a2738b..8fb90a0819c3 100644
+--- a/tools/include/uapi/linux/kvm.h
++++ b/tools/include/uapi/linux/kvm.h
+@@ -932,6 +932,8 @@ struct kvm_ppc_resize_hpt {
+ #define KVM_CAP_HYPERV_SYNIC2 148
+ #define KVM_CAP_HYPERV_VP_INDEX 149
+ #define KVM_CAP_S390_AIS_MIGRATION 150
++#define KVM_CAP_PPC_GET_CPU_CHAR 151
++#define KVM_CAP_S390_BPB 152
+ 
+ #ifdef KVM_CAP_IRQ_ROUTING
+ 
+@@ -1261,6 +1263,8 @@ struct kvm_s390_ucas_mapping {
+ #define KVM_PPC_CONFIGURE_V3_MMU  _IOW(KVMIO,  0xaf, struct kvm_ppc_mmuv3_cfg)
+ /* Available with KVM_CAP_PPC_RADIX_MMU */
+ #define KVM_PPC_GET_RMMU_INFO	  _IOW(KVMIO,  0xb0, struct kvm_ppc_rmmu_info)
++/* Available with KVM_CAP_PPC_GET_CPU_CHAR */
++#define KVM_PPC_GET_CPU_CHAR	  _IOR(KVMIO,  0xb1, struct kvm_ppc_cpu_char)
+ 
+ /* ioctl for vm fd */
+ #define KVM_CREATE_DEVICE	  _IOWR(KVMIO,  0xe0, struct kvm_create_device)

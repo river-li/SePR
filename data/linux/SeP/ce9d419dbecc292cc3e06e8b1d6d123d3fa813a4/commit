@@ -1,0 +1,14 @@
+commit ce9d419dbecc292cc3e06e8b1d6d123d3fa813a4
+Author: Chris Wilson <chris@chris-wilson.co.uk>
+Commit: Chris Wilson <chris@chris-wilson.co.uk>
+
+    drm/i915: Sanity check pread/pwrite
+    
+    Move the access control up from the fast paths, which are no longer
+    universally taken first, up into the caller. This then duplicates some
+    sanity checking along the slow paths, but is much simpler.
+    Tracked as CVE-2010-2962.
+    
+    Reported-by: Kees Cook <kees@ubuntu.com>
+    Signed-off-by: Chris Wilson <chris@chris-wilson.co.uk>
+    Cc: stable@kernel.org

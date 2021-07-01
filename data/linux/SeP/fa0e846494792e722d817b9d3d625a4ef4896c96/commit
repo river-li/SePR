@@ -1,0 +1,11 @@
+commit fa0e846494792e722d817b9d3d625a4ef4896c96
+Author: Phil Blundell <philb@gnu.org>
+Commit: David S. Miller <davem@davemloft.net>
+
+    econet: disallow NULL remote addr for sendmsg(), fixes CVE-2010-3849
+    
+    Later parts of econet_sendmsg() rely on saddr != NULL, so return early
+    with EINVAL if NULL was passed otherwise an oops may occur.
+    
+    Signed-off-by: Phil Blundell <philb@gnu.org>
+    Signed-off-by: David S. Miller <davem@davemloft.net>

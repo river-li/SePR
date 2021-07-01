@@ -1,0 +1,12 @@
+commit 690e744869f3262855b83b4fb59199cf142765b0
+Author: Dave Jones <davej@redhat.com>
+Commit: James Bottomley <James.Bottomley@suse.de>
+
+    [SCSI] gdth: Prevent negative offsets in ioctl CVE-2009-3080
+    
+    A negative offset could be used to index before the event buffer and
+    lead to a security breach.
+    
+    Signed-off-by: Dave Jones <davej@redhat.com>
+    Cc: Stable Tree <stable@kernel.org>
+    Signed-off-by: James Bottomley <James.Bottomley@suse.de>

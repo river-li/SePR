@@ -1,0 +1,9 @@
+commit e55380edf68796d75bf41391a781c68ee678587d
+Author: Heiko Carstens <hca@linux.ibm.com>
+Commit: Heiko Carstens <hca@linux.ibm.com>
+
+    [CVE-2009-0029] Rename old_readdir to sys_old_readdir
+    
+    This way it matches the generic system call name convention.
+    
+    Signed-off-by: Heiko Carstens <heiko.carstens@de.ibm.com>

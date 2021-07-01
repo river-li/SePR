@@ -1,0 +1,12 @@
+diff --git a/net/ipv6/ip6_output.c b/net/ipv6/ip6_output.c
+index 6ad5aadf81ad..a931229856b6 100644
+--- a/net/ipv6/ip6_output.c
++++ b/net/ipv6/ip6_output.c
+@@ -1520,6 +1520,7 @@ int ip6_push_pending_frames(struct sock *sk)
+ 	ip6_cork_release(inet, np);
+ 	return err;
+ error:
++	IP6_INC_STATS(net, rt->rt6i_idev, IPSTATS_MIB_OUTDISCARDS);
+ 	goto out;
+ }
+ 

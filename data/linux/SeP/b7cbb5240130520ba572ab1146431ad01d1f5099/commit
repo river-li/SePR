@@ -1,0 +1,12 @@
+commit b7cbb5240130520ba572ab1146431ad01d1f5099
+Merge: e13e7cd4c0c1 65565a68c582
+Author: Michael Ellerman <mpe@ellerman.id.au>
+Commit: Michael Ellerman <mpe@ellerman.id.au>
+
+    Merge tag 'powerpc-5.2-6' into fixes
+    
+    This merges the commits that were the fix for CVE-2019-12817, which was
+    developed under embargo. They have already been merged by Linus
+    
+    Merge them into fixes now so that this branch contains all the fixes for
+    this release.

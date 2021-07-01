@@ -1,0 +1,19 @@
+commit 03daa36f089f31002a2d0fb22088d3ebe3e28d98
+Merge: d8d1721cfb31 e9300a4b7bba
+Author: Linus Torvalds <torvalds@linux-foundation.org>
+Commit: Linus Torvalds <torvalds@linux-foundation.org>
+
+    Merge tag 'firewire-fixes' of git://git.kernel.org/pub/scm/linux/kernel/git/ieee1394/linux1394
+    
+    Pull FireWire (IEEE 1394) fixes from Stefan Richter:
+    
+     - add missing input validation to the firewire-net driver. Invalid
+       IP-over-1394 encapsulation headers could trigger buffer overflows
+       (CVE 2016-8633).
+    
+     - IP-over-1394 link fragmentation headers were read and written
+       incorrectly, breaking fragmented RX/TX with other OS's stacks.
+    
+    * tag 'firewire-fixes' of git://git.kernel.org/pub/scm/linux/kernel/git/ieee1394/linux1394:
+      firewire: net: fix fragmented datagram_size off-by-one
+      firewire: net: guard against rx buffer overflows

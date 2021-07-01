@@ -1,0 +1,12 @@
+commit 38b983b3461e7d3c64a981e2338bb34605c46f30
+Author: Al Viro <viro@zeniv.linux.org.uk>
+Commit: Al Viro <viro@zeniv.linux.org.uk>
+
+    generic sys_execve()
+    
+    Selected by __ARCH_WANT_SYS_EXECVE in unistd.h.  Requires
+            * working current_pt_regs()
+            * *NOT* doing a syscall-in-kernel kind of kernel_execve()
+    implementation.  Using generic kernel_execve() is fine.
+    
+    Signed-off-by: Al Viro <viro@zeniv.linux.org.uk>

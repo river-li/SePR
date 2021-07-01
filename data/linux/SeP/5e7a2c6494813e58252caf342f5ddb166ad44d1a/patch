@@ -1,0 +1,369 @@
+diff --git a/drivers/net/wireless/mediatek/mt76/mac80211.c b/drivers/net/wireless/mediatek/mt76/mac80211.c
+index 977acab0360a..03fe62837557 100644
+--- a/drivers/net/wireless/mediatek/mt76/mac80211.c
++++ b/drivers/net/wireless/mediatek/mt76/mac80211.c
+@@ -514,10 +514,36 @@ EXPORT_SYMBOL_GPL(mt76_free_device);
+ static void mt76_rx_release_amsdu(struct mt76_phy *phy, enum mt76_rxq_id q)
+ {
+ 	struct sk_buff *skb = phy->rx_amsdu[q].head;
++	struct mt76_rx_status *status = (struct mt76_rx_status *)skb->cb;
+ 	struct mt76_dev *dev = phy->dev;
+ 
+ 	phy->rx_amsdu[q].head = NULL;
+ 	phy->rx_amsdu[q].tail = NULL;
++
++	/*
++	 * Validate if the amsdu has a proper first subframe.
++	 * A single MSDU can be parsed as A-MSDU when the unauthenticated A-MSDU
++	 * flag of the QoS header gets flipped. In such cases, the first
++	 * subframe has a LLC/SNAP header in the location of the destination
++	 * address.
++	 */
++	if (skb_shinfo(skb)->frag_list) {
++		int offset = 0;
++
++		if (!(status->flag & RX_FLAG_8023)) {
++			offset = ieee80211_get_hdrlen_from_skb(skb);
++
++			if ((status->flag &
++			     (RX_FLAG_DECRYPTED | RX_FLAG_IV_STRIPPED)) ==
++			    RX_FLAG_DECRYPTED)
++				offset += 8;
++		}
++
++		if (ether_addr_equal(skb->data + offset, rfc1042_header)) {
++			dev_kfree_skb(skb);
++			return;
++		}
++	}
+ 	__skb_queue_tail(&dev->rx_skb[q], skb);
+ }
+ 
+diff --git a/drivers/net/wireless/mediatek/mt76/mt7615/init.c b/drivers/net/wireless/mediatek/mt76/mt7615/init.c
+index 86341d1f82f3..d20f05a7717d 100644
+--- a/drivers/net/wireless/mediatek/mt76/mt7615/init.c
++++ b/drivers/net/wireless/mediatek/mt76/mt7615/init.c
+@@ -510,7 +510,6 @@ void mt7615_init_device(struct mt7615_dev *dev)
+ 	mutex_init(&dev->pm.mutex);
+ 	init_waitqueue_head(&dev->pm.wait);
+ 	spin_lock_init(&dev->pm.txq_lock);
+-	set_bit(MT76_STATE_PM, &dev->mphy.state);
+ 	INIT_DELAYED_WORK(&dev->mphy.mac_work, mt7615_mac_work);
+ 	INIT_DELAYED_WORK(&dev->phy.scan_work, mt7615_scan_work);
+ 	INIT_DELAYED_WORK(&dev->coredump.work, mt7615_coredump_work);
+diff --git a/drivers/net/wireless/mediatek/mt76/mt7615/mac.c b/drivers/net/wireless/mediatek/mt76/mt7615/mac.c
+index f81a17d56008..e2dcfee6be81 100644
+--- a/drivers/net/wireless/mediatek/mt76/mt7615/mac.c
++++ b/drivers/net/wireless/mediatek/mt76/mt7615/mac.c
+@@ -1912,8 +1912,9 @@ void mt7615_pm_wake_work(struct work_struct *work)
+ 			napi_schedule(&dev->mt76.napi[i]);
+ 		mt76_connac_pm_dequeue_skbs(mphy, &dev->pm);
+ 		mt76_queue_tx_cleanup(dev, dev->mt76.q_mcu[MT_MCUQ_WM], false);
+-		ieee80211_queue_delayed_work(mphy->hw, &mphy->mac_work,
+-					     MT7615_WATCHDOG_TIME);
++		if (test_bit(MT76_STATE_RUNNING, &mphy->state))
++			ieee80211_queue_delayed_work(mphy->hw, &mphy->mac_work,
++						     MT7615_WATCHDOG_TIME);
+ 	}
+ 
+ 	ieee80211_wake_queues(mphy->hw);
+diff --git a/drivers/net/wireless/mediatek/mt76/mt7615/sdio_mcu.c b/drivers/net/wireless/mediatek/mt76/mt7615/sdio_mcu.c
+index 17fe4187d1de..d1be78b0711c 100644
+--- a/drivers/net/wireless/mediatek/mt76/mt7615/sdio_mcu.c
++++ b/drivers/net/wireless/mediatek/mt76/mt7615/sdio_mcu.c
+@@ -51,16 +51,13 @@ mt7663s_mcu_send_message(struct mt76_dev *mdev, struct sk_buff *skb,
+ 	return ret;
+ }
+ 
+-static int mt7663s_mcu_drv_pmctrl(struct mt7615_dev *dev)
++static int __mt7663s_mcu_drv_pmctrl(struct mt7615_dev *dev)
+ {
+ 	struct sdio_func *func = dev->mt76.sdio.func;
+ 	struct mt76_phy *mphy = &dev->mt76.phy;
+ 	u32 status;
+ 	int ret;
+ 
+-	if (!test_and_clear_bit(MT76_STATE_PM, &mphy->state))
+-		goto out;
+-
+ 	sdio_claim_host(func);
+ 
+ 	sdio_writel(func, WHLPCR_FW_OWN_REQ_CLR, MCR_WHLPCR, NULL);
+@@ -76,13 +73,21 @@ static int mt7663s_mcu_drv_pmctrl(struct mt7615_dev *dev)
+ 	}
+ 
+ 	sdio_release_host(func);
+-
+-out:
+ 	dev->pm.last_activity = jiffies;
+ 
+ 	return 0;
+ }
+ 
++static int mt7663s_mcu_drv_pmctrl(struct mt7615_dev *dev)
++{
++	struct mt76_phy *mphy = &dev->mt76.phy;
++
++	if (test_and_clear_bit(MT76_STATE_PM, &mphy->state))
++		return __mt7663s_mcu_drv_pmctrl(dev);
++
++	return 0;
++}
++
+ static int mt7663s_mcu_fw_pmctrl(struct mt7615_dev *dev)
+ {
+ 	struct sdio_func *func = dev->mt76.sdio.func;
+@@ -123,7 +128,7 @@ int mt7663s_mcu_init(struct mt7615_dev *dev)
+ 	struct mt7615_mcu_ops *mcu_ops;
+ 	int ret;
+ 
+-	ret = mt7663s_mcu_drv_pmctrl(dev);
++	ret = __mt7663s_mcu_drv_pmctrl(dev);
+ 	if (ret)
+ 		return ret;
+ 
+diff --git a/drivers/net/wireless/mediatek/mt76/mt7615/usb_mcu.c b/drivers/net/wireless/mediatek/mt76/mt7615/usb_mcu.c
+index c55698f9c49a..028ff432d811 100644
+--- a/drivers/net/wireless/mediatek/mt76/mt7615/usb_mcu.c
++++ b/drivers/net/wireless/mediatek/mt76/mt7615/usb_mcu.c
+@@ -55,10 +55,7 @@ int mt7663u_mcu_init(struct mt7615_dev *dev)
+ 
+ 	dev->mt76.mcu_ops = &mt7663u_mcu_ops,
+ 
+-	/* usb does not support runtime-pm */
+-	clear_bit(MT76_STATE_PM, &dev->mphy.state);
+ 	mt76_set(dev, MT_UDMA_TX_QSEL, MT_FW_DL_EN);
+-
+ 	if (test_and_clear_bit(MT76_STATE_POWER_OFF, &dev->mphy.state)) {
+ 		mt7615_mcu_restart(&dev->mt76);
+ 		if (!mt76_poll_msec(dev, MT_CONN_ON_MISC,
+diff --git a/drivers/net/wireless/mediatek/mt76/mt76_connac_mcu.c b/drivers/net/wireless/mediatek/mt76/mt76_connac_mcu.c
+index fe0ab5e5ff81..619561606f96 100644
+--- a/drivers/net/wireless/mediatek/mt76/mt76_connac_mcu.c
++++ b/drivers/net/wireless/mediatek/mt76/mt76_connac_mcu.c
+@@ -721,6 +721,10 @@ void mt76_connac_mcu_sta_tlv(struct mt76_phy *mphy, struct sk_buff *skb,
+ 	phy->phy_type = mt76_connac_get_phy_mode_v2(mphy, vif, band, sta);
+ 	phy->basic_rate = cpu_to_le16((u16)vif->bss_conf.basic_rates);
+ 	phy->rcpi = rcpi;
++	phy->ampdu = FIELD_PREP(IEEE80211_HT_AMPDU_PARM_FACTOR,
++				sta->ht_cap.ampdu_factor) |
++		     FIELD_PREP(IEEE80211_HT_AMPDU_PARM_DENSITY,
++				sta->ht_cap.ampdu_density);
+ 
+ 	tlv = mt76_connac_mcu_add_tlv(skb, STA_REC_RA, sizeof(*ra_info));
+ 	ra_info = (struct sta_rec_ra_info *)tlv;
+diff --git a/drivers/net/wireless/mediatek/mt76/mt76x0/pci.c b/drivers/net/wireless/mediatek/mt76/mt76x0/pci.c
+index 5847f943e8da..b795e7245c07 100644
+--- a/drivers/net/wireless/mediatek/mt76/mt76x0/pci.c
++++ b/drivers/net/wireless/mediatek/mt76/mt76x0/pci.c
+@@ -87,7 +87,7 @@ static const struct ieee80211_ops mt76x0e_ops = {
+ 	.reconfig_complete = mt76x02_reconfig_complete,
+ };
+ 
+-static int mt76x0e_register_device(struct mt76x02_dev *dev)
++static int mt76x0e_init_hardware(struct mt76x02_dev *dev, bool resume)
+ {
+ 	int err;
+ 
+@@ -100,9 +100,11 @@ static int mt76x0e_register_device(struct mt76x02_dev *dev)
+ 	if (err < 0)
+ 		return err;
+ 
+-	err = mt76x02_dma_init(dev);
+-	if (err < 0)
+-		return err;
++	if (!resume) {
++		err = mt76x02_dma_init(dev);
++		if (err < 0)
++			return err;
++	}
+ 
+ 	err = mt76x0_init_hardware(dev);
+ 	if (err < 0)
+@@ -123,6 +125,17 @@ static int mt76x0e_register_device(struct mt76x02_dev *dev)
+ 	mt76_clear(dev, 0x110, BIT(9));
+ 	mt76_set(dev, MT_MAX_LEN_CFG, BIT(13));
+ 
++	return 0;
++}
++
++static int mt76x0e_register_device(struct mt76x02_dev *dev)
++{
++	int err;
++
++	err = mt76x0e_init_hardware(dev, false);
++	if (err < 0)
++		return err;
++
+ 	err = mt76x0_register_device(dev);
+ 	if (err < 0)
+ 		return err;
+@@ -167,6 +180,8 @@ mt76x0e_probe(struct pci_dev *pdev, const struct pci_device_id *id)
+ 	if (ret)
+ 		return ret;
+ 
++	mt76_pci_disable_aspm(pdev);
++
+ 	mdev = mt76_alloc_device(&pdev->dev, sizeof(*dev), &mt76x0e_ops,
+ 				 &drv_ops);
+ 	if (!mdev)
+@@ -220,6 +235,60 @@ mt76x0e_remove(struct pci_dev *pdev)
+ 	mt76_free_device(mdev);
+ }
+ 
++#ifdef CONFIG_PM
++static int mt76x0e_suspend(struct pci_dev *pdev, pm_message_t state)
++{
++	struct mt76_dev *mdev = pci_get_drvdata(pdev);
++	struct mt76x02_dev *dev = container_of(mdev, struct mt76x02_dev, mt76);
++	int i;
++
++	mt76_worker_disable(&mdev->tx_worker);
++	for (i = 0; i < ARRAY_SIZE(mdev->phy.q_tx); i++)
++		mt76_queue_tx_cleanup(dev, mdev->phy.q_tx[i], true);
++	for (i = 0; i < ARRAY_SIZE(mdev->q_mcu); i++)
++		mt76_queue_tx_cleanup(dev, mdev->q_mcu[i], true);
++	napi_disable(&mdev->tx_napi);
++
++	mt76_for_each_q_rx(mdev, i)
++		napi_disable(&mdev->napi[i]);
++
++	mt76x02_dma_disable(dev);
++	mt76x02_mcu_cleanup(dev);
++	mt76x0_chip_onoff(dev, false, false);
++
++	pci_enable_wake(pdev, pci_choose_state(pdev, state), true);
++	pci_save_state(pdev);
++
++	return pci_set_power_state(pdev, pci_choose_state(pdev, state));
++}
++
++static int mt76x0e_resume(struct pci_dev *pdev)
++{
++	struct mt76_dev *mdev = pci_get_drvdata(pdev);
++	struct mt76x02_dev *dev = container_of(mdev, struct mt76x02_dev, mt76);
++	int err, i;
++
++	err = pci_set_power_state(pdev, PCI_D0);
++	if (err)
++		return err;
++
++	pci_restore_state(pdev);
++
++	mt76_worker_enable(&mdev->tx_worker);
++
++	mt76_for_each_q_rx(mdev, i) {
++		mt76_queue_rx_reset(dev, i);
++		napi_enable(&mdev->napi[i]);
++		napi_schedule(&mdev->napi[i]);
++	}
++
++	napi_enable(&mdev->tx_napi);
++	napi_schedule(&mdev->tx_napi);
++
++	return mt76x0e_init_hardware(dev, true);
++}
++#endif /* CONFIG_PM */
++
+ static const struct pci_device_id mt76x0e_device_table[] = {
+ 	{ PCI_DEVICE(PCI_VENDOR_ID_MEDIATEK, 0x7610) },
+ 	{ PCI_DEVICE(PCI_VENDOR_ID_MEDIATEK, 0x7630) },
+@@ -237,6 +306,10 @@ static struct pci_driver mt76x0e_driver = {
+ 	.id_table	= mt76x0e_device_table,
+ 	.probe		= mt76x0e_probe,
+ 	.remove		= mt76x0e_remove,
++#ifdef CONFIG_PM
++	.suspend	= mt76x0e_suspend,
++	.resume		= mt76x0e_resume,
++#endif /* CONFIG_PM */
+ };
+ 
+ module_pci_driver(mt76x0e_driver);
+diff --git a/drivers/net/wireless/mediatek/mt76/mt7921/init.c b/drivers/net/wireless/mediatek/mt76/mt7921/init.c
+index fe28bf4050c4..1763ea0614ce 100644
+--- a/drivers/net/wireless/mediatek/mt76/mt7921/init.c
++++ b/drivers/net/wireless/mediatek/mt76/mt7921/init.c
+@@ -76,8 +76,8 @@ mt7921_init_wiphy(struct ieee80211_hw *hw)
+ 	struct wiphy *wiphy = hw->wiphy;
+ 
+ 	hw->queues = 4;
+-	hw->max_rx_aggregation_subframes = IEEE80211_MAX_AMPDU_BUF;
+-	hw->max_tx_aggregation_subframes = IEEE80211_MAX_AMPDU_BUF;
++	hw->max_rx_aggregation_subframes = 64;
++	hw->max_tx_aggregation_subframes = 128;
+ 
+ 	hw->radiotap_timestamp.units_pos =
+ 		IEEE80211_RADIOTAP_TIMESTAMP_UNIT_US;
+diff --git a/drivers/net/wireless/mediatek/mt76/mt7921/mac.c b/drivers/net/wireless/mediatek/mt76/mt7921/mac.c
+index 214bd1859792..decf2d5f0ce3 100644
+--- a/drivers/net/wireless/mediatek/mt76/mt7921/mac.c
++++ b/drivers/net/wireless/mediatek/mt76/mt7921/mac.c
+@@ -1404,8 +1404,9 @@ void mt7921_pm_wake_work(struct work_struct *work)
+ 			napi_schedule(&dev->mt76.napi[i]);
+ 		mt76_connac_pm_dequeue_skbs(mphy, &dev->pm);
+ 		mt7921_tx_cleanup(dev);
+-		ieee80211_queue_delayed_work(mphy->hw, &mphy->mac_work,
+-					     MT7921_WATCHDOG_TIME);
++		if (test_bit(MT76_STATE_RUNNING, &mphy->state))
++			ieee80211_queue_delayed_work(mphy->hw, &mphy->mac_work,
++						     MT7921_WATCHDOG_TIME);
+ 	}
+ 
+ 	ieee80211_wake_queues(mphy->hw);
+diff --git a/drivers/net/wireless/mediatek/mt76/mt7921/main.c b/drivers/net/wireless/mediatek/mt76/mt7921/main.c
+index f4c27aa41048..97a0ef331ac3 100644
+--- a/drivers/net/wireless/mediatek/mt76/mt7921/main.c
++++ b/drivers/net/wireless/mediatek/mt76/mt7921/main.c
+@@ -74,8 +74,7 @@ mt7921_init_he_caps(struct mt7921_phy *phy, enum nl80211_band band,
+ 				IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_40MHZ_IN_2G;
+ 		else if (band == NL80211_BAND_5GHZ)
+ 			he_cap_elem->phy_cap_info[0] =
+-				IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_40MHZ_80MHZ_IN_5G |
+-				IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_80PLUS80_MHZ_IN_5G;
++				IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_40MHZ_80MHZ_IN_5G;
+ 
+ 		he_cap_elem->phy_cap_info[1] =
+ 			IEEE80211_HE_PHY_CAP1_LDPC_CODING_IN_PAYLOAD;
+diff --git a/drivers/net/wireless/mediatek/mt76/mt7921/mcu.c b/drivers/net/wireless/mediatek/mt76/mt7921/mcu.c
+index 5f3d56d570a5..67dc4b4cc094 100644
+--- a/drivers/net/wireless/mediatek/mt76/mt7921/mcu.c
++++ b/drivers/net/wireless/mediatek/mt76/mt7921/mcu.c
+@@ -402,20 +402,22 @@ static void
+ mt7921_mcu_tx_rate_report(struct mt7921_dev *dev, struct sk_buff *skb,
+ 			  u16 wlan_idx)
+ {
+-	struct mt7921_mcu_wlan_info_event *wtbl_info =
+-		(struct mt7921_mcu_wlan_info_event *)(skb->data);
+-	struct rate_info rate = {};
+-	u8 curr_idx = wtbl_info->rate_info.rate_idx;
+-	u16 curr = le16_to_cpu(wtbl_info->rate_info.rate[curr_idx]);
+-	struct mt7921_mcu_peer_cap peer = wtbl_info->peer_cap;
++	struct mt7921_mcu_wlan_info_event *wtbl_info;
+ 	struct mt76_phy *mphy = &dev->mphy;
+ 	struct mt7921_sta_stats *stats;
++	struct rate_info rate = {};
+ 	struct mt7921_sta *msta;
+ 	struct mt76_wcid *wcid;
++	u8 idx;
+ 
+ 	if (wlan_idx >= MT76_N_WCIDS)
+ 		return;
+ 
++	wtbl_info = (struct mt7921_mcu_wlan_info_event *)skb->data;
++	idx = wtbl_info->rate_info.rate_idx;
++	if (idx >= ARRAY_SIZE(wtbl_info->rate_info.rate))
++		return;
++
+ 	rcu_read_lock();
+ 
+ 	wcid = rcu_dereference(dev->mt76.wcid[wlan_idx]);
+@@ -426,7 +428,8 @@ mt7921_mcu_tx_rate_report(struct mt7921_dev *dev, struct sk_buff *skb,
+ 	stats = &msta->stats;
+ 
+ 	/* current rate */
+-	mt7921_mcu_tx_rate_parse(mphy, &peer, &rate, curr);
++	mt7921_mcu_tx_rate_parse(mphy, &wtbl_info->peer_cap, &rate,
++				 le16_to_cpu(wtbl_info->rate_info.rate[idx]));
+ 	stats->tx_rate = rate;
+ out:
+ 	rcu_read_unlock();

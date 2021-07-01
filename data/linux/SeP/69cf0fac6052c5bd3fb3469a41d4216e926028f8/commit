@@ -1,0 +1,11 @@
+commit 69cf0fac6052c5bd3fb3469a41d4216e926028f8
+Author: Hugh Dickins <hugh@veritas.com>
+Commit: Linus Torvalds <torvalds@g5.osdl.org>
+
+    [PATCH] Fix MADV_REMOVE protection checking
+    
+    madvise_remove needs to respect file and mmap protections.
+    
+    Signed-off-by: Hugh Dickins <hugh@veritas.com>
+    [ Will the real CVE-2006-1524 stand up, please.. ]
+    Signed-off-by: Linus Torvalds <torvalds@osdl.org>

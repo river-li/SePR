@@ -1,0 +1,30 @@
+commit 80eb5fea3c14fb171facb5242a1555b3aafea4d0
+Merge: 9a3d7fd275be af2e8c68b9c5
+Author: Linus Torvalds <torvalds@linux-foundation.org>
+Commit: Linus Torvalds <torvalds@linux-foundation.org>
+
+    Merge tag 'powerpc-spectre-rsb' of powerpc-CVE-2019-18660.bundle
+    
+    Pull powerpc Spectre-RSB fixes from Michael Ellerman:
+     "We failed to activate the mitigation for Spectre-RSB (Return Stack
+      Buffer, aka. ret2spec) on context switch, on CPUs prior to Power9
+      DD2.3.
+    
+      That allows a process to poison the RSB (called Link Stack on Power
+      CPUs) and possibly misdirect speculative execution of another process.
+      If the victim process can be induced to execute a leak gadget then it
+      may be possible to extract information from the victim via a side
+      channel.
+    
+      The fix is to correctly activate the link stack flush mitigation on
+      all CPUs that have any mitigation of Spectre v2 in userspace enabled.
+    
+      There's a second commit which adds a link stack flush in the KVM guest
+      exit path. A leak via that path has not been demonstrated, but we
+      believe it's at least theoretically possible.
+    
+      This is the fix for CVE-2019-18660"
+    
+    * tag 'powerpc-spectre-rsb' of /home/torvalds/Downloads/powerpc-CVE-2019-18660.bundle:
+      KVM: PPC: Book3S HV: Flush link stack on guest exit to host kernel
+      powerpc/book3s64: Fix link stack flush on context switch

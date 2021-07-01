@@ -1,0 +1,13 @@
+diff --git a/arch/arc/Kconfig b/arch/arc/Kconfig
+index c7ae85872e21..73ed284ffa25 100644
+--- a/arch/arc/Kconfig
++++ b/arch/arc/Kconfig
+@@ -16,8 +16,6 @@ config ARC
+ 	select GENERIC_FIND_FIRST_BIT
+ 	# for now, we don't need GENERIC_IRQ_PROBE, CONFIG_GENERIC_IRQ_CHIP
+ 	select GENERIC_IRQ_SHOW
+-	select GENERIC_KERNEL_EXECVE
+-	select GENERIC_KERNEL_THREAD
+ 	select GENERIC_PENDING_IRQ if SMP
+ 	select GENERIC_SMP_IDLE_THREAD
+ 	select HAVE_ARCH_KGDB

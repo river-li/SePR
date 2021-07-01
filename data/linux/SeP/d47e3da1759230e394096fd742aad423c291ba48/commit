@@ -1,0 +1,13 @@
+commit d47e3da1759230e394096fd742aad423c291ba48
+Merge: 6f64e3a4de74 13054abbaa4f
+Author: Linus Torvalds <torvalds@linux-foundation.org>
+Commit: Linus Torvalds <torvalds@linux-foundation.org>
+
+    Merge branch 'for-linus' of git://git.kernel.org/pub/scm/linux/kernel/git/hid/hid
+    
+    Pull HID fix from Jiri Kosina:
+     "A fix for a bug in hid-debug that can lock up the kernel in infinite
+      loop (CVE-2019-3819), from Vladis Dronov"
+    
+    * 'for-linus' of git://git.kernel.org/pub/scm/linux/kernel/git/hid/hid:
+      HID: debug: fix the ring buffer implementation

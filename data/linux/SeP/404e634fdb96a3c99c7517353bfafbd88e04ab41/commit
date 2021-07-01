@@ -1,0 +1,12 @@
+commit 404e634fdb96a3c99c7517353bfafbd88e04ab41
+Merge: 35f7a9526615 b60fe990c6b0
+Author: Linus Torvalds <torvalds@linux-foundation.org>
+Commit: Linus Torvalds <torvalds@linux-foundation.org>
+
+    Merge tag 'for-linus-urgent' of git://git.kernel.org/pub/scm/virt/kvm/kvm
+    
+    Pull KVM fix from Paolo Bonzini:
+     "Fix missing bounds-checking in coalesced_mmio (CVE-2019-14821)"
+    
+    * tag 'for-linus-urgent' of git://git.kernel.org/pub/scm/virt/kvm/kvm:
+      KVM: coalesced_mmio: add bounds checking

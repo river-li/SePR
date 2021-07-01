@@ -1,0 +1,18 @@
+commit b94b50289622e816adc9f94111cfc2679c80177c
+Author: Jesse Brandeburg <jesse.brandeburg@intel.com>
+Commit: David S. Miller <davem@davemloft.net>
+
+    e1000e: enhance frame fragment detection
+    
+    Originally patched by Neil Horman <nhorman@tuxdriver.com>
+    
+    e1000e could with a jumbo frame enabled interface, and packet split disabled,
+    receive a packet that would overflow a single rx buffer.  While in practice
+    very hard to craft a packet that could abuse this, it is possible.
+    
+    this is related to CVE-2009-4538
+    
+    Signed-off-by: Jesse Brandeburg <jesse.brandeburg@intel.com>
+    CC: Neil Horman <nhorman@tuxdriver.com>
+    Signed-off-by: Jeff Kirsher <jeffrey.t.kirsher@intel.com>
+    Signed-off-by: David S. Miller <davem@davemloft.net>

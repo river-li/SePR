@@ -1,0 +1,190 @@
+diff --git a/drivers/block/cciss.c b/drivers/block/cciss.c
+index 1b0fd31c57c3..1319d8f20640 100644
+--- a/drivers/block/cciss.c
++++ b/drivers/block/cciss.c
+@@ -1180,6 +1180,53 @@ static int revalidate_allvol(ctlr_info_t *host)
+         return 0;
+ }
+ 
++static inline void complete_buffers(struct bio *bio, int status)
++{
++	while (bio) {
++		struct bio *xbh = bio->bi_next;
++		int nr_sectors = bio_sectors(bio);
++
++		bio->bi_next = NULL;
++		blk_finished_io(len);
++		bio_endio(bio, nr_sectors << 9, status ? 0 : -EIO);
++		bio = xbh;
++	}
++
++}
++
++static void cciss_softirq_done(struct request *rq)
++{
++	CommandList_struct *cmd = rq->completion_data;
++	ctlr_info_t *h = hba[cmd->ctlr];
++	unsigned long flags;
++	u64bit temp64;
++	int i, ddir;
++
++	if (cmd->Request.Type.Direction == XFER_READ)
++		ddir = PCI_DMA_FROMDEVICE;
++	else
++		ddir = PCI_DMA_TODEVICE;
++
++	/* command did not need to be retried */
++	/* unmap the DMA mapping for all the scatter gather elements */
++	for(i=0; i<cmd->Header.SGList; i++) {
++		temp64.val32.lower = cmd->SG[i].Addr.lower;
++		temp64.val32.upper = cmd->SG[i].Addr.upper;
++		pci_unmap_page(h->pdev, temp64.val, cmd->SG[i].Len, ddir);
++	}
++
++	complete_buffers(rq->bio, rq->errors);
++
++#ifdef CCISS_DEBUG
++	printk("Done with %p\n", rq);
++#endif /* CCISS_DEBUG */
++
++	spin_lock_irqsave(&h->lock, flags);
++	end_that_request_last(rq, rq->errors);
++	cmd_free(h, cmd,1);
++	spin_unlock_irqrestore(&h->lock, flags);
++}
++
+ /* This function will check the usage_count of the drive to be updated/added.
+  * If the usage_count is zero then the drive information will be updated and
+  * the disk will be re-registered with the kernel.  If not then it will be
+@@ -1248,6 +1295,8 @@ static void cciss_update_drive_info(int ctlr, int drv_index)
+ 
+ 		blk_queue_max_sectors(disk->queue, 512);
+ 
++		blk_queue_softirq_done(disk->queue, cciss_softirq_done);
++
+ 		disk->queue->queuedata = hba[ctlr];
+ 
+ 		blk_queue_hardsect_size(disk->queue,
+@@ -2147,20 +2196,6 @@ static void start_io( ctlr_info_t *h)
+ 		addQ (&(h->cmpQ), c); 
+ 	}
+ }
+-
+-static inline void complete_buffers(struct bio *bio, int status)
+-{
+-	while (bio) {
+-		struct bio *xbh = bio->bi_next; 
+-		int nr_sectors = bio_sectors(bio);
+-
+-		bio->bi_next = NULL; 
+-		blk_finished_io(len);
+-		bio_endio(bio, nr_sectors << 9, status ? 0 : -EIO);
+-		bio = xbh;
+-	}
+-
+-} 
+ /* Assumes that CCISS_LOCK(h->ctlr) is held. */
+ /* Zeros out the error record and then resends the command back */
+ /* to the controller */
+@@ -2178,39 +2213,6 @@ static inline void resend_cciss_cmd( ctlr_info_t *h, CommandList_struct *c)
+ 	start_io(h);
+ }
+ 
+-static void cciss_softirq_done(struct request *rq)
+-{
+-	CommandList_struct *cmd = rq->completion_data;
+-	ctlr_info_t *h = hba[cmd->ctlr];
+-	unsigned long flags;
+-	u64bit temp64;
+-	int i, ddir;
+-
+-	if (cmd->Request.Type.Direction == XFER_READ)
+-		ddir = PCI_DMA_FROMDEVICE;
+-	else
+-		ddir = PCI_DMA_TODEVICE;
+-
+-	/* command did not need to be retried */
+-	/* unmap the DMA mapping for all the scatter gather elements */
+-	for(i=0; i<cmd->Header.SGList; i++) {
+-		temp64.val32.lower = cmd->SG[i].Addr.lower;
+-		temp64.val32.upper = cmd->SG[i].Addr.upper;
+-		pci_unmap_page(h->pdev, temp64.val, cmd->SG[i].Len, ddir);
+-	}
+-
+-	complete_buffers(rq->bio, rq->errors);
+-
+-#ifdef CCISS_DEBUG
+-	printk("Done with %p\n", rq);
+-#endif /* CCISS_DEBUG */ 
+-
+-	spin_lock_irqsave(&h->lock, flags);
+-	end_that_request_last(rq, rq->errors);
+-	cmd_free(h, cmd,1);
+-	spin_unlock_irqrestore(&h->lock, flags);
+-}
+-
+ /* checks the status of the job and calls complete buffers to mark all 
+  * buffers for the completed job. Note that this function does not need
+  * to hold the hba/queue lock.
+diff --git a/drivers/usb/storage/Kconfig b/drivers/usb/storage/Kconfig
+index 92be101feba7..be9eec225743 100644
+--- a/drivers/usb/storage/Kconfig
++++ b/drivers/usb/storage/Kconfig
+@@ -48,7 +48,8 @@ config USB_STORAGE_FREECOM
+ 
+ config USB_STORAGE_ISD200
+ 	bool "ISD-200 USB/ATA Bridge support"
+-	depends on USB_STORAGE && BLK_DEV_IDE
++	depends on USB_STORAGE
++	depends on BLK_DEV_IDE=y || BLK_DEV_IDE=USB_STORAGE
+ 	---help---
+ 	  Say Y here if you want to use USB Mass Store devices based
+ 	  on the In-Systems Design ISD-200 USB/ATA bridge.
+diff --git a/fs/ext3/resize.c b/fs/ext3/resize.c
+index 14f5f6ea3e72..c5ffa8523968 100644
+--- a/fs/ext3/resize.c
++++ b/fs/ext3/resize.c
+@@ -767,6 +767,7 @@ int ext3_group_add(struct super_block *sb, struct ext3_new_group_data *input)
+ 	if (input->group != sbi->s_groups_count) {
+ 		ext3_warning(sb, __FUNCTION__,
+ 			     "multiple resizers run on filesystem!");
++		unlock_super(sb);
+ 		err = -EBUSY;
+ 		goto exit_journal;
+ 	}
+diff --git a/fs/partitions/check.c b/fs/partitions/check.c
+index f3b6af071722..45ae7dd3c650 100644
+--- a/fs/partitions/check.c
++++ b/fs/partitions/check.c
+@@ -372,6 +372,7 @@ static char *make_block_name(struct gendisk *disk)
+ 	char *name;
+ 	static char *block_str = "block:";
+ 	int size;
++	char *s;
+ 
+ 	size = strlen(block_str) + strlen(disk->disk_name) + 1;
+ 	name = kmalloc(size, GFP_KERNEL);
+@@ -379,6 +380,10 @@ static char *make_block_name(struct gendisk *disk)
+ 		return NULL;
+ 	strcpy(name, block_str);
+ 	strcat(name, disk->disk_name);
++	/* ewww... some of these buggers have / in name... */
++	s = strchr(name, '/');
++	if (s)
++		*s = '!';
+ 	return name;
+ }
+ 
+diff --git a/ipc/shm.c b/ipc/shm.c
+index 6b0c9af5bbf7..1c2faf62bc73 100644
+--- a/ipc/shm.c
++++ b/ipc/shm.c
+@@ -162,6 +162,8 @@ static int shm_mmap(struct file * file, struct vm_area_struct * vma)
+ 	ret = shmem_mmap(file, vma);
+ 	if (ret == 0) {
+ 		vma->vm_ops = &shm_vm_ops;
++		if (!(vma->vm_flags & VM_WRITE))
++			vma->vm_flags &= ~VM_MAYWRITE;
+ 		shm_inc(file->f_dentry->d_inode->i_ino);
+ 	}
+ 

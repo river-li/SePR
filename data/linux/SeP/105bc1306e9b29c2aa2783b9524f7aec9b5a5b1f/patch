@@ -1,0 +1,1714 @@
+diff --git a/include/linux/bpf.h b/include/linux/bpf.h
+index 523481a3471b..988a00797bcd 100644
+--- a/include/linux/bpf.h
++++ b/include/linux/bpf.h
+@@ -212,6 +212,7 @@ enum bpf_reg_type {
+ 	PTR_TO_PACKET_META,	 /* skb->data - meta_len */
+ 	PTR_TO_PACKET,		 /* reg points to skb->data */
+ 	PTR_TO_PACKET_END,	 /* skb->data + headlen */
++	PTR_TO_FLOW_KEYS,	 /* reg points to bpf_flow_keys */
+ };
+ 
+ /* The information passed from prog-specific *_is_valid_access
+diff --git a/include/linux/bpf_types.h b/include/linux/bpf_types.h
+index cd26c090e7c0..c9bd6fb765b0 100644
+--- a/include/linux/bpf_types.h
++++ b/include/linux/bpf_types.h
+@@ -16,6 +16,7 @@ BPF_PROG_TYPE(BPF_PROG_TYPE_LWT_SEG6LOCAL, lwt_seg6local)
+ BPF_PROG_TYPE(BPF_PROG_TYPE_SOCK_OPS, sock_ops)
+ BPF_PROG_TYPE(BPF_PROG_TYPE_SK_SKB, sk_skb)
+ BPF_PROG_TYPE(BPF_PROG_TYPE_SK_MSG, sk_msg)
++BPF_PROG_TYPE(BPF_PROG_TYPE_FLOW_DISSECTOR, flow_dissector)
+ #endif
+ #ifdef CONFIG_BPF_EVENTS
+ BPF_PROG_TYPE(BPF_PROG_TYPE_KPROBE, kprobe)
+diff --git a/include/linux/skbuff.h b/include/linux/skbuff.h
+index 86f337e9a81d..87e29710373f 100644
+--- a/include/linux/skbuff.h
++++ b/include/linux/skbuff.h
+@@ -243,6 +243,8 @@ struct scatterlist;
+ struct pipe_inode_info;
+ struct iov_iter;
+ struct napi_struct;
++struct bpf_prog;
++union bpf_attr;
+ 
+ #if defined(CONFIG_NF_CONNTRACK) || defined(CONFIG_NF_CONNTRACK_MODULE)
+ struct nf_conntrack {
+@@ -1192,6 +1194,24 @@ void skb_flow_dissector_init(struct flow_dissector *flow_dissector,
+ 			     const struct flow_dissector_key *key,
+ 			     unsigned int key_count);
+ 
++#ifdef CONFIG_NET
++int skb_flow_dissector_bpf_prog_attach(const union bpf_attr *attr,
++				       struct bpf_prog *prog);
++
++int skb_flow_dissector_bpf_prog_detach(const union bpf_attr *attr);
++#else
++static inline int skb_flow_dissector_bpf_prog_attach(const union bpf_attr *attr,
++						     struct bpf_prog *prog)
++{
++	return -EOPNOTSUPP;
++}
++
++static inline int skb_flow_dissector_bpf_prog_detach(const union bpf_attr *attr)
++{
++	return -EOPNOTSUPP;
++}
++#endif
++
+ bool __skb_flow_dissect(const struct sk_buff *skb,
+ 			struct flow_dissector *flow_dissector,
+ 			void *target_container,
+diff --git a/include/net/net_namespace.h b/include/net/net_namespace.h
+index 9b5fdc50519a..99d4148e0f90 100644
+--- a/include/net/net_namespace.h
++++ b/include/net/net_namespace.h
+@@ -43,6 +43,7 @@ struct ctl_table_header;
+ struct net_generic;
+ struct uevent_sock;
+ struct netns_ipvs;
++struct bpf_prog;
+ 
+ 
+ #define NETDEV_HASHBITS    8
+@@ -145,6 +146,8 @@ struct net {
+ #endif
+ 	struct net_generic __rcu	*gen;
+ 
++	struct bpf_prog __rcu	*flow_dissector_prog;
++
+ 	/* Note : following structs are cache line aligned */
+ #ifdef CONFIG_XFRM
+ 	struct netns_xfrm	xfrm;
+diff --git a/include/net/sch_generic.h b/include/net/sch_generic.h
+index 7a6b71ee5433..4d736427a4cb 100644
+--- a/include/net/sch_generic.h
++++ b/include/net/sch_generic.h
+@@ -19,6 +19,7 @@ struct Qdisc_ops;
+ struct qdisc_walker;
+ struct tcf_walker;
+ struct module;
++struct bpf_flow_keys;
+ 
+ typedef int tc_setup_cb_t(enum tc_setup_type type,
+ 			  void *type_data, void *cb_priv);
+@@ -321,9 +322,14 @@ struct tcf_proto {
+ };
+ 
+ struct qdisc_skb_cb {
+-	unsigned int		pkt_len;
+-	u16			slave_dev_queue_mapping;
+-	u16			tc_classid;
++	union {
++		struct {
++			unsigned int		pkt_len;
++			u16			slave_dev_queue_mapping;
++			u16			tc_classid;
++		};
++		struct bpf_flow_keys *flow_keys;
++	};
+ #define QDISC_CB_PRIV_LEN 20
+ 	unsigned char		data[QDISC_CB_PRIV_LEN];
+ };
+diff --git a/include/uapi/linux/bpf.h b/include/uapi/linux/bpf.h
+index 66917a4eba27..aa5ccd2385ed 100644
+--- a/include/uapi/linux/bpf.h
++++ b/include/uapi/linux/bpf.h
+@@ -152,6 +152,7 @@ enum bpf_prog_type {
+ 	BPF_PROG_TYPE_LWT_SEG6LOCAL,
+ 	BPF_PROG_TYPE_LIRC_MODE2,
+ 	BPF_PROG_TYPE_SK_REUSEPORT,
++	BPF_PROG_TYPE_FLOW_DISSECTOR,
+ };
+ 
+ enum bpf_attach_type {
+@@ -172,6 +173,7 @@ enum bpf_attach_type {
+ 	BPF_CGROUP_UDP4_SENDMSG,
+ 	BPF_CGROUP_UDP6_SENDMSG,
+ 	BPF_LIRC_MODE2,
++	BPF_FLOW_DISSECTOR,
+ 	__MAX_BPF_ATTACH_TYPE
+ };
+ 
+@@ -2333,6 +2335,7 @@ struct __sk_buff {
+ 	/* ... here. */
+ 
+ 	__u32 data_meta;
++	struct bpf_flow_keys *flow_keys;
+ };
+ 
+ struct bpf_tunnel_key {
+@@ -2778,4 +2781,27 @@ enum bpf_task_fd_type {
+ 	BPF_FD_TYPE_URETPROBE,		/* filename + offset */
+ };
+ 
++struct bpf_flow_keys {
++	__u16	nhoff;
++	__u16	thoff;
++	__u16	addr_proto;			/* ETH_P_* of valid addrs */
++	__u8	is_frag;
++	__u8	is_first_frag;
++	__u8	is_encap;
++	__u8	ip_proto;
++	__be16	n_proto;
++	__be16	sport;
++	__be16	dport;
++	union {
++		struct {
++			__be32	ipv4_src;
++			__be32	ipv4_dst;
++		};
++		struct {
++			__u32	ipv6_src[4];	/* in6_addr; network order */
++			__u32	ipv6_dst[4];	/* in6_addr; network order */
++		};
++	};
++};
++
+ #endif /* _UAPI__LINUX_BPF_H__ */
+diff --git a/kernel/bpf/arraymap.c b/kernel/bpf/arraymap.c
+index f9d24121be99..dded84cbe814 100644
+--- a/kernel/bpf/arraymap.c
++++ b/kernel/bpf/arraymap.c
+@@ -553,6 +553,29 @@ static void bpf_fd_array_map_clear(struct bpf_map *map)
+ 		fd_array_map_delete_elem(map, &i);
+ }
+ 
++static void prog_array_map_seq_show_elem(struct bpf_map *map, void *key,
++					 struct seq_file *m)
++{
++	void **elem, *ptr;
++	u32 prog_id;
++
++	rcu_read_lock();
++
++	elem = array_map_lookup_elem(map, key);
++	if (elem) {
++		ptr = READ_ONCE(*elem);
++		if (ptr) {
++			seq_printf(m, "%u: ", *(u32 *)key);
++			prog_id = prog_fd_array_sys_lookup_elem(ptr);
++			btf_type_seq_show(map->btf, map->btf_value_type_id,
++					  &prog_id, m);
++			seq_puts(m, "\n");
++		}
++	}
++
++	rcu_read_unlock();
++}
++
+ const struct bpf_map_ops prog_array_map_ops = {
+ 	.map_alloc_check = fd_array_map_alloc_check,
+ 	.map_alloc = array_map_alloc,
+@@ -564,7 +587,7 @@ const struct bpf_map_ops prog_array_map_ops = {
+ 	.map_fd_put_ptr = prog_fd_array_put_ptr,
+ 	.map_fd_sys_lookup_elem = prog_fd_array_sys_lookup_elem,
+ 	.map_release_uref = bpf_fd_array_map_clear,
+-	.map_check_btf = map_check_no_btf,
++	.map_seq_show_elem = prog_array_map_seq_show_elem,
+ };
+ 
+ static struct bpf_event_entry *bpf_event_entry_gen(struct file *perf_file,
+diff --git a/kernel/bpf/sockmap.c b/kernel/bpf/sockmap.c
+index 0a0f2ec75370..d37a1a0a6e1e 100644
+--- a/kernel/bpf/sockmap.c
++++ b/kernel/bpf/sockmap.c
+@@ -612,8 +612,7 @@ static int free_sg(struct sock *sk, int start,
+ 		if (i == MAX_SKB_FRAGS)
+ 			i = 0;
+ 	}
+-	if (md->skb)
+-		consume_skb(md->skb);
++	consume_skb(md->skb);
+ 
+ 	return free;
+ }
+@@ -995,8 +994,7 @@ static int bpf_tcp_recvmsg(struct sock *sk, struct msghdr *msg, size_t len,
+ 
+ 		if (!sg->length && md->sg_start == md->sg_end) {
+ 			list_del(&md->list);
+-			if (md->skb)
+-				consume_skb(md->skb);
++			consume_skb(md->skb);
+ 			kfree(md);
+ 		}
+ 	}
+diff --git a/kernel/bpf/syscall.c b/kernel/bpf/syscall.c
+index 3c9636f03bb2..b3c2d09bcf7a 100644
+--- a/kernel/bpf/syscall.c
++++ b/kernel/bpf/syscall.c
+@@ -1615,6 +1615,9 @@ static int bpf_prog_attach(const union bpf_attr *attr)
+ 	case BPF_LIRC_MODE2:
+ 		ptype = BPF_PROG_TYPE_LIRC_MODE2;
+ 		break;
++	case BPF_FLOW_DISSECTOR:
++		ptype = BPF_PROG_TYPE_FLOW_DISSECTOR;
++		break;
+ 	default:
+ 		return -EINVAL;
+ 	}
+@@ -1636,6 +1639,9 @@ static int bpf_prog_attach(const union bpf_attr *attr)
+ 	case BPF_PROG_TYPE_LIRC_MODE2:
+ 		ret = lirc_prog_attach(attr, prog);
+ 		break;
++	case BPF_PROG_TYPE_FLOW_DISSECTOR:
++		ret = skb_flow_dissector_bpf_prog_attach(attr, prog);
++		break;
+ 	default:
+ 		ret = cgroup_bpf_prog_attach(attr, ptype, prog);
+ 	}
+@@ -1688,6 +1694,8 @@ static int bpf_prog_detach(const union bpf_attr *attr)
+ 		return sockmap_get_from_fd(attr, BPF_PROG_TYPE_SK_SKB, NULL);
+ 	case BPF_LIRC_MODE2:
+ 		return lirc_prog_detach(attr);
++	case BPF_FLOW_DISSECTOR:
++		return skb_flow_dissector_bpf_prog_detach(attr);
+ 	default:
+ 		return -EINVAL;
+ 	}
+diff --git a/kernel/bpf/verifier.c b/kernel/bpf/verifier.c
+index 8cd4f5306c3c..e986518d7bc3 100644
+--- a/kernel/bpf/verifier.c
++++ b/kernel/bpf/verifier.c
+@@ -261,6 +261,7 @@ static const char * const reg_type_str[] = {
+ 	[PTR_TO_PACKET]		= "pkt",
+ 	[PTR_TO_PACKET_META]	= "pkt_meta",
+ 	[PTR_TO_PACKET_END]	= "pkt_end",
++	[PTR_TO_FLOW_KEYS]	= "flow_keys",
+ };
+ 
+ static char slot_type_char[] = {
+@@ -570,7 +571,9 @@ static void __mark_reg_not_init(struct bpf_reg_state *reg);
+  */
+ static void __mark_reg_known(struct bpf_reg_state *reg, u64 imm)
+ {
+-	reg->id = 0;
++	/* Clear id, off, and union(map_ptr, range) */
++	memset(((u8 *)reg) + sizeof(reg->type), 0,
++	       offsetof(struct bpf_reg_state, var_off) - sizeof(reg->type));
+ 	reg->var_off = tnum_const(imm);
+ 	reg->smin_value = (s64)imm;
+ 	reg->smax_value = (s64)imm;
+@@ -589,7 +592,6 @@ static void __mark_reg_known_zero(struct bpf_reg_state *reg)
+ static void __mark_reg_const_zero(struct bpf_reg_state *reg)
+ {
+ 	__mark_reg_known(reg, 0);
+-	reg->off = 0;
+ 	reg->type = SCALAR_VALUE;
+ }
+ 
+@@ -700,9 +702,12 @@ static void __mark_reg_unbounded(struct bpf_reg_state *reg)
+ /* Mark a register as having a completely unknown (scalar) value. */
+ static void __mark_reg_unknown(struct bpf_reg_state *reg)
+ {
++	/*
++	 * Clear type, id, off, and union(map_ptr, range) and
++	 * padding between 'type' and union
++	 */
++	memset(reg, 0, offsetof(struct bpf_reg_state, var_off));
+ 	reg->type = SCALAR_VALUE;
+-	reg->id = 0;
+-	reg->off = 0;
+ 	reg->var_off = tnum_unknown;
+ 	reg->frameno = 0;
+ 	__mark_reg_unbounded(reg);
+@@ -961,6 +966,7 @@ static bool is_spillable_regtype(enum bpf_reg_type type)
+ 	case PTR_TO_PACKET:
+ 	case PTR_TO_PACKET_META:
+ 	case PTR_TO_PACKET_END:
++	case PTR_TO_FLOW_KEYS:
+ 	case CONST_PTR_TO_MAP:
+ 		return true;
+ 	default:
+@@ -1234,6 +1240,7 @@ static bool may_access_direct_pkt_data(struct bpf_verifier_env *env,
+ 	case BPF_PROG_TYPE_LWT_XMIT:
+ 	case BPF_PROG_TYPE_SK_SKB:
+ 	case BPF_PROG_TYPE_SK_MSG:
++	case BPF_PROG_TYPE_FLOW_DISSECTOR:
+ 		if (meta)
+ 			return meta->pkt_access;
+ 
+@@ -1317,6 +1324,18 @@ static int check_ctx_access(struct bpf_verifier_env *env, int insn_idx, int off,
+ 	return -EACCES;
+ }
+ 
++static int check_flow_keys_access(struct bpf_verifier_env *env, int off,
++				  int size)
++{
++	if (size < 0 || off < 0 ||
++	    (u64)off + size > sizeof(struct bpf_flow_keys)) {
++		verbose(env, "invalid access to flow keys off=%d size=%d\n",
++			off, size);
++		return -EACCES;
++	}
++	return 0;
++}
++
+ static bool __is_pointer_value(bool allow_ptr_leaks,
+ 			       const struct bpf_reg_state *reg)
+ {
+@@ -1418,6 +1437,9 @@ static int check_ptr_alignment(struct bpf_verifier_env *env,
+ 		 * right in front, treat it the very same way.
+ 		 */
+ 		return check_pkt_ptr_alignment(env, reg, off, size, strict);
++	case PTR_TO_FLOW_KEYS:
++		pointer_desc = "flow keys ";
++		break;
+ 	case PTR_TO_MAP_VALUE:
+ 		pointer_desc = "value ";
+ 		break;
+@@ -1640,9 +1662,6 @@ static int check_mem_access(struct bpf_verifier_env *env, int insn_idx, u32 regn
+ 			else
+ 				mark_reg_known_zero(env, regs,
+ 						    value_regno);
+-			regs[value_regno].id = 0;
+-			regs[value_regno].off = 0;
+-			regs[value_regno].range = 0;
+ 			regs[value_regno].type = reg_type;
+ 		}
+ 
+@@ -1691,6 +1710,17 @@ static int check_mem_access(struct bpf_verifier_env *env, int insn_idx, u32 regn
+ 		err = check_packet_access(env, regno, off, size, false);
+ 		if (!err && t == BPF_READ && value_regno >= 0)
+ 			mark_reg_unknown(env, regs, value_regno);
++	} else if (reg->type == PTR_TO_FLOW_KEYS) {
++		if (t == BPF_WRITE && value_regno >= 0 &&
++		    is_pointer_value(env, value_regno)) {
++			verbose(env, "R%d leaks addr into flow keys\n",
++				value_regno);
++			return -EACCES;
++		}
++
++		err = check_flow_keys_access(env, off, size);
++		if (!err && t == BPF_READ && value_regno >= 0)
++			mark_reg_unknown(env, regs, value_regno);
+ 	} else {
+ 		verbose(env, "R%d invalid mem access '%s'\n", regno,
+ 			reg_type_str[reg->type]);
+@@ -1838,6 +1868,8 @@ static int check_helper_mem_access(struct bpf_verifier_env *env, int regno,
+ 	case PTR_TO_PACKET_META:
+ 		return check_packet_access(env, regno, reg->off, access_size,
+ 					   zero_size_allowed);
++	case PTR_TO_FLOW_KEYS:
++		return check_flow_keys_access(env, reg->off, access_size);
+ 	case PTR_TO_MAP_VALUE:
+ 		return check_map_access(env, regno, reg->off, access_size,
+ 					zero_size_allowed);
+@@ -2495,7 +2527,6 @@ static int check_helper_call(struct bpf_verifier_env *env, int func_id, int insn
+ 			regs[BPF_REG_0].type = PTR_TO_MAP_VALUE_OR_NULL;
+ 		/* There is no offset yet applied, variable or fixed */
+ 		mark_reg_known_zero(env, regs, BPF_REG_0);
+-		regs[BPF_REG_0].off = 0;
+ 		/* remember map_ptr, so that check_map_access()
+ 		 * can check 'value_size' boundary of memory access
+ 		 * to map element returned from bpf_map_lookup_elem()
+@@ -4366,6 +4397,7 @@ static bool regsafe(struct bpf_reg_state *rold, struct bpf_reg_state *rcur,
+ 	case PTR_TO_CTX:
+ 	case CONST_PTR_TO_MAP:
+ 	case PTR_TO_PACKET_END:
++	case PTR_TO_FLOW_KEYS:
+ 		/* Only valid matches are exact, which memcmp() above
+ 		 * would have accepted
+ 		 */
+diff --git a/net/core/filter.c b/net/core/filter.c
+index 0b40f95da21b..72db8afb7cb6 100644
+--- a/net/core/filter.c
++++ b/net/core/filter.c
+@@ -3176,6 +3176,32 @@ static int __bpf_tx_xdp(struct net_device *dev,
+ 	return 0;
+ }
+ 
++static noinline int
++xdp_do_redirect_slow(struct net_device *dev, struct xdp_buff *xdp,
++		     struct bpf_prog *xdp_prog, struct bpf_redirect_info *ri)
++{
++	struct net_device *fwd;
++	u32 index = ri->ifindex;
++	int err;
++
++	fwd = dev_get_by_index_rcu(dev_net(dev), index);
++	ri->ifindex = 0;
++	if (unlikely(!fwd)) {
++		err = -EINVAL;
++		goto err;
++	}
++
++	err = __bpf_tx_xdp(fwd, NULL, xdp, 0);
++	if (unlikely(err))
++		goto err;
++
++	_trace_xdp_redirect(dev, xdp_prog, index);
++	return 0;
++err:
++	_trace_xdp_redirect_err(dev, xdp_prog, index, err);
++	return err;
++}
++
+ static int __bpf_tx_xdp_map(struct net_device *dev_rx, void *fwd,
+ 			    struct bpf_map *map,
+ 			    struct xdp_buff *xdp,
+@@ -3188,7 +3214,7 @@ static int __bpf_tx_xdp_map(struct net_device *dev_rx, void *fwd,
+ 		struct bpf_dtab_netdev *dst = fwd;
+ 
+ 		err = dev_map_enqueue(dst, xdp, dev_rx);
+-		if (err)
++		if (unlikely(err))
+ 			return err;
+ 		__dev_map_insert_ctx(map, index);
+ 		break;
+@@ -3197,7 +3223,7 @@ static int __bpf_tx_xdp_map(struct net_device *dev_rx, void *fwd,
+ 		struct bpf_cpu_map_entry *rcpu = fwd;
+ 
+ 		err = cpu_map_enqueue(rcpu, xdp, dev_rx);
+-		if (err)
++		if (unlikely(err))
+ 			return err;
+ 		__cpu_map_insert_ctx(map, index);
+ 		break;
+@@ -3238,7 +3264,7 @@ void xdp_do_flush_map(void)
+ }
+ EXPORT_SYMBOL_GPL(xdp_do_flush_map);
+ 
+-static void *__xdp_map_lookup_elem(struct bpf_map *map, u32 index)
++static inline void *__xdp_map_lookup_elem(struct bpf_map *map, u32 index)
+ {
+ 	switch (map->map_type) {
+ 	case BPF_MAP_TYPE_DEVMAP:
+@@ -3270,9 +3296,9 @@ void bpf_clear_redirect_map(struct bpf_map *map)
+ }
+ 
+ static int xdp_do_redirect_map(struct net_device *dev, struct xdp_buff *xdp,
+-			       struct bpf_prog *xdp_prog, struct bpf_map *map)
++			       struct bpf_prog *xdp_prog, struct bpf_map *map,
++			       struct bpf_redirect_info *ri)
+ {
+-	struct bpf_redirect_info *ri = this_cpu_ptr(&bpf_redirect_info);
+ 	u32 index = ri->ifindex;
+ 	void *fwd = NULL;
+ 	int err;
+@@ -3281,11 +3307,11 @@ static int xdp_do_redirect_map(struct net_device *dev, struct xdp_buff *xdp,
+ 	WRITE_ONCE(ri->map, NULL);
+ 
+ 	fwd = __xdp_map_lookup_elem(map, index);
+-	if (!fwd) {
++	if (unlikely(!fwd)) {
+ 		err = -EINVAL;
+ 		goto err;
+ 	}
+-	if (ri->map_to_flush && ri->map_to_flush != map)
++	if (ri->map_to_flush && unlikely(ri->map_to_flush != map))
+ 		xdp_do_flush_map();
+ 
+ 	err = __bpf_tx_xdp_map(dev, fwd, map, xdp, index);
+@@ -3305,29 +3331,11 @@ int xdp_do_redirect(struct net_device *dev, struct xdp_buff *xdp,
+ {
+ 	struct bpf_redirect_info *ri = this_cpu_ptr(&bpf_redirect_info);
+ 	struct bpf_map *map = READ_ONCE(ri->map);
+-	struct net_device *fwd;
+-	u32 index = ri->ifindex;
+-	int err;
+ 
+-	if (map)
+-		return xdp_do_redirect_map(dev, xdp, xdp_prog, map);
++	if (likely(map))
++		return xdp_do_redirect_map(dev, xdp, xdp_prog, map, ri);
+ 
+-	fwd = dev_get_by_index_rcu(dev_net(dev), index);
+-	ri->ifindex = 0;
+-	if (unlikely(!fwd)) {
+-		err = -EINVAL;
+-		goto err;
+-	}
+-
+-	err = __bpf_tx_xdp(fwd, NULL, xdp, 0);
+-	if (unlikely(err))
+-		goto err;
+-
+-	_trace_xdp_redirect(dev, xdp_prog, index);
+-	return 0;
+-err:
+-	_trace_xdp_redirect_err(dev, xdp_prog, index, err);
+-	return err;
++	return xdp_do_redirect_slow(dev, xdp, xdp_prog, ri);
+ }
+ EXPORT_SYMBOL_GPL(xdp_do_redirect);
+ 
+@@ -4044,14 +4052,15 @@ static const struct bpf_func_proto bpf_setsockopt_proto = {
+ BPF_CALL_5(bpf_getsockopt, struct bpf_sock_ops_kern *, bpf_sock,
+ 	   int, level, int, optname, char *, optval, int, optlen)
+ {
+-	struct inet_connection_sock *icsk;
+ 	struct sock *sk = bpf_sock->sk;
+-	struct tcp_sock *tp;
+ 
+ 	if (!sk_fullsock(sk))
+ 		goto err_clear;
+ #ifdef CONFIG_INET
+ 	if (level == SOL_TCP && sk->sk_prot->getsockopt == tcp_getsockopt) {
++		struct inet_connection_sock *icsk;
++		struct tcp_sock *tp;
++
+ 		switch (optname) {
+ 		case TCP_CONGESTION:
+ 			icsk = inet_csk(sk);
+@@ -5115,6 +5124,17 @@ sk_skb_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
+ 	}
+ }
+ 
++static const struct bpf_func_proto *
++flow_dissector_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
++{
++	switch (func_id) {
++	case BPF_FUNC_skb_load_bytes:
++		return &bpf_skb_load_bytes_proto;
++	default:
++		return bpf_base_func_proto(func_id);
++	}
++}
++
+ static const struct bpf_func_proto *
+ lwt_out_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
+ {
+@@ -5233,6 +5253,10 @@ static bool bpf_skb_is_valid_access(int off, int size, enum bpf_access_type type
+ 		if (size != size_default)
+ 			return false;
+ 		break;
++	case bpf_ctx_range(struct __sk_buff, flow_keys):
++		if (size != sizeof(struct bpf_flow_keys *))
++			return false;
++		break;
+ 	default:
+ 		/* Only narrow read access allowed for now. */
+ 		if (type == BPF_WRITE) {
+@@ -5258,6 +5282,7 @@ static bool sk_filter_is_valid_access(int off, int size,
+ 	case bpf_ctx_range(struct __sk_buff, data):
+ 	case bpf_ctx_range(struct __sk_buff, data_meta):
+ 	case bpf_ctx_range(struct __sk_buff, data_end):
++	case bpf_ctx_range(struct __sk_buff, flow_keys):
+ 	case bpf_ctx_range_till(struct __sk_buff, family, local_port):
+ 		return false;
+ 	}
+@@ -5283,6 +5308,7 @@ static bool lwt_is_valid_access(int off, int size,
+ 	case bpf_ctx_range(struct __sk_buff, tc_classid):
+ 	case bpf_ctx_range_till(struct __sk_buff, family, local_port):
+ 	case bpf_ctx_range(struct __sk_buff, data_meta):
++	case bpf_ctx_range(struct __sk_buff, flow_keys):
+ 		return false;
+ 	}
+ 
+@@ -5493,6 +5519,7 @@ static bool tc_cls_act_is_valid_access(int off, int size,
+ 	case bpf_ctx_range(struct __sk_buff, data_end):
+ 		info->reg_type = PTR_TO_PACKET_END;
+ 		break;
++	case bpf_ctx_range(struct __sk_buff, flow_keys):
+ 	case bpf_ctx_range_till(struct __sk_buff, family, local_port):
+ 		return false;
+ 	}
+@@ -5694,6 +5721,7 @@ static bool sk_skb_is_valid_access(int off, int size,
+ 	switch (off) {
+ 	case bpf_ctx_range(struct __sk_buff, tc_classid):
+ 	case bpf_ctx_range(struct __sk_buff, data_meta):
++	case bpf_ctx_range(struct __sk_buff, flow_keys):
+ 		return false;
+ 	}
+ 
+@@ -5753,6 +5781,39 @@ static bool sk_msg_is_valid_access(int off, int size,
+ 	return true;
+ }
+ 
++static bool flow_dissector_is_valid_access(int off, int size,
++					   enum bpf_access_type type,
++					   const struct bpf_prog *prog,
++					   struct bpf_insn_access_aux *info)
++{
++	if (type == BPF_WRITE) {
++		switch (off) {
++		case bpf_ctx_range_till(struct __sk_buff, cb[0], cb[4]):
++			break;
++		default:
++			return false;
++		}
++	}
++
++	switch (off) {
++	case bpf_ctx_range(struct __sk_buff, data):
++		info->reg_type = PTR_TO_PACKET;
++		break;
++	case bpf_ctx_range(struct __sk_buff, data_end):
++		info->reg_type = PTR_TO_PACKET_END;
++		break;
++	case bpf_ctx_range(struct __sk_buff, flow_keys):
++		info->reg_type = PTR_TO_FLOW_KEYS;
++		break;
++	case bpf_ctx_range(struct __sk_buff, tc_classid):
++	case bpf_ctx_range(struct __sk_buff, data_meta):
++	case bpf_ctx_range_till(struct __sk_buff, family, local_port):
++		return false;
++	}
++
++	return bpf_skb_is_valid_access(off, size, type, prog, info);
++}
++
+ static u32 bpf_convert_ctx_access(enum bpf_access_type type,
+ 				  const struct bpf_insn *si,
+ 				  struct bpf_insn *insn_buf,
+@@ -6047,6 +6108,15 @@ static u32 bpf_convert_ctx_access(enum bpf_access_type type,
+ 				      bpf_target_off(struct sock_common,
+ 						     skc_num, 2, target_size));
+ 		break;
++
++	case offsetof(struct __sk_buff, flow_keys):
++		off  = si->off;
++		off -= offsetof(struct __sk_buff, flow_keys);
++		off += offsetof(struct sk_buff, cb);
++		off += offsetof(struct qdisc_skb_cb, flow_keys);
++		*insn++ = BPF_LDX_MEM(BPF_SIZEOF(void *), si->dst_reg,
++				      si->src_reg, off);
++		break;
+ 	}
+ 
+ 	return insn - insn_buf;
+@@ -7010,6 +7080,15 @@ const struct bpf_verifier_ops sk_msg_verifier_ops = {
+ const struct bpf_prog_ops sk_msg_prog_ops = {
+ };
+ 
++const struct bpf_verifier_ops flow_dissector_verifier_ops = {
++	.get_func_proto		= flow_dissector_func_proto,
++	.is_valid_access	= flow_dissector_is_valid_access,
++	.convert_ctx_access	= bpf_convert_ctx_access,
++};
++
++const struct bpf_prog_ops flow_dissector_prog_ops = {
++};
++
+ int sk_detach_filter(struct sock *sk)
+ {
+ 	int ret = -ENOENT;
+diff --git a/net/core/flow_dissector.c b/net/core/flow_dissector.c
+index 1e745db44cc3..676f3ad629f9 100644
+--- a/net/core/flow_dissector.c
++++ b/net/core/flow_dissector.c
+@@ -25,6 +25,9 @@
+ #include <net/flow_dissector.h>
+ #include <scsi/fc/fc_fcoe.h>
+ #include <uapi/linux/batadv_packet.h>
++#include <linux/bpf.h>
++
++static DEFINE_MUTEX(flow_dissector_mutex);
+ 
+ static void dissector_set_key(struct flow_dissector *flow_dissector,
+ 			      enum flow_dissector_key_id key_id)
+@@ -62,6 +65,44 @@ void skb_flow_dissector_init(struct flow_dissector *flow_dissector,
+ }
+ EXPORT_SYMBOL(skb_flow_dissector_init);
+ 
++int skb_flow_dissector_bpf_prog_attach(const union bpf_attr *attr,
++				       struct bpf_prog *prog)
++{
++	struct bpf_prog *attached;
++	struct net *net;
++
++	net = current->nsproxy->net_ns;
++	mutex_lock(&flow_dissector_mutex);
++	attached = rcu_dereference_protected(net->flow_dissector_prog,
++					     lockdep_is_held(&flow_dissector_mutex));
++	if (attached) {
++		/* Only one BPF program can be attached at a time */
++		mutex_unlock(&flow_dissector_mutex);
++		return -EEXIST;
++	}
++	rcu_assign_pointer(net->flow_dissector_prog, prog);
++	mutex_unlock(&flow_dissector_mutex);
++	return 0;
++}
++
++int skb_flow_dissector_bpf_prog_detach(const union bpf_attr *attr)
++{
++	struct bpf_prog *attached;
++	struct net *net;
++
++	net = current->nsproxy->net_ns;
++	mutex_lock(&flow_dissector_mutex);
++	attached = rcu_dereference_protected(net->flow_dissector_prog,
++					     lockdep_is_held(&flow_dissector_mutex));
++	if (!attached) {
++		mutex_unlock(&flow_dissector_mutex);
++		return -ENOENT;
++	}
++	bpf_prog_put(attached);
++	RCU_INIT_POINTER(net->flow_dissector_prog, NULL);
++	mutex_unlock(&flow_dissector_mutex);
++	return 0;
++}
+ /**
+  * skb_flow_get_be16 - extract be16 entity
+  * @skb: sk_buff to extract from
+@@ -588,6 +629,60 @@ static bool skb_flow_dissect_allowed(int *num_hdrs)
+ 	return (*num_hdrs <= MAX_FLOW_DISSECT_HDRS);
+ }
+ 
++static void __skb_flow_bpf_to_target(const struct bpf_flow_keys *flow_keys,
++				     struct flow_dissector *flow_dissector,
++				     void *target_container)
++{
++	struct flow_dissector_key_control *key_control;
++	struct flow_dissector_key_basic *key_basic;
++	struct flow_dissector_key_addrs *key_addrs;
++	struct flow_dissector_key_ports *key_ports;
++
++	key_control = skb_flow_dissector_target(flow_dissector,
++						FLOW_DISSECTOR_KEY_CONTROL,
++						target_container);
++	key_control->thoff = flow_keys->thoff;
++	if (flow_keys->is_frag)
++		key_control->flags |= FLOW_DIS_IS_FRAGMENT;
++	if (flow_keys->is_first_frag)
++		key_control->flags |= FLOW_DIS_FIRST_FRAG;
++	if (flow_keys->is_encap)
++		key_control->flags |= FLOW_DIS_ENCAPSULATION;
++
++	key_basic = skb_flow_dissector_target(flow_dissector,
++					      FLOW_DISSECTOR_KEY_BASIC,
++					      target_container);
++	key_basic->n_proto = flow_keys->n_proto;
++	key_basic->ip_proto = flow_keys->ip_proto;
++
++	if (flow_keys->addr_proto == ETH_P_IP &&
++	    dissector_uses_key(flow_dissector, FLOW_DISSECTOR_KEY_IPV4_ADDRS)) {
++		key_addrs = skb_flow_dissector_target(flow_dissector,
++						      FLOW_DISSECTOR_KEY_IPV4_ADDRS,
++						      target_container);
++		key_addrs->v4addrs.src = flow_keys->ipv4_src;
++		key_addrs->v4addrs.dst = flow_keys->ipv4_dst;
++		key_control->addr_type = FLOW_DISSECTOR_KEY_IPV4_ADDRS;
++	} else if (flow_keys->addr_proto == ETH_P_IPV6 &&
++		   dissector_uses_key(flow_dissector,
++				      FLOW_DISSECTOR_KEY_IPV6_ADDRS)) {
++		key_addrs = skb_flow_dissector_target(flow_dissector,
++						      FLOW_DISSECTOR_KEY_IPV6_ADDRS,
++						      target_container);
++		memcpy(&key_addrs->v6addrs, &flow_keys->ipv6_src,
++		       sizeof(key_addrs->v6addrs));
++		key_control->addr_type = FLOW_DISSECTOR_KEY_IPV6_ADDRS;
++	}
++
++	if (dissector_uses_key(flow_dissector, FLOW_DISSECTOR_KEY_PORTS)) {
++		key_ports = skb_flow_dissector_target(flow_dissector,
++						      FLOW_DISSECTOR_KEY_PORTS,
++						      target_container);
++		key_ports->src = flow_keys->sport;
++		key_ports->dst = flow_keys->dport;
++	}
++}
++
+ /**
+  * __skb_flow_dissect - extract the flow_keys struct and return it
+  * @skb: sk_buff to extract the flow from, can be NULL if the rest are specified
+@@ -619,6 +714,7 @@ bool __skb_flow_dissect(const struct sk_buff *skb,
+ 	struct flow_dissector_key_vlan *key_vlan;
+ 	enum flow_dissect_ret fdret;
+ 	enum flow_dissector_key_id dissector_vlan = FLOW_DISSECTOR_KEY_MAX;
++	struct bpf_prog *attached = NULL;
+ 	int num_hdrs = 0;
+ 	u8 ip_proto = 0;
+ 	bool ret;
+@@ -658,6 +754,50 @@ bool __skb_flow_dissect(const struct sk_buff *skb,
+ 					      FLOW_DISSECTOR_KEY_BASIC,
+ 					      target_container);
+ 
++	rcu_read_lock();
++	if (skb) {
++		if (skb->dev)
++			attached = rcu_dereference(dev_net(skb->dev)->flow_dissector_prog);
++		else if (skb->sk)
++			attached = rcu_dereference(sock_net(skb->sk)->flow_dissector_prog);
++		else
++			WARN_ON_ONCE(1);
++	}
++	if (attached) {
++		/* Note that even though the const qualifier is discarded
++		 * throughout the execution of the BPF program, all changes(the
++		 * control block) are reverted after the BPF program returns.
++		 * Therefore, __skb_flow_dissect does not alter the skb.
++		 */
++		struct bpf_flow_keys flow_keys = {};
++		struct bpf_skb_data_end cb_saved;
++		struct bpf_skb_data_end *cb;
++		u32 result;
++
++		cb = (struct bpf_skb_data_end *)skb->cb;
++
++		/* Save Control Block */
++		memcpy(&cb_saved, cb, sizeof(cb_saved));
++		memset(cb, 0, sizeof(cb_saved));
++
++		/* Pass parameters to the BPF program */
++		cb->qdisc_cb.flow_keys = &flow_keys;
++		flow_keys.nhoff = nhoff;
++
++		bpf_compute_data_pointers((struct sk_buff *)skb);
++		result = BPF_PROG_RUN(attached, skb);
++
++		/* Restore state */
++		memcpy(cb, &cb_saved, sizeof(cb_saved));
++
++		__skb_flow_bpf_to_target(&flow_keys, flow_dissector,
++					 target_container);
++		key_control->thoff = min_t(u16, key_control->thoff, skb->len);
++		rcu_read_unlock();
++		return result == BPF_OK;
++	}
++	rcu_read_unlock();
++
+ 	if (dissector_uses_key(flow_dissector,
+ 			       FLOW_DISSECTOR_KEY_ETH_ADDRS)) {
+ 		struct ethhdr *eth = eth_hdr(skb);
+diff --git a/samples/bpf/bpf_load.c b/samples/bpf/bpf_load.c
+index 904e775d1a44..e6d7e0fe155b 100644
+--- a/samples/bpf/bpf_load.c
++++ b/samples/bpf/bpf_load.c
+@@ -16,7 +16,6 @@
+ #include <linux/netlink.h>
+ #include <linux/rtnetlink.h>
+ #include <linux/types.h>
+-#include <sys/types.h>
+ #include <sys/socket.h>
+ #include <sys/syscall.h>
+ #include <sys/ioctl.h>
+diff --git a/samples/bpf/sampleip_user.c b/samples/bpf/sampleip_user.c
+index 60c2b73d1b4d..216c7ecbbbe9 100644
+--- a/samples/bpf/sampleip_user.c
++++ b/samples/bpf/sampleip_user.c
+@@ -9,7 +9,6 @@
+  */
+ #include <stdio.h>
+ #include <stdlib.h>
+-#include <stdio.h>
+ #include <unistd.h>
+ #include <errno.h>
+ #include <signal.h>
+diff --git a/samples/bpf/sockex2_kern.c b/samples/bpf/sockex2_kern.c
+index f58acfc92556..f2f9dbc021b0 100644
+--- a/samples/bpf/sockex2_kern.c
++++ b/samples/bpf/sockex2_kern.c
+@@ -14,7 +14,7 @@ struct vlan_hdr {
+ 	__be16 h_vlan_encapsulated_proto;
+ };
+ 
+-struct bpf_flow_keys {
++struct flow_key_record {
+ 	__be32 src;
+ 	__be32 dst;
+ 	union {
+@@ -59,7 +59,7 @@ static inline __u32 ipv6_addr_hash(struct __sk_buff *ctx, __u64 off)
+ }
+ 
+ static inline __u64 parse_ip(struct __sk_buff *skb, __u64 nhoff, __u64 *ip_proto,
+-			     struct bpf_flow_keys *flow)
++			     struct flow_key_record *flow)
+ {
+ 	__u64 verlen;
+ 
+@@ -83,7 +83,7 @@ static inline __u64 parse_ip(struct __sk_buff *skb, __u64 nhoff, __u64 *ip_proto
+ }
+ 
+ static inline __u64 parse_ipv6(struct __sk_buff *skb, __u64 nhoff, __u64 *ip_proto,
+-			       struct bpf_flow_keys *flow)
++			       struct flow_key_record *flow)
+ {
+ 	*ip_proto = load_byte(skb,
+ 			      nhoff + offsetof(struct ipv6hdr, nexthdr));
+@@ -96,7 +96,8 @@ static inline __u64 parse_ipv6(struct __sk_buff *skb, __u64 nhoff, __u64 *ip_pro
+ 	return nhoff;
+ }
+ 
+-static inline bool flow_dissector(struct __sk_buff *skb, struct bpf_flow_keys *flow)
++static inline bool flow_dissector(struct __sk_buff *skb,
++				  struct flow_key_record *flow)
+ {
+ 	__u64 nhoff = ETH_HLEN;
+ 	__u64 ip_proto;
+@@ -198,7 +199,7 @@ struct bpf_map_def SEC("maps") hash_map = {
+ SEC("socket2")
+ int bpf_prog2(struct __sk_buff *skb)
+ {
+-	struct bpf_flow_keys flow = {};
++	struct flow_key_record flow = {};
+ 	struct pair *value;
+ 	u32 key;
+ 
+diff --git a/samples/bpf/sockex3_kern.c b/samples/bpf/sockex3_kern.c
+index 95907f8d2b17..c527b57d3ec8 100644
+--- a/samples/bpf/sockex3_kern.c
++++ b/samples/bpf/sockex3_kern.c
+@@ -61,7 +61,7 @@ struct vlan_hdr {
+ 	__be16 h_vlan_encapsulated_proto;
+ };
+ 
+-struct bpf_flow_keys {
++struct flow_key_record {
+ 	__be32 src;
+ 	__be32 dst;
+ 	union {
+@@ -88,7 +88,7 @@ static inline __u32 ipv6_addr_hash(struct __sk_buff *ctx, __u64 off)
+ }
+ 
+ struct globals {
+-	struct bpf_flow_keys flow;
++	struct flow_key_record flow;
+ };
+ 
+ struct bpf_map_def SEC("maps") percpu_map = {
+@@ -114,14 +114,14 @@ struct pair {
+ 
+ struct bpf_map_def SEC("maps") hash_map = {
+ 	.type = BPF_MAP_TYPE_HASH,
+-	.key_size = sizeof(struct bpf_flow_keys),
++	.key_size = sizeof(struct flow_key_record),
+ 	.value_size = sizeof(struct pair),
+ 	.max_entries = 1024,
+ };
+ 
+ static void update_stats(struct __sk_buff *skb, struct globals *g)
+ {
+-	struct bpf_flow_keys key = g->flow;
++	struct flow_key_record key = g->flow;
+ 	struct pair *value;
+ 
+ 	value = bpf_map_lookup_elem(&hash_map, &key);
+diff --git a/samples/bpf/sockex3_user.c b/samples/bpf/sockex3_user.c
+index 5ba3ae9d180b..9d02e0404719 100644
+--- a/samples/bpf/sockex3_user.c
++++ b/samples/bpf/sockex3_user.c
+@@ -13,7 +13,7 @@
+ #define PARSE_IP_PROG_FD (prog_fd[0])
+ #define PROG_ARRAY_FD (map_fd[0])
+ 
+-struct bpf_flow_keys {
++struct flow_key_record {
+ 	__be32 src;
+ 	__be32 dst;
+ 	union {
+@@ -64,7 +64,7 @@ int main(int argc, char **argv)
+ 	(void) f;
+ 
+ 	for (i = 0; i < 5; i++) {
+-		struct bpf_flow_keys key = {}, next_key;
++		struct flow_key_record key = {}, next_key;
+ 		struct pair value;
+ 
+ 		sleep(1);
+diff --git a/samples/bpf/test_current_task_under_cgroup_user.c b/samples/bpf/test_current_task_under_cgroup_user.c
+index 4be4874ca2bc..2259f997a26c 100644
+--- a/samples/bpf/test_current_task_under_cgroup_user.c
++++ b/samples/bpf/test_current_task_under_cgroup_user.c
+@@ -11,7 +11,6 @@
+ #include <unistd.h>
+ #include <bpf/bpf.h>
+ #include "bpf_load.h"
+-#include <linux/bpf.h>
+ #include "cgroup_helpers.h"
+ 
+ #define CGROUP_PATH		"/my-cgroup"
+diff --git a/tools/bpf/bpftool/Documentation/bpftool.rst b/tools/bpf/bpftool/Documentation/bpftool.rst
+index b6f5d560460d..8dda77daeda9 100644
+--- a/tools/bpf/bpftool/Documentation/bpftool.rst
++++ b/tools/bpf/bpftool/Documentation/bpftool.rst
+@@ -16,7 +16,7 @@ SYNOPSIS
+ 
+ 	**bpftool** **version**
+ 
+-	*OBJECT* := { **map** | **program** | **cgroup** | **perf** }
++	*OBJECT* := { **map** | **program** | **cgroup** | **perf** | **net** }
+ 
+ 	*OPTIONS* := { { **-V** | **--version** } | { **-h** | **--help** }
+ 	| { **-j** | **--json** } [{ **-p** | **--pretty** }] }
+@@ -32,6 +32,8 @@ SYNOPSIS
+ 
+ 	*PERF-COMMANDS* := { **show** | **list** | **help** }
+ 
++	*NET-COMMANDS* := { **show** | **list** | **help** }
++
+ DESCRIPTION
+ ===========
+ 	*bpftool* allows for inspection and simple modification of BPF objects
+@@ -58,4 +60,4 @@ OPTIONS
+ SEE ALSO
+ ========
+ 	**bpftool-map**\ (8), **bpftool-prog**\ (8), **bpftool-cgroup**\ (8)
+-        **bpftool-perf**\ (8)
++        **bpftool-perf**\ (8), **bpftool-net**\ (8)
+diff --git a/tools/bpf/bpftool/bash-completion/bpftool b/tools/bpf/bpftool/bash-completion/bpftool
+index 598066c40191..df1060b852c1 100644
+--- a/tools/bpf/bpftool/bash-completion/bpftool
++++ b/tools/bpf/bpftool/bash-completion/bpftool
+@@ -494,10 +494,10 @@ _bpftool()
+                     _filedir
+                     return 0
+                     ;;
+-		tree)
+-		    _filedir
+-		    return 0
+-		    ;;
++                tree)
++                    _filedir
++                    return 0
++                    ;;
+                 attach|detach)
+                     local ATTACH_TYPES='ingress egress sock_create sock_ops \
+                         device bind4 bind6 post_bind4 post_bind6 connect4 \
+@@ -552,6 +552,15 @@ _bpftool()
+                     ;;
+             esac
+             ;;
++        net)
++            case $command in
++                *)
++                    [[ $prev == $object ]] && \
++                        COMPREPLY=( $( compgen -W 'help \
++                            show list' -- "$cur" ) )
++                    ;;
++            esac
++            ;;
+     esac
+ } &&
+ complete -F _bpftool bpftool
+diff --git a/tools/bpf/bpftool/main.c b/tools/bpf/bpftool/main.c
+index d15a62be6cf0..79dc3f193547 100644
+--- a/tools/bpf/bpftool/main.c
++++ b/tools/bpf/bpftool/main.c
+@@ -85,7 +85,7 @@ static int do_help(int argc, char **argv)
+ 		"       %s batch file FILE\n"
+ 		"       %s version\n"
+ 		"\n"
+-		"       OBJECT := { prog | map | cgroup | perf }\n"
++		"       OBJECT := { prog | map | cgroup | perf | net }\n"
+ 		"       " HELP_SPEC_OPTIONS "\n"
+ 		"",
+ 		bin_name, bin_name, bin_name);
+@@ -215,6 +215,7 @@ static const struct cmd cmds[] = {
+ 	{ "map",	do_map },
+ 	{ "cgroup",	do_cgroup },
+ 	{ "perf",	do_perf },
++	{ "net",	do_net },
+ 	{ "version",	do_version },
+ 	{ 0 }
+ };
+diff --git a/tools/bpf/bpftool/main.h b/tools/bpf/bpftool/main.h
+index 238e734d75b3..40492cdc4e53 100644
+--- a/tools/bpf/bpftool/main.h
++++ b/tools/bpf/bpftool/main.h
+@@ -136,6 +136,7 @@ int do_map(int argc, char **arg);
+ int do_event_pipe(int argc, char **argv);
+ int do_cgroup(int argc, char **arg);
+ int do_perf(int argc, char **arg);
++int do_net(int argc, char **arg);
+ 
+ int prog_parse_fd(int *argc, char ***argv);
+ int map_parse_fd(int *argc, char ***argv);
+@@ -165,4 +166,11 @@ struct btf_dumper {
+  */
+ int btf_dumper_type(const struct btf_dumper *d, __u32 type_id,
+ 		    const void *data);
++
++struct nlattr;
++struct ifinfomsg;
++struct tcmsg;
++int do_xdp_dump(struct ifinfomsg *ifinfo, struct nlattr **tb);
++int do_filter_dump(struct tcmsg *ifinfo, struct nlattr **tb, const char *kind,
++		   const char *devname, int ifindex);
+ #endif
+diff --git a/tools/bpf/bpftool/map.c b/tools/bpf/bpftool/map.c
+index 9c55077ca5dd..e22fbe8b975f 100644
+--- a/tools/bpf/bpftool/map.c
++++ b/tools/bpf/bpftool/map.c
+@@ -71,6 +71,7 @@ static const char * const map_type_name[] = {
+ 	[BPF_MAP_TYPE_XSKMAP]           = "xskmap",
+ 	[BPF_MAP_TYPE_SOCKHASH]		= "sockhash",
+ 	[BPF_MAP_TYPE_CGROUP_STORAGE]	= "cgroup_storage",
++	[BPF_MAP_TYPE_REUSEPORT_SOCKARRAY] = "reuseport_sockarray",
+ };
+ 
+ static bool map_is_per_cpu(__u32 type)
+@@ -673,12 +674,6 @@ static int do_dump(int argc, char **argv)
+ 	if (fd < 0)
+ 		return -1;
+ 
+-	if (map_is_map_of_maps(info.type) || map_is_map_of_progs(info.type)) {
+-		p_err("Dumping maps of maps and program maps not supported");
+-		close(fd);
+-		return -1;
+-	}
+-
+ 	key = malloc(info.key_size);
+ 	value = alloc_value(&info);
+ 	if (!key || !value) {
+@@ -732,7 +727,9 @@ static int do_dump(int argc, char **argv)
+ 				} else {
+ 					print_entry_plain(&info, key, value);
+ 				}
+-		} else {
++			num_elems++;
++		} else if (!map_is_map_of_maps(info.type) &&
++			   !map_is_map_of_progs(info.type)) {
+ 			if (json_output) {
+ 				jsonw_name(json_wtr, "key");
+ 				print_hex_data_json(key, info.key_size);
+@@ -749,7 +746,6 @@ static int do_dump(int argc, char **argv)
+ 		}
+ 
+ 		prev_key = key;
+-		num_elems++;
+ 	}
+ 
+ 	if (json_output)
+diff --git a/tools/bpf/bpftool/prog.c b/tools/bpf/bpftool/prog.c
+index dce960d22106..b1cd3bc8db70 100644
+--- a/tools/bpf/bpftool/prog.c
++++ b/tools/bpf/bpftool/prog.c
+@@ -74,6 +74,7 @@ static const char * const prog_type_name[] = {
+ 	[BPF_PROG_TYPE_RAW_TRACEPOINT]	= "raw_tracepoint",
+ 	[BPF_PROG_TYPE_CGROUP_SOCK_ADDR] = "cgroup_sock_addr",
+ 	[BPF_PROG_TYPE_LIRC_MODE2]	= "lirc_mode2",
++	[BPF_PROG_TYPE_FLOW_DISSECTOR]	= "flow_dissector",
+ };
+ 
+ static void print_boot_time(__u64 nsecs, char *buf, unsigned int size)
+diff --git a/tools/include/uapi/linux/bpf.h b/tools/include/uapi/linux/bpf.h
+index 66917a4eba27..aa5ccd2385ed 100644
+--- a/tools/include/uapi/linux/bpf.h
++++ b/tools/include/uapi/linux/bpf.h
+@@ -152,6 +152,7 @@ enum bpf_prog_type {
+ 	BPF_PROG_TYPE_LWT_SEG6LOCAL,
+ 	BPF_PROG_TYPE_LIRC_MODE2,
+ 	BPF_PROG_TYPE_SK_REUSEPORT,
++	BPF_PROG_TYPE_FLOW_DISSECTOR,
+ };
+ 
+ enum bpf_attach_type {
+@@ -172,6 +173,7 @@ enum bpf_attach_type {
+ 	BPF_CGROUP_UDP4_SENDMSG,
+ 	BPF_CGROUP_UDP6_SENDMSG,
+ 	BPF_LIRC_MODE2,
++	BPF_FLOW_DISSECTOR,
+ 	__MAX_BPF_ATTACH_TYPE
+ };
+ 
+@@ -2333,6 +2335,7 @@ struct __sk_buff {
+ 	/* ... here. */
+ 
+ 	__u32 data_meta;
++	struct bpf_flow_keys *flow_keys;
+ };
+ 
+ struct bpf_tunnel_key {
+@@ -2778,4 +2781,27 @@ enum bpf_task_fd_type {
+ 	BPF_FD_TYPE_URETPROBE,		/* filename + offset */
+ };
+ 
++struct bpf_flow_keys {
++	__u16	nhoff;
++	__u16	thoff;
++	__u16	addr_proto;			/* ETH_P_* of valid addrs */
++	__u8	is_frag;
++	__u8	is_first_frag;
++	__u8	is_encap;
++	__u8	ip_proto;
++	__be16	n_proto;
++	__be16	sport;
++	__be16	dport;
++	union {
++		struct {
++			__be32	ipv4_src;
++			__be32	ipv4_dst;
++		};
++		struct {
++			__u32	ipv6_src[4];	/* in6_addr; network order */
++			__u32	ipv6_dst[4];	/* in6_addr; network order */
++		};
++	};
++};
++
+ #endif /* _UAPI__LINUX_BPF_H__ */
+diff --git a/tools/lib/bpf/Build b/tools/lib/bpf/Build
+index 6eb9bacd1948..7bc31c905018 100644
+--- a/tools/lib/bpf/Build
++++ b/tools/lib/bpf/Build
+@@ -1 +1 @@
+-libbpf-y := libbpf.o bpf.o nlattr.o btf.o libbpf_errno.o str_error.o
++libbpf-y := libbpf.o bpf.o nlattr.o btf.o libbpf_errno.o str_error.o netlink.o
+diff --git a/tools/lib/bpf/bpf.c b/tools/lib/bpf/bpf.c
+index 60aa4ca8b2c5..3878a26a2071 100644
+--- a/tools/lib/bpf/bpf.c
++++ b/tools/lib/bpf/bpf.c
+@@ -28,16 +28,8 @@
+ #include <linux/bpf.h>
+ #include "bpf.h"
+ #include "libbpf.h"
+-#include "nlattr.h"
+-#include <linux/rtnetlink.h>
+-#include <linux/if_link.h>
+-#include <sys/socket.h>
+ #include <errno.h>
+ 
+-#ifndef SOL_NETLINK
+-#define SOL_NETLINK 270
+-#endif
+-
+ /*
+  * When building perf, unistd.h is overridden. __NR_bpf is
+  * required to be defined explicitly.
+@@ -499,127 +491,6 @@ int bpf_raw_tracepoint_open(const char *name, int prog_fd)
+ 	return sys_bpf(BPF_RAW_TRACEPOINT_OPEN, &attr, sizeof(attr));
+ }
+ 
+-int bpf_set_link_xdp_fd(int ifindex, int fd, __u32 flags)
+-{
+-	struct sockaddr_nl sa;
+-	int sock, seq = 0, len, ret = -1;
+-	char buf[4096];
+-	struct nlattr *nla, *nla_xdp;
+-	struct {
+-		struct nlmsghdr  nh;
+-		struct ifinfomsg ifinfo;
+-		char             attrbuf[64];
+-	} req;
+-	struct nlmsghdr *nh;
+-	struct nlmsgerr *err;
+-	socklen_t addrlen;
+-	int one = 1;
+-
+-	memset(&sa, 0, sizeof(sa));
+-	sa.nl_family = AF_NETLINK;
+-
+-	sock = socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE);
+-	if (sock < 0) {
+-		return -errno;
+-	}
+-
+-	if (setsockopt(sock, SOL_NETLINK, NETLINK_EXT_ACK,
+-		       &one, sizeof(one)) < 0) {
+-		fprintf(stderr, "Netlink error reporting not supported\n");
+-	}
+-
+-	if (bind(sock, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
+-		ret = -errno;
+-		goto cleanup;
+-	}
+-
+-	addrlen = sizeof(sa);
+-	if (getsockname(sock, (struct sockaddr *)&sa, &addrlen) < 0) {
+-		ret = -errno;
+-		goto cleanup;
+-	}
+-
+-	if (addrlen != sizeof(sa)) {
+-		ret = -LIBBPF_ERRNO__INTERNAL;
+-		goto cleanup;
+-	}
+-
+-	memset(&req, 0, sizeof(req));
+-	req.nh.nlmsg_len = NLMSG_LENGTH(sizeof(struct ifinfomsg));
+-	req.nh.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+-	req.nh.nlmsg_type = RTM_SETLINK;
+-	req.nh.nlmsg_pid = 0;
+-	req.nh.nlmsg_seq = ++seq;
+-	req.ifinfo.ifi_family = AF_UNSPEC;
+-	req.ifinfo.ifi_index = ifindex;
+-
+-	/* started nested attribute for XDP */
+-	nla = (struct nlattr *)(((char *)&req)
+-				+ NLMSG_ALIGN(req.nh.nlmsg_len));
+-	nla->nla_type = NLA_F_NESTED | IFLA_XDP;
+-	nla->nla_len = NLA_HDRLEN;
+-
+-	/* add XDP fd */
+-	nla_xdp = (struct nlattr *)((char *)nla + nla->nla_len);
+-	nla_xdp->nla_type = IFLA_XDP_FD;
+-	nla_xdp->nla_len = NLA_HDRLEN + sizeof(int);
+-	memcpy((char *)nla_xdp + NLA_HDRLEN, &fd, sizeof(fd));
+-	nla->nla_len += nla_xdp->nla_len;
+-
+-	/* if user passed in any flags, add those too */
+-	if (flags) {
+-		nla_xdp = (struct nlattr *)((char *)nla + nla->nla_len);
+-		nla_xdp->nla_type = IFLA_XDP_FLAGS;
+-		nla_xdp->nla_len = NLA_HDRLEN + sizeof(flags);
+-		memcpy((char *)nla_xdp + NLA_HDRLEN, &flags, sizeof(flags));
+-		nla->nla_len += nla_xdp->nla_len;
+-	}
+-
+-	req.nh.nlmsg_len += NLA_ALIGN(nla->nla_len);
+-
+-	if (send(sock, &req, req.nh.nlmsg_len, 0) < 0) {
+-		ret = -errno;
+-		goto cleanup;
+-	}
+-
+-	len = recv(sock, buf, sizeof(buf), 0);
+-	if (len < 0) {
+-		ret = -errno;
+-		goto cleanup;
+-	}
+-
+-	for (nh = (struct nlmsghdr *)buf; NLMSG_OK(nh, len);
+-	     nh = NLMSG_NEXT(nh, len)) {
+-		if (nh->nlmsg_pid != sa.nl_pid) {
+-			ret = -LIBBPF_ERRNO__WRNGPID;
+-			goto cleanup;
+-		}
+-		if (nh->nlmsg_seq != seq) {
+-			ret = -LIBBPF_ERRNO__INVSEQ;
+-			goto cleanup;
+-		}
+-		switch (nh->nlmsg_type) {
+-		case NLMSG_ERROR:
+-			err = (struct nlmsgerr *)NLMSG_DATA(nh);
+-			if (!err->error)
+-				continue;
+-			ret = err->error;
+-			nla_dump_errormsg(nh);
+-			goto cleanup;
+-		case NLMSG_DONE:
+-			break;
+-		default:
+-			break;
+-		}
+-	}
+-
+-	ret = 0;
+-
+-cleanup:
+-	close(sock);
+-	return ret;
+-}
+-
+ int bpf_load_btf(void *btf, __u32 btf_size, char *log_buf, __u32 log_buf_size,
+ 		 bool do_log)
+ {
+diff --git a/tools/lib/bpf/libbpf.c b/tools/lib/bpf/libbpf.c
+index bdb94939fd60..4f8d43ae20d2 100644
+--- a/tools/lib/bpf/libbpf.c
++++ b/tools/lib/bpf/libbpf.c
+@@ -1502,6 +1502,7 @@ static bool bpf_prog_type__needs_kver(enum bpf_prog_type type)
+ 	case BPF_PROG_TYPE_CGROUP_SOCK_ADDR:
+ 	case BPF_PROG_TYPE_LIRC_MODE2:
+ 	case BPF_PROG_TYPE_SK_REUSEPORT:
++	case BPF_PROG_TYPE_FLOW_DISSECTOR:
+ 		return false;
+ 	case BPF_PROG_TYPE_UNSPEC:
+ 	case BPF_PROG_TYPE_KPROBE:
+@@ -2121,6 +2122,7 @@ static const struct {
+ 	BPF_PROG_SEC("sk_skb",		BPF_PROG_TYPE_SK_SKB),
+ 	BPF_PROG_SEC("sk_msg",		BPF_PROG_TYPE_SK_MSG),
+ 	BPF_PROG_SEC("lirc_mode2",	BPF_PROG_TYPE_LIRC_MODE2),
++	BPF_PROG_SEC("flow_dissector",	BPF_PROG_TYPE_FLOW_DISSECTOR),
+ 	BPF_SA_PROG_SEC("cgroup/bind4",	BPF_CGROUP_INET4_BIND),
+ 	BPF_SA_PROG_SEC("cgroup/bind6",	BPF_CGROUP_INET6_BIND),
+ 	BPF_SA_PROG_SEC("cgroup/connect4", BPF_CGROUP_INET4_CONNECT),
+@@ -2336,7 +2338,7 @@ int bpf_prog_load_xattr(const struct bpf_prog_load_attr *attr,
+ 		bpf_program__set_expected_attach_type(prog,
+ 						      expected_attach_type);
+ 
+-		if (!bpf_program__is_function_storage(prog, obj) && !first_prog)
++		if (!first_prog)
+ 			first_prog = prog;
+ 	}
+ 
+diff --git a/tools/lib/bpf/libbpf.h b/tools/lib/bpf/libbpf.h
+index 96c55fac54c3..e3b00e23e181 100644
+--- a/tools/lib/bpf/libbpf.h
++++ b/tools/lib/bpf/libbpf.h
+@@ -46,6 +46,7 @@ enum libbpf_errno {
+ 	LIBBPF_ERRNO__PROGTYPE,	/* Kernel doesn't support this program type */
+ 	LIBBPF_ERRNO__WRNGPID,	/* Wrong pid in netlink message */
+ 	LIBBPF_ERRNO__INVSEQ,	/* Invalid netlink sequence */
++	LIBBPF_ERRNO__NLPARSE,	/* netlink parsing error */
+ 	__LIBBPF_ERRNO__END,
+ };
+ 
+@@ -297,4 +298,19 @@ int bpf_perf_event_read_simple(void *mem, unsigned long size,
+ 			       unsigned long page_size,
+ 			       void **buf, size_t *buf_len,
+ 			       bpf_perf_event_print_t fn, void *priv);
++
++struct nlmsghdr;
++struct nlattr;
++typedef int (*dump_nlmsg_t)(void *cookie, void *msg, struct nlattr **tb);
++typedef int (*__dump_nlmsg_t)(struct nlmsghdr *nlmsg, dump_nlmsg_t,
++			      void *cookie);
++int bpf_netlink_open(unsigned int *nl_pid);
++int nl_get_link(int sock, unsigned int nl_pid, dump_nlmsg_t dump_link_nlmsg,
++		void *cookie);
++int nl_get_class(int sock, unsigned int nl_pid, int ifindex,
++		 dump_nlmsg_t dump_class_nlmsg, void *cookie);
++int nl_get_qdisc(int sock, unsigned int nl_pid, int ifindex,
++		 dump_nlmsg_t dump_qdisc_nlmsg, void *cookie);
++int nl_get_filter(int sock, unsigned int nl_pid, int ifindex, int handle,
++		  dump_nlmsg_t dump_filter_nlmsg, void *cookie);
+ #endif
+diff --git a/tools/lib/bpf/libbpf_errno.c b/tools/lib/bpf/libbpf_errno.c
+index d9ba851bd7f9..2464ade3b326 100644
+--- a/tools/lib/bpf/libbpf_errno.c
++++ b/tools/lib/bpf/libbpf_errno.c
+@@ -42,6 +42,7 @@ static const char *libbpf_strerror_table[NR_ERRNO] = {
+ 	[ERRCODE_OFFSET(PROGTYPE)]	= "Kernel doesn't support this program type",
+ 	[ERRCODE_OFFSET(WRNGPID)]	= "Wrong pid in netlink message",
+ 	[ERRCODE_OFFSET(INVSEQ)]	= "Invalid netlink sequence",
++	[ERRCODE_OFFSET(NLPARSE)]	= "Incorrect netlink message parsing",
+ };
+ 
+ int libbpf_strerror(int err, char *buf, size_t size)
+diff --git a/tools/lib/bpf/nlattr.c b/tools/lib/bpf/nlattr.c
+index 4719434278b2..49f514119bdb 100644
+--- a/tools/lib/bpf/nlattr.c
++++ b/tools/lib/bpf/nlattr.c
+@@ -26,11 +26,6 @@ static uint16_t nla_attr_minlen[NLA_TYPE_MAX+1] = {
+ 	[NLA_FLAG]	= 0,
+ };
+ 
+-static int nla_len(const struct nlattr *nla)
+-{
+-	return nla->nla_len - NLA_HDRLEN;
+-}
+-
+ static struct nlattr *nla_next(const struct nlattr *nla, int *remaining)
+ {
+ 	int totlen = NLA_ALIGN(nla->nla_len);
+@@ -46,11 +41,6 @@ static int nla_ok(const struct nlattr *nla, int remaining)
+ 	       nla->nla_len <= remaining;
+ }
+ 
+-static void *nla_data(const struct nlattr *nla)
+-{
+-	return (char *) nla + NLA_HDRLEN;
+-}
+-
+ static int nla_type(const struct nlattr *nla)
+ {
+ 	return nla->nla_type & NLA_TYPE_MASK;
+@@ -114,8 +104,8 @@ static inline int nlmsg_len(const struct nlmsghdr *nlh)
+  * @see nla_validate
+  * @return 0 on success or a negative error code.
+  */
+-static int nla_parse(struct nlattr *tb[], int maxtype, struct nlattr *head, int len,
+-		     struct nla_policy *policy)
++int nla_parse(struct nlattr *tb[], int maxtype, struct nlattr *head, int len,
++	      struct nla_policy *policy)
+ {
+ 	struct nlattr *nla;
+ 	int rem, err;
+@@ -146,6 +136,25 @@ static int nla_parse(struct nlattr *tb[], int maxtype, struct nlattr *head, int
+ 	return err;
+ }
+ 
++/**
++ * Create attribute index based on nested attribute
++ * @arg tb              Index array to be filled (maxtype+1 elements).
++ * @arg maxtype         Maximum attribute type expected and accepted.
++ * @arg nla             Nested Attribute.
++ * @arg policy          Attribute validation policy.
++ *
++ * Feeds the stream of attributes nested into the specified attribute
++ * to nla_parse().
++ *
++ * @see nla_parse
++ * @return 0 on success or a negative error code.
++ */
++int nla_parse_nested(struct nlattr *tb[], int maxtype, struct nlattr *nla,
++		     struct nla_policy *policy)
++{
++	return nla_parse(tb, maxtype, nla_data(nla), nla_len(nla), policy);
++}
++
+ /* dump netlink extended ack error message */
+ int nla_dump_errormsg(struct nlmsghdr *nlh)
+ {
+diff --git a/tools/lib/bpf/nlattr.h b/tools/lib/bpf/nlattr.h
+index 931a71f68f93..a6e2396bce7c 100644
+--- a/tools/lib/bpf/nlattr.h
++++ b/tools/lib/bpf/nlattr.h
+@@ -67,6 +67,44 @@ struct nla_policy {
+ 	     nla_ok(pos, rem); \
+ 	     pos = nla_next(pos, &(rem)))
+ 
++/**
++ * nla_data - head of payload
++ * @nla: netlink attribute
++ */
++static inline void *nla_data(const struct nlattr *nla)
++{
++	return (char *) nla + NLA_HDRLEN;
++}
++
++static inline uint8_t nla_getattr_u8(const struct nlattr *nla)
++{
++	return *(uint8_t *)nla_data(nla);
++}
++
++static inline uint32_t nla_getattr_u32(const struct nlattr *nla)
++{
++	return *(uint32_t *)nla_data(nla);
++}
++
++static inline const char *nla_getattr_str(const struct nlattr *nla)
++{
++	return (const char *)nla_data(nla);
++}
++
++/**
++ * nla_len - length of payload
++ * @nla: netlink attribute
++ */
++static inline int nla_len(const struct nlattr *nla)
++{
++	return nla->nla_len - NLA_HDRLEN;
++}
++
++int nla_parse(struct nlattr *tb[], int maxtype, struct nlattr *head, int len,
++	      struct nla_policy *policy);
++int nla_parse_nested(struct nlattr *tb[], int maxtype, struct nlattr *nla,
++		     struct nla_policy *policy);
++
+ int nla_dump_errormsg(struct nlmsghdr *nlh);
+ 
+ #endif /* __NLATTR_H */
+diff --git a/tools/testing/selftests/bpf/.gitignore b/tools/testing/selftests/bpf/.gitignore
+index 49938d72cf63..8a60c9b9892d 100644
+--- a/tools/testing/selftests/bpf/.gitignore
++++ b/tools/testing/selftests/bpf/.gitignore
+@@ -19,3 +19,9 @@ test_btf
+ test_sockmap
+ test_lirc_mode2_user
+ get_cgroup_id_user
++test_skb_cgroup_id_user
++test_socket_cookie
++test_cgroup_storage
++test_select_reuseport
++test_flow_dissector
++flow_dissector_load
+diff --git a/tools/testing/selftests/bpf/Makefile b/tools/testing/selftests/bpf/Makefile
+index fff7fb1285fc..fd3851d5c079 100644
+--- a/tools/testing/selftests/bpf/Makefile
++++ b/tools/testing/selftests/bpf/Makefile
+@@ -35,7 +35,7 @@ TEST_GEN_FILES = test_pkt_access.o test_xdp.o test_l4lb.o test_tcp_estats.o test
+ 	test_get_stack_rawtp.o test_sockmap_kern.o test_sockhash_kern.o \
+ 	test_lwt_seg6local.o sendmsg4_prog.o sendmsg6_prog.o test_lirc_mode2_kern.o \
+ 	get_cgroup_id_kern.o socket_cookie_prog.o test_select_reuseport_kern.o \
+-	test_skb_cgroup_id_kern.o
++	test_skb_cgroup_id_kern.o bpf_flow.o
+ 
+ # Order correspond to 'make run_tests' order
+ TEST_PROGS := test_kmod.sh \
+@@ -47,10 +47,12 @@ TEST_PROGS := test_kmod.sh \
+ 	test_tunnel.sh \
+ 	test_lwt_seg6local.sh \
+ 	test_lirc_mode2.sh \
+-	test_skb_cgroup_id.sh
++	test_skb_cgroup_id.sh \
++	test_flow_dissector.sh
+ 
+ # Compile but not part of 'make run_tests'
+-TEST_GEN_PROGS_EXTENDED = test_libbpf_open test_sock_addr test_skb_cgroup_id_user
++TEST_GEN_PROGS_EXTENDED = test_libbpf_open test_sock_addr test_skb_cgroup_id_user \
++	flow_dissector_load test_flow_dissector
+ 
+ include ../lib.mk
+ 
+diff --git a/tools/testing/selftests/bpf/config b/tools/testing/selftests/bpf/config
+index b4994a94968b..3655508f95fd 100644
+--- a/tools/testing/selftests/bpf/config
++++ b/tools/testing/selftests/bpf/config
+@@ -18,3 +18,4 @@ CONFIG_CRYPTO_HMAC=m
+ CONFIG_CRYPTO_SHA256=m
+ CONFIG_VXLAN=y
+ CONFIG_GENEVE=y
++CONFIG_NET_CLS_FLOWER=m
+diff --git a/tools/testing/selftests/bpf/test_progs.c b/tools/testing/selftests/bpf/test_progs.c
+index 0ef68204c84b..63a671803ed6 100644
+--- a/tools/testing/selftests/bpf/test_progs.c
++++ b/tools/testing/selftests/bpf/test_progs.c
+@@ -112,13 +112,13 @@ static void test_pkt_access(void)
+ 
+ 	err = bpf_prog_test_run(prog_fd, 100000, &pkt_v4, sizeof(pkt_v4),
+ 				NULL, NULL, &retval, &duration);
+-	CHECK(err || errno || retval, "ipv4",
++	CHECK(err || retval, "ipv4",
+ 	      "err %d errno %d retval %d duration %d\n",
+ 	      err, errno, retval, duration);
+ 
+ 	err = bpf_prog_test_run(prog_fd, 100000, &pkt_v6, sizeof(pkt_v6),
+ 				NULL, NULL, &retval, &duration);
+-	CHECK(err || errno || retval, "ipv6",
++	CHECK(err || retval, "ipv6",
+ 	      "err %d errno %d retval %d duration %d\n",
+ 	      err, errno, retval, duration);
+ 	bpf_object__close(obj);
+@@ -153,14 +153,14 @@ static void test_xdp(void)
+ 	err = bpf_prog_test_run(prog_fd, 1, &pkt_v4, sizeof(pkt_v4),
+ 				buf, &size, &retval, &duration);
+ 
+-	CHECK(err || errno || retval != XDP_TX || size != 74 ||
++	CHECK(err || retval != XDP_TX || size != 74 ||
+ 	      iph->protocol != IPPROTO_IPIP, "ipv4",
+ 	      "err %d errno %d retval %d size %d\n",
+ 	      err, errno, retval, size);
+ 
+ 	err = bpf_prog_test_run(prog_fd, 1, &pkt_v6, sizeof(pkt_v6),
+ 				buf, &size, &retval, &duration);
+-	CHECK(err || errno || retval != XDP_TX || size != 114 ||
++	CHECK(err || retval != XDP_TX || size != 114 ||
+ 	      iph6->nexthdr != IPPROTO_IPV6, "ipv6",
+ 	      "err %d errno %d retval %d size %d\n",
+ 	      err, errno, retval, size);
+@@ -185,13 +185,13 @@ static void test_xdp_adjust_tail(void)
+ 	err = bpf_prog_test_run(prog_fd, 1, &pkt_v4, sizeof(pkt_v4),
+ 				buf, &size, &retval, &duration);
+ 
+-	CHECK(err || errno || retval != XDP_DROP,
++	CHECK(err || retval != XDP_DROP,
+ 	      "ipv4", "err %d errno %d retval %d size %d\n",
+ 	      err, errno, retval, size);
+ 
+ 	err = bpf_prog_test_run(prog_fd, 1, &pkt_v6, sizeof(pkt_v6),
+ 				buf, &size, &retval, &duration);
+-	CHECK(err || errno || retval != XDP_TX || size != 54,
++	CHECK(err || retval != XDP_TX || size != 54,
+ 	      "ipv6", "err %d errno %d retval %d size %d\n",
+ 	      err, errno, retval, size);
+ 	bpf_object__close(obj);
+@@ -254,14 +254,14 @@ static void test_l4lb(const char *file)
+ 
+ 	err = bpf_prog_test_run(prog_fd, NUM_ITER, &pkt_v4, sizeof(pkt_v4),
+ 				buf, &size, &retval, &duration);
+-	CHECK(err || errno || retval != 7/*TC_ACT_REDIRECT*/ || size != 54 ||
++	CHECK(err || retval != 7/*TC_ACT_REDIRECT*/ || size != 54 ||
+ 	      *magic != MAGIC_VAL, "ipv4",
+ 	      "err %d errno %d retval %d size %d magic %x\n",
+ 	      err, errno, retval, size, *magic);
+ 
+ 	err = bpf_prog_test_run(prog_fd, NUM_ITER, &pkt_v6, sizeof(pkt_v6),
+ 				buf, &size, &retval, &duration);
+-	CHECK(err || errno || retval != 7/*TC_ACT_REDIRECT*/ || size != 74 ||
++	CHECK(err || retval != 7/*TC_ACT_REDIRECT*/ || size != 74 ||
+ 	      *magic != MAGIC_VAL, "ipv6",
+ 	      "err %d errno %d retval %d size %d magic %x\n",
+ 	      err, errno, retval, size, *magic);
+@@ -343,14 +343,14 @@ static void test_xdp_noinline(void)
+ 
+ 	err = bpf_prog_test_run(prog_fd, NUM_ITER, &pkt_v4, sizeof(pkt_v4),
+ 				buf, &size, &retval, &duration);
+-	CHECK(err || errno || retval != 1 || size != 54 ||
++	CHECK(err || retval != 1 || size != 54 ||
+ 	      *magic != MAGIC_VAL, "ipv4",
+ 	      "err %d errno %d retval %d size %d magic %x\n",
+ 	      err, errno, retval, size, *magic);
+ 
+ 	err = bpf_prog_test_run(prog_fd, NUM_ITER, &pkt_v6, sizeof(pkt_v6),
+ 				buf, &size, &retval, &duration);
+-	CHECK(err || errno || retval != 1 || size != 74 ||
++	CHECK(err || retval != 1 || size != 74 ||
+ 	      *magic != MAGIC_VAL, "ipv6",
+ 	      "err %d errno %d retval %d size %d magic %x\n",
+ 	      err, errno, retval, size, *magic);

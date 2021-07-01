@@ -1,0 +1,16 @@
+commit f0fe970df3838c202ef6c07a4c2b36838ef0a88b
+Author: Jeff Mahoney <jeffm@suse.com>
+Commit: Tyler Hicks <tyhicks@canonical.com>
+
+    ecryptfs: don't allow mmap when the lower fs doesn't support it
+    
+    There are legitimate reasons to disallow mmap on certain files, notably
+    in sysfs or procfs.  We shouldn't emulate mmap support on file systems
+    that don't offer support natively.
+    
+    CVE-2016-1583
+    
+    Signed-off-by: Jeff Mahoney <jeffm@suse.com>
+    Cc: stable@vger.kernel.org
+    [tyhicks: clean up f_op check by using ecryptfs_file_to_lower()]
+    Signed-off-by: Tyler Hicks <tyhicks@canonical.com>

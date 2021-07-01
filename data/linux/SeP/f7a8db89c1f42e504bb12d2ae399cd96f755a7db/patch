@@ -1,0 +1,648 @@
+diff --git a/drivers/isdn/hardware/avm/b1isa.c b/drivers/isdn/hardware/avm/b1isa.c
+index 1e288eeb5e2a..6461a32bc838 100644
+--- a/drivers/isdn/hardware/avm/b1isa.c
++++ b/drivers/isdn/hardware/avm/b1isa.c
+@@ -233,10 +233,8 @@ static void __exit b1isa_exit(void)
+ 	int i;
+ 
+ 	for (i = 0; i < MAX_CARDS; i++) {
+-		if (!io[i])
+-			break;
+-
+-		b1isa_remove(&isa_dev[i]);
++		if (isa_dev[i].resource[0].start)
++			b1isa_remove(&isa_dev[i]);
+ 	}
+ 	unregister_capi_driver(&capi_driver_b1isa);
+ }
+diff --git a/drivers/isdn/hysdn/hysdn_net.c b/drivers/isdn/hysdn/hysdn_net.c
+index cfa8fa5e44ab..3f2a0a20c19b 100644
+--- a/drivers/isdn/hysdn/hysdn_net.c
++++ b/drivers/isdn/hysdn/hysdn_net.c
+@@ -83,12 +83,12 @@ net_open(struct net_device *dev)
+ 
+ 	/* Fill in the MAC-level header (if not already set) */
+ 	if (!card->mac_addr[0]) {
+-		for (i = 0; i < ETH_ALEN - sizeof(unsigned long); i++)
++		for (i = 0; i < ETH_ALEN; i++)
+ 			dev->dev_addr[i] = 0xfc;
+ 		if ((in_dev = dev->ip_ptr) != NULL) {
+ 			struct in_ifaddr *ifa = in_dev->ifa_list;
+ 			if (ifa != NULL)
+-				memcpy(dev->dev_addr + (ETH_ALEN - sizeof(unsigned long)), &ifa->ifa_local, sizeof(unsigned long));
++				memcpy(dev->dev_addr + (ETH_ALEN - sizeof(ifa->ifa_local)), &ifa->ifa_local, sizeof(ifa->ifa_local));
+ 		}
+ 	} else
+ 		memcpy(dev->dev_addr, card->mac_addr, ETH_ALEN);
+diff --git a/drivers/net/bnx2.c b/drivers/net/bnx2.c
+index d07e3f148951..a1a3d0e5d2b4 100644
+--- a/drivers/net/bnx2.c
++++ b/drivers/net/bnx2.c
+@@ -3144,6 +3144,28 @@ bnx2_has_work(struct bnx2_napi *bnapi)
+ 	return 0;
+ }
+ 
++static void
++bnx2_chk_missed_msi(struct bnx2 *bp)
++{
++	struct bnx2_napi *bnapi = &bp->bnx2_napi[0];
++	u32 msi_ctrl;
++
++	if (bnx2_has_work(bnapi)) {
++		msi_ctrl = REG_RD(bp, BNX2_PCICFG_MSI_CONTROL);
++		if (!(msi_ctrl & BNX2_PCICFG_MSI_CONTROL_ENABLE))
++			return;
++
++		if (bnapi->last_status_idx == bp->idle_chk_status_idx) {
++			REG_WR(bp, BNX2_PCICFG_MSI_CONTROL, msi_ctrl &
++			       ~BNX2_PCICFG_MSI_CONTROL_ENABLE);
++			REG_WR(bp, BNX2_PCICFG_MSI_CONTROL, msi_ctrl);
++			bnx2_msi(bp->irq_tbl[0].vector, bnapi);
++		}
++	}
++
++	bp->idle_chk_status_idx = bnapi->last_status_idx;
++}
++
+ static void bnx2_poll_link(struct bnx2 *bp, struct bnx2_napi *bnapi)
+ {
+ 	struct status_block *sblk = bnapi->status_blk.msi;
+@@ -3218,14 +3240,15 @@ static int bnx2_poll(struct napi_struct *napi, int budget)
+ 
+ 		work_done = bnx2_poll_work(bp, bnapi, work_done, budget);
+ 
+-		if (unlikely(work_done >= budget))
+-			break;
+-
+ 		/* bnapi->last_status_idx is used below to tell the hw how
+ 		 * much work has been processed, so we must read it before
+ 		 * checking for more work.
+ 		 */
+ 		bnapi->last_status_idx = sblk->status_idx;
++
++		if (unlikely(work_done >= budget))
++			break;
++
+ 		rmb();
+ 		if (likely(!bnx2_has_work(bnapi))) {
+ 			netif_rx_complete(bp->dev, napi);
+@@ -4570,6 +4593,8 @@ bnx2_init_chip(struct bnx2 *bp)
+ 	for (i = 0; i < BNX2_MAX_MSIX_VEC; i++)
+ 		bp->bnx2_napi[i].last_status_idx = 0;
+ 
++	bp->idle_chk_status_idx = 0xffff;
++
+ 	bp->rx_mode = BNX2_EMAC_RX_MODE_SORT_MODE;
+ 
+ 	/* Set up how to generate a link change interrupt. */
+@@ -5718,6 +5743,10 @@ bnx2_timer(unsigned long data)
+ 	if (atomic_read(&bp->intr_sem) != 0)
+ 		goto bnx2_restart_timer;
+ 
++	if ((bp->flags & (BNX2_FLAG_USING_MSI | BNX2_FLAG_ONE_SHOT_MSI)) ==
++	     BNX2_FLAG_USING_MSI)
++		bnx2_chk_missed_msi(bp);
++
+ 	bnx2_send_heart_beat(bp);
+ 
+ 	bp->stats_blk->stat_FwRxDrop =
+diff --git a/drivers/net/bnx2.h b/drivers/net/bnx2.h
+index 617d95340160..0b032c3c7b61 100644
+--- a/drivers/net/bnx2.h
++++ b/drivers/net/bnx2.h
+@@ -378,6 +378,9 @@ struct l2_fhdr {
+  *  pci_config_l definition
+  *  offset: 0000
+  */
++#define BNX2_PCICFG_MSI_CONTROL				0x00000058
++#define BNX2_PCICFG_MSI_CONTROL_ENABLE			 (1L<<16)
++
+ #define BNX2_PCICFG_MISC_CONFIG				0x00000068
+ #define BNX2_PCICFG_MISC_CONFIG_TARGET_BYTE_SWAP	 (1L<<2)
+ #define BNX2_PCICFG_MISC_CONFIG_TARGET_MB_WORD_SWAP	 (1L<<3)
+@@ -6863,6 +6866,9 @@ struct bnx2 {
+ 
+ 	u8			num_tx_rings;
+ 	u8			num_rx_rings;
++
++	u32			idle_chk_status_idx;
++
+ };
+ 
+ #define REG_RD(bp, offset)					\
+diff --git a/drivers/net/enc28j60.c b/drivers/net/enc28j60.c
+index e1b441effbbe..c414554ac321 100644
+--- a/drivers/net/enc28j60.c
++++ b/drivers/net/enc28j60.c
+@@ -568,6 +568,17 @@ static u16 erxrdpt_workaround(u16 next_packet_ptr, u16 start, u16 end)
+ 	return erxrdpt;
+ }
+ 
++/*
++ * Calculate wrap around when reading beyond the end of the RX buffer
++ */
++static u16 rx_packet_start(u16 ptr)
++{
++	if (ptr + RSV_SIZE > RXEND_INIT)
++		return (ptr + RSV_SIZE) - (RXEND_INIT - RXSTART_INIT + 1);
++	else
++		return ptr + RSV_SIZE;
++}
++
+ static void nolock_rxfifo_init(struct enc28j60_net *priv, u16 start, u16 end)
+ {
+ 	u16 erxrdpt;
+@@ -938,8 +949,9 @@ static void enc28j60_hw_rx(struct net_device *ndev)
+ 			skb->dev = ndev;
+ 			skb_reserve(skb, NET_IP_ALIGN);
+ 			/* copy the packet from the receive buffer */
+-			enc28j60_mem_read(priv, priv->next_pk_ptr + sizeof(rsv),
+-					len, skb_put(skb, len));
++			enc28j60_mem_read(priv,
++				rx_packet_start(priv->next_pk_ptr),
++				len, skb_put(skb, len));
+ 			if (netif_msg_pktdata(priv))
+ 				dump_packet(__func__, skb->len, skb->data);
+ 			skb->protocol = eth_type_trans(skb, ndev);
+diff --git a/drivers/net/netx-eth.c b/drivers/net/netx-eth.c
+index b9bed82e1d21..b289a0a2b945 100644
+--- a/drivers/net/netx-eth.c
++++ b/drivers/net/netx-eth.c
+@@ -401,6 +401,8 @@ static int netx_eth_drv_probe(struct platform_device *pdev)
+ 	priv->xmac_base = priv->xc->xmac_base;
+ 	priv->sram_base = priv->xc->sram_base;
+ 
++	spin_lock_init(&priv->lock);
++
+ 	ret = pfifo_request(PFIFO_MASK(priv->id));
+ 	if (ret) {
+ 		printk("unable to request PFIFO\n");
+diff --git a/drivers/net/wireless/ipw2200.c b/drivers/net/wireless/ipw2200.c
+index dcce3542d5a7..7a9f901d4ff6 100644
+--- a/drivers/net/wireless/ipw2200.c
++++ b/drivers/net/wireless/ipw2200.c
+@@ -3897,6 +3897,7 @@ static int ipw_disassociate(void *data)
+ 	if (!(priv->status & (STATUS_ASSOCIATED | STATUS_ASSOCIATING)))
+ 		return 0;
+ 	ipw_send_disassociate(data, 0);
++	netif_carrier_off(priv->net_dev);
+ 	return 1;
+ }
+ 
+@@ -10190,6 +10191,9 @@ static int ipw_tx_skb(struct ipw_priv *priv, struct ieee80211_txb *txb,
+ 	u16 remaining_bytes;
+ 	int fc;
+ 
++	if (!(priv->status & STATUS_ASSOCIATED))
++		goto drop;
++
+ 	hdr_len = ieee80211_get_hdrlen(le16_to_cpu(hdr->frame_ctl));
+ 	switch (priv->ieee->iw_mode) {
+ 	case IW_MODE_ADHOC:
+diff --git a/drivers/net/wireless/iwlwifi/iwl-core.c b/drivers/net/wireless/iwlwifi/iwl-core.c
+index 4c312c55f90c..01a845851338 100644
+--- a/drivers/net/wireless/iwlwifi/iwl-core.c
++++ b/drivers/net/wireless/iwlwifi/iwl-core.c
+@@ -290,6 +290,9 @@ void iwl_clear_stations_table(struct iwl_priv *priv)
+ 	priv->num_stations = 0;
+ 	memset(priv->stations, 0, sizeof(priv->stations));
+ 
++	/* clean ucode key table bit map */
++	priv->ucode_key_table = 0;
++
+ 	spin_unlock_irqrestore(&priv->sta_lock, flags);
+ }
+ EXPORT_SYMBOL(iwl_clear_stations_table);
+diff --git a/drivers/net/wireless/iwlwifi/iwl-sta.c b/drivers/net/wireless/iwlwifi/iwl-sta.c
+index 61797f3f8d5c..26f7084d3011 100644
+--- a/drivers/net/wireless/iwlwifi/iwl-sta.c
++++ b/drivers/net/wireless/iwlwifi/iwl-sta.c
+@@ -475,7 +475,7 @@ static int iwl_get_free_ucode_key_index(struct iwl_priv *priv)
+ 		if (!test_and_set_bit(i, &priv->ucode_key_table))
+ 			return i;
+ 
+-	return -1;
++	return WEP_INVALID_OFFSET;
+ }
+ 
+ int iwl_send_static_wepkey_cmd(struct iwl_priv *priv, u8 send_if_empty)
+@@ -620,6 +620,9 @@ static int iwl_set_wep_dynamic_key_info(struct iwl_priv *priv,
+ 	/* else, we are overriding an existing key => no need to allocated room
+ 	 * in uCode. */
+ 
++	WARN(priv->stations[sta_id].sta.key.key_offset == WEP_INVALID_OFFSET,
++		"no space for new kew");
++
+ 	priv->stations[sta_id].sta.key.key_flags = key_flags;
+ 	priv->stations[sta_id].sta.sta.modify_mask = STA_MODIFY_KEY_MASK;
+ 	priv->stations[sta_id].sta.mode = STA_CONTROL_MODIFY_MSK;
+@@ -637,6 +640,7 @@ static int iwl_set_ccmp_dynamic_key_info(struct iwl_priv *priv,
+ {
+ 	unsigned long flags;
+ 	__le16 key_flags = 0;
++	int ret;
+ 
+ 	key_flags |= (STA_KEY_FLG_CCMP | STA_KEY_FLG_MAP_KEY_MSK);
+ 	key_flags |= cpu_to_le16(keyconf->keyidx << STA_KEY_FLG_KEYID_POS);
+@@ -664,14 +668,18 @@ static int iwl_set_ccmp_dynamic_key_info(struct iwl_priv *priv,
+ 	/* else, we are overriding an existing key => no need to allocated room
+ 	 * in uCode. */
+ 
++	WARN(priv->stations[sta_id].sta.key.key_offset == WEP_INVALID_OFFSET,
++		"no space for new kew");
++
+ 	priv->stations[sta_id].sta.key.key_flags = key_flags;
+ 	priv->stations[sta_id].sta.sta.modify_mask = STA_MODIFY_KEY_MASK;
+ 	priv->stations[sta_id].sta.mode = STA_CONTROL_MODIFY_MSK;
+ 
++	ret = iwl_send_add_sta(priv, &priv->stations[sta_id].sta, CMD_ASYNC);
++
+ 	spin_unlock_irqrestore(&priv->sta_lock, flags);
+ 
+-	IWL_DEBUG_INFO("hwcrypto: modify ucode station key info\n");
+-	return iwl_send_add_sta(priv, &priv->stations[sta_id].sta, CMD_ASYNC);
++	return ret;
+ }
+ 
+ static int iwl_set_tkip_dynamic_key_info(struct iwl_priv *priv,
+@@ -696,6 +704,9 @@ static int iwl_set_tkip_dynamic_key_info(struct iwl_priv *priv,
+ 	/* else, we are overriding an existing key => no need to allocated room
+ 	 * in uCode. */
+ 
++	WARN(priv->stations[sta_id].sta.key.key_offset == WEP_INVALID_OFFSET,
++		"no space for new kew");
++
+ 	/* This copy is acutally not needed: we get the key with each TX */
+ 	memcpy(priv->stations[sta_id].keyinfo.key, keyconf->key, 16);
+ 
+@@ -734,6 +745,13 @@ int iwl_remove_dynamic_key(struct iwl_priv *priv,
+ 		return 0;
+ 	}
+ 
++	if (priv->stations[sta_id].sta.key.key_offset == WEP_INVALID_OFFSET) {
++		IWL_WARNING("Removing wrong key %d 0x%x\n",
++			    keyconf->keyidx, key_flags);
++		spin_unlock_irqrestore(&priv->sta_lock, flags);
++		return 0;
++	}
++
+ 	if (!test_and_clear_bit(priv->stations[sta_id].sta.key.key_offset,
+ 		&priv->ucode_key_table))
+ 		IWL_ERROR("index %d not used in uCode key table.\n",
+diff --git a/drivers/net/wireless/zd1211rw/zd_mac.c b/drivers/net/wireless/zd1211rw/zd_mac.c
+index fe1867b25ff7..cac732f4047f 100644
+--- a/drivers/net/wireless/zd1211rw/zd_mac.c
++++ b/drivers/net/wireless/zd1211rw/zd_mac.c
+@@ -615,7 +615,7 @@ static int filter_ack(struct ieee80211_hw *hw, struct ieee80211_hdr *rx_hdr,
+ 		struct ieee80211_hdr *tx_hdr;
+ 
+ 		tx_hdr = (struct ieee80211_hdr *)skb->data;
+-		if (likely(!compare_ether_addr(tx_hdr->addr2, rx_hdr->addr1)))
++		if (likely(!memcmp(tx_hdr->addr2, rx_hdr->addr1, ETH_ALEN)))
+ 		{
+ 			__skb_unlink(skb, q);
+ 			tx_status(hw, skb, IEEE80211_TX_STAT_ACK, stats->signal, 1);
+diff --git a/include/linux/can/core.h b/include/linux/can/core.h
+index e9ca210ffa5b..f50785ad4781 100644
+--- a/include/linux/can/core.h
++++ b/include/linux/can/core.h
+@@ -19,7 +19,7 @@
+ #include <linux/skbuff.h>
+ #include <linux/netdevice.h>
+ 
+-#define CAN_VERSION "20071116"
++#define CAN_VERSION "20081130"
+ 
+ /* increment this number each time you change some user-space interface */
+ #define CAN_ABI_VERSION "8"
+diff --git a/net/atm/svc.c b/net/atm/svc.c
+index de1e4f2f3a43..8fb54dc870b3 100644
+--- a/net/atm/svc.c
++++ b/net/atm/svc.c
+@@ -293,7 +293,10 @@ static int svc_listen(struct socket *sock,int backlog)
+ 		error = -EINVAL;
+ 		goto out;
+ 	}
+-	vcc_insert_socket(sk);
++	if (test_bit(ATM_VF_LISTEN, &vcc->flags)) {
++		error = -EADDRINUSE;
++		goto out;
++        }
+ 	set_bit(ATM_VF_WAITING, &vcc->flags);
+ 	prepare_to_wait(sk->sk_sleep, &wait, TASK_UNINTERRUPTIBLE);
+ 	sigd_enq(vcc,as_listen,NULL,NULL,&vcc->local);
+@@ -307,6 +310,7 @@ static int svc_listen(struct socket *sock,int backlog)
+ 		goto out;
+ 	}
+ 	set_bit(ATM_VF_LISTEN,&vcc->flags);
++	vcc_insert_socket(sk);
+ 	sk->sk_max_ack_backlog = backlog > 0 ? backlog : ATM_BACKLOG_DEFAULT;
+ 	error = -sk->sk_err;
+ out:
+diff --git a/net/can/af_can.c b/net/can/af_can.c
+index 7d4d2b3c137e..3dadb338addd 100644
+--- a/net/can/af_can.c
++++ b/net/can/af_can.c
+@@ -319,23 +319,52 @@ static struct dev_rcv_lists *find_dev_rcv_lists(struct net_device *dev)
+ 	return n ? d : NULL;
+ }
+ 
++/**
++ * find_rcv_list - determine optimal filterlist inside device filter struct
++ * @can_id: pointer to CAN identifier of a given can_filter
++ * @mask: pointer to CAN mask of a given can_filter
++ * @d: pointer to the device filter struct
++ *
++ * Description:
++ *  Returns the optimal filterlist to reduce the filter handling in the
++ *  receive path. This function is called by service functions that need
++ *  to register or unregister a can_filter in the filter lists.
++ *
++ *  A filter matches in general, when
++ *
++ *          <received_can_id> & mask == can_id & mask
++ *
++ *  so every bit set in the mask (even CAN_EFF_FLAG, CAN_RTR_FLAG) describe
++ *  relevant bits for the filter.
++ *
++ *  The filter can be inverted (CAN_INV_FILTER bit set in can_id) or it can
++ *  filter for error frames (CAN_ERR_FLAG bit set in mask). For error frames
++ *  there is a special filterlist and a special rx path filter handling.
++ *
++ * Return:
++ *  Pointer to optimal filterlist for the given can_id/mask pair.
++ *  Constistency checked mask.
++ *  Reduced can_id to have a preprocessed filter compare value.
++ */
+ static struct hlist_head *find_rcv_list(canid_t *can_id, canid_t *mask,
+ 					struct dev_rcv_lists *d)
+ {
+ 	canid_t inv = *can_id & CAN_INV_FILTER; /* save flag before masking */
+ 
+-	/* filter error frames */
++	/* filter for error frames in extra filterlist */
+ 	if (*mask & CAN_ERR_FLAG) {
+-		/* clear CAN_ERR_FLAG in list entry */
++		/* clear CAN_ERR_FLAG in filter entry */
+ 		*mask &= CAN_ERR_MASK;
+ 		return &d->rx[RX_ERR];
+ 	}
+ 
+-	/* ensure valid values in can_mask */
+-	if (*mask & CAN_EFF_FLAG)
+-		*mask &= (CAN_EFF_MASK | CAN_EFF_FLAG | CAN_RTR_FLAG);
+-	else
+-		*mask &= (CAN_SFF_MASK | CAN_RTR_FLAG);
++	/* with cleared CAN_ERR_FLAG we have a simple mask/value filterpair */
++
++#define CAN_EFF_RTR_FLAGS (CAN_EFF_FLAG | CAN_RTR_FLAG)
++
++	/* ensure valid values in can_mask for 'SFF only' frame filtering */
++	if ((*mask & CAN_EFF_FLAG) && !(*can_id & CAN_EFF_FLAG))
++		*mask &= (CAN_SFF_MASK | CAN_EFF_RTR_FLAGS);
+ 
+ 	/* reduce condition testing at receive time */
+ 	*can_id &= *mask;
+@@ -348,15 +377,19 @@ static struct hlist_head *find_rcv_list(canid_t *can_id, canid_t *mask,
+ 	if (!(*mask))
+ 		return &d->rx[RX_ALL];
+ 
+-	/* use extra filterset for the subscription of exactly *ONE* can_id */
+-	if (*can_id & CAN_EFF_FLAG) {
+-		if (*mask == (CAN_EFF_MASK | CAN_EFF_FLAG)) {
+-			/* RFC: a use-case for hash-tables in the future? */
+-			return &d->rx[RX_EFF];
++	/* extra filterlists for the subscription of a single non-RTR can_id */
++	if (((*mask & CAN_EFF_RTR_FLAGS) == CAN_EFF_RTR_FLAGS)
++	    && !(*can_id & CAN_RTR_FLAG)) {
++
++		if (*can_id & CAN_EFF_FLAG) {
++			if (*mask == (CAN_EFF_MASK | CAN_EFF_RTR_FLAGS)) {
++				/* RFC: a future use-case for hash-tables? */
++				return &d->rx[RX_EFF];
++			}
++		} else {
++			if (*mask == (CAN_SFF_MASK | CAN_EFF_RTR_FLAGS))
++				return &d->rx_sff[*can_id];
+ 		}
+-	} else {
+-		if (*mask == CAN_SFF_MASK)
+-			return &d->rx_sff[*can_id];
+ 	}
+ 
+ 	/* default: filter via can_id/can_mask */
+@@ -589,7 +622,10 @@ static int can_rcv_filter(struct dev_rcv_lists *d, struct sk_buff *skb)
+ 		}
+ 	}
+ 
+-	/* check CAN_ID specific entries */
++	/* check filterlists for single non-RTR can_ids */
++	if (can_id & CAN_RTR_FLAG)
++		return matches;
++
+ 	if (can_id & CAN_EFF_FLAG) {
+ 		hlist_for_each_entry_rcu(r, n, &d->rx[RX_EFF], list) {
+ 			if (r->can_id == can_id) {
+diff --git a/net/can/bcm.c b/net/can/bcm.c
+index d0dd382001e2..da0d426c0ce4 100644
+--- a/net/can/bcm.c
++++ b/net/can/bcm.c
+@@ -64,10 +64,11 @@
+ #define BCM_CAN_DLC_MASK 0x0F /* clean private flags in can_dlc by masking */
+ 
+ /* get best masking value for can_rx_register() for a given single can_id */
+-#define REGMASK(id) ((id & CAN_RTR_FLAG) | ((id & CAN_EFF_FLAG) ? \
+-			(CAN_EFF_MASK | CAN_EFF_FLAG) : CAN_SFF_MASK))
++#define REGMASK(id) ((id & CAN_EFF_FLAG) ? \
++		     (CAN_EFF_MASK | CAN_EFF_FLAG | CAN_RTR_FLAG) : \
++		     (CAN_SFF_MASK | CAN_EFF_FLAG | CAN_RTR_FLAG))
+ 
+-#define CAN_BCM_VERSION "20080415"
++#define CAN_BCM_VERSION CAN_VERSION
+ static __initdata const char banner[] = KERN_INFO
+ 	"can: broadcast manager protocol (rev " CAN_BCM_VERSION ")\n";
+ 
+diff --git a/net/ipv4/tcp_output.c b/net/ipv4/tcp_output.c
+index 85b07eba1879..fe3b4bdfd251 100644
+--- a/net/ipv4/tcp_output.c
++++ b/net/ipv4/tcp_output.c
+@@ -722,8 +722,7 @@ static void tcp_queue_skb(struct sock *sk, struct sk_buff *skb)
+ static void tcp_set_skb_tso_segs(struct sock *sk, struct sk_buff *skb,
+ 				 unsigned int mss_now)
+ {
+-	if (skb->len <= mss_now || !sk_can_gso(sk) ||
+-	    tcp_urg_mode(tcp_sk(sk))) {
++	if (skb->len <= mss_now || !sk_can_gso(sk)) {
+ 		/* Avoid the costly divide in the normal
+ 		 * non-TSO case.
+ 		 */
+@@ -1029,10 +1028,6 @@ unsigned int tcp_sync_mss(struct sock *sk, u32 pmtu)
+ 
+ /* Compute the current effective MSS, taking SACKs and IP options,
+  * and even PMTU discovery events into account.
+- *
+- * LARGESEND note: !tcp_urg_mode is overkill, only frames up to snd_up
+- * cannot be large. However, taking into account rare use of URG, this
+- * is not a big flaw.
+  */
+ unsigned int tcp_current_mss(struct sock *sk, int large_allowed)
+ {
+@@ -1047,7 +1042,7 @@ unsigned int tcp_current_mss(struct sock *sk, int large_allowed)
+ 
+ 	mss_now = tp->mss_cache;
+ 
+-	if (large_allowed && sk_can_gso(sk) && !tcp_urg_mode(tp))
++	if (large_allowed && sk_can_gso(sk))
+ 		doing_tso = 1;
+ 
+ 	if (dst) {
+@@ -1164,9 +1159,7 @@ static int tcp_init_tso_segs(struct sock *sk, struct sk_buff *skb,
+ {
+ 	int tso_segs = tcp_skb_pcount(skb);
+ 
+-	if (!tso_segs ||
+-	    (tso_segs > 1 && (tcp_skb_mss(skb) != mss_now ||
+-			      tcp_urg_mode(tcp_sk(sk))))) {
++	if (!tso_segs || (tso_segs > 1 && tcp_skb_mss(skb) != mss_now)) {
+ 		tcp_set_skb_tso_segs(sk, skb, mss_now);
+ 		tso_segs = tcp_skb_pcount(skb);
+ 	}
+@@ -1519,6 +1512,10 @@ static int tcp_mtu_probe(struct sock *sk)
+  * send_head.  This happens as incoming acks open up the remote
+  * window for us.
+  *
++ * LARGESEND note: !tcp_urg_mode is overkill, only frames between
++ * snd_up-64k-mss .. snd_up cannot be large. However, taking into
++ * account rare use of URG, this is not a big flaw.
++ *
+  * Returns 1, if no segments are in flight and we have queued segments, but
+  * cannot send anything now because of SWS or another problem.
+  */
+@@ -1570,7 +1567,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
+ 		}
+ 
+ 		limit = mss_now;
+-		if (tso_segs > 1)
++		if (tso_segs > 1 && !tcp_urg_mode(tp))
+ 			limit = tcp_mss_split_point(sk, skb, mss_now,
+ 						    cwnd_quota);
+ 
+@@ -1619,6 +1616,7 @@ void __tcp_push_pending_frames(struct sock *sk, unsigned int cur_mss,
+  */
+ void tcp_push_one(struct sock *sk, unsigned int mss_now)
+ {
++	struct tcp_sock *tp = tcp_sk(sk);
+ 	struct sk_buff *skb = tcp_send_head(sk);
+ 	unsigned int tso_segs, cwnd_quota;
+ 
+@@ -1633,7 +1631,7 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
+ 		BUG_ON(!tso_segs);
+ 
+ 		limit = mss_now;
+-		if (tso_segs > 1)
++		if (tso_segs > 1 && !tcp_urg_mode(tp))
+ 			limit = tcp_mss_split_point(sk, skb, mss_now,
+ 						    cwnd_quota);
+ 
+diff --git a/net/ipv4/tcp_vegas.c b/net/ipv4/tcp_vegas.c
+index 14504dada116..7cd22262de3a 100644
+--- a/net/ipv4/tcp_vegas.c
++++ b/net/ipv4/tcp_vegas.c
+@@ -326,6 +326,8 @@ static void tcp_vegas_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
+ 				tp->snd_cwnd = 2;
+ 			else if (tp->snd_cwnd > tp->snd_cwnd_clamp)
+ 				tp->snd_cwnd = tp->snd_cwnd_clamp;
++
++			tp->snd_ssthresh = tcp_current_ssthresh(sk);
+ 		}
+ 
+ 		/* Wipe the slate clean for the next RTT. */
+diff --git a/net/mac80211/sta_info.c b/net/mac80211/sta_info.c
+index 7fef8ea1f5ec..d254446b85b5 100644
+--- a/net/mac80211/sta_info.c
++++ b/net/mac80211/sta_info.c
+@@ -99,7 +99,7 @@ struct sta_info *sta_info_get(struct ieee80211_local *local, const u8 *addr)
+ 
+ 	sta = rcu_dereference(local->sta_hash[STA_HASH(addr)]);
+ 	while (sta) {
+-		if (compare_ether_addr(sta->sta.addr, addr) == 0)
++		if (memcmp(sta->sta.addr, addr, ETH_ALEN) == 0)
+ 			break;
+ 		sta = rcu_dereference(sta->hnext);
+ 	}
+diff --git a/net/netfilter/xt_socket.c b/net/netfilter/xt_socket.c
+index 02a8fed21082..1acc089be7e9 100644
+--- a/net/netfilter/xt_socket.c
++++ b/net/netfilter/xt_socket.c
+@@ -141,7 +141,7 @@ socket_mt(const struct sk_buff *skb, const struct xt_match_param *par)
+ 	sk = nf_tproxy_get_sock_v4(dev_net(skb->dev), protocol,
+ 				   saddr, daddr, sport, dport, par->in, false);
+ 	if (sk != NULL) {
+-		bool wildcard = (inet_sk(sk)->rcv_saddr == 0);
++		bool wildcard = (sk->sk_state != TCP_TIME_WAIT && inet_sk(sk)->rcv_saddr == 0);
+ 
+ 		nf_tproxy_put_sock(sk);
+ 		if (wildcard)
+diff --git a/net/netlabel/netlabel_unlabeled.c b/net/netlabel/netlabel_unlabeled.c
+index e8a5c32b0f10..90c8506a0aac 100644
+--- a/net/netlabel/netlabel_unlabeled.c
++++ b/net/netlabel/netlabel_unlabeled.c
+@@ -574,9 +574,10 @@ static int netlbl_unlhsh_remove_addr4(struct net *net,
+ 	list_entry = netlbl_af4list_remove(addr->s_addr, mask->s_addr,
+ 					   &iface->addr4_list);
+ 	spin_unlock(&netlbl_unlhsh_lock);
+-	if (list_entry == NULL)
++	if (list_entry != NULL)
++		entry = netlbl_unlhsh_addr4_entry(list_entry);
++	else
+ 		ret_val = -ENOENT;
+-	entry = netlbl_unlhsh_addr4_entry(list_entry);
+ 
+ 	audit_buf = netlbl_audit_start_common(AUDIT_MAC_UNLBL_STCDEL,
+ 					      audit_info);
+@@ -634,9 +635,10 @@ static int netlbl_unlhsh_remove_addr6(struct net *net,
+ 	spin_lock(&netlbl_unlhsh_lock);
+ 	list_entry = netlbl_af6list_remove(addr, mask, &iface->addr6_list);
+ 	spin_unlock(&netlbl_unlhsh_lock);
+-	if (list_entry == NULL)
++	if (list_entry != NULL)
++		entry = netlbl_unlhsh_addr6_entry(list_entry);
++	else
+ 		ret_val = -ENOENT;
+-	entry = netlbl_unlhsh_addr6_entry(list_entry);
+ 
+ 	audit_buf = netlbl_audit_start_common(AUDIT_MAC_UNLBL_STCDEL,
+ 					      audit_info);
+diff --git a/net/phonet/pn_netlink.c b/net/phonet/pn_netlink.c
+index b1770d66bc8d..242fe8f8c322 100644
+--- a/net/phonet/pn_netlink.c
++++ b/net/phonet/pn_netlink.c
+@@ -123,6 +123,7 @@ static int fill_addr(struct sk_buff *skb, struct net_device *dev, u8 addr,
+ 
+ static int getaddr_dumpit(struct sk_buff *skb, struct netlink_callback *cb)
+ {
++	struct net *net = sock_net(skb->sk);
+ 	struct phonet_device *pnd;
+ 	int dev_idx = 0, dev_start_idx = cb->args[0];
+ 	int addr_idx = 0, addr_start_idx = cb->args[1];
+@@ -131,6 +132,8 @@ static int getaddr_dumpit(struct sk_buff *skb, struct netlink_callback *cb)
+ 	list_for_each_entry(pnd, &pndevs.list, list) {
+ 		u8 addr;
+ 
++		if (!net_eq(dev_net(pnd->netdev), net))
++			continue;
+ 		if (dev_idx > dev_start_idx)
+ 			addr_start_idx = 0;
+ 		if (dev_idx++ < dev_start_idx)
+diff --git a/net/xfrm/xfrm_policy.c b/net/xfrm/xfrm_policy.c
+index 058f04f54b90..fb216c9adf86 100644
+--- a/net/xfrm/xfrm_policy.c
++++ b/net/xfrm/xfrm_policy.c
+@@ -817,6 +817,7 @@ int xfrm_policy_flush(u8 type, struct xfrm_audit *audit_info)
+ 				continue;
+ 			hlist_del(&pol->bydst);
+ 			hlist_del(&pol->byidx);
++			list_del(&pol->walk.all);
+ 			write_unlock_bh(&xfrm_policy_lock);
+ 
+ 			xfrm_audit_policy_delete(pol, 1, audit_info->loginuid,

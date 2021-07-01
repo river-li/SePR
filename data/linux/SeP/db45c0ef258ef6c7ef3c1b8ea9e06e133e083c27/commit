@@ -1,0 +1,12 @@
+commit db45c0ef258ef6c7ef3c1b8ea9e06e133e083c27
+Author: Christoph Hellwig <hch@lst.de>
+Commit: David S. Miller <davem@davemloft.net>
+
+    ipv4: add ip_sock_set_recverr
+    
+    Add a helper to directly set the IP_RECVERR sockopt from kernel space
+    without going through a fake uaccess.
+    
+    Signed-off-by: Christoph Hellwig <hch@lst.de>
+    Reviewed-by: David Howells <dhowells@redhat.com>
+    Signed-off-by: David S. Miller <davem@davemloft.net>

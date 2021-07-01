@@ -1,0 +1,8 @@
+commit 05992edc279237d5803d64578e0c72b604970a49
+Merge: 505c9e94d832 75f139aaf896
+Author: Paolo Bonzini <pbonzini@redhat.com>
+Commit: Radim Krčmář <rkrcmar@redhat.com>
+
+    Merge branch 'kvm-insert-lfence'
+    
+    Topic branch for CVE-2017-5753, avoiding conflicts in the next merge window.

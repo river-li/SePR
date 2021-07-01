@@ -1,0 +1,119 @@
+diff --git a/include/linux/ipv6.h b/include/linux/ipv6.h
+index 8d8f877e7f81..a44789d027cc 100644
+--- a/include/linux/ipv6.h
++++ b/include/linux/ipv6.h
+@@ -283,6 +283,7 @@ struct ipv6_pinfo {
+ 				autoflowlabel:1,
+ 				autoflowlabel_set:1,
+ 				mc_all:1,
++				recverr_rfc4884:1,
+ 				rtalert_isolate:1;
+ 	__u8			min_hopcount;
+ 	__u8			tclass;
+diff --git a/include/uapi/linux/icmpv6.h b/include/uapi/linux/icmpv6.h
+index 2622b5a3e616..c1661febc2dc 100644
+--- a/include/uapi/linux/icmpv6.h
++++ b/include/uapi/linux/icmpv6.h
+@@ -68,6 +68,7 @@ struct icmp6hdr {
+ #define icmp6_mtu		icmp6_dataun.un_data32[0]
+ #define icmp6_unused		icmp6_dataun.un_data32[0]
+ #define icmp6_maxdelay		icmp6_dataun.un_data16[0]
++#define icmp6_datagram_len	icmp6_dataun.un_data8[0]
+ #define icmp6_router		icmp6_dataun.u_nd_advt.router
+ #define icmp6_solicited		icmp6_dataun.u_nd_advt.solicited
+ #define icmp6_override		icmp6_dataun.u_nd_advt.override
+diff --git a/include/uapi/linux/in6.h b/include/uapi/linux/in6.h
+index 9f2273a08356..5ad396a57eb3 100644
+--- a/include/uapi/linux/in6.h
++++ b/include/uapi/linux/in6.h
+@@ -179,6 +179,7 @@ struct in6_flowlabel_req {
+ #define IPV6_LEAVE_ANYCAST	28
+ #define IPV6_MULTICAST_ALL	29
+ #define IPV6_ROUTER_ALERT_ISOLATE	30
++#define IPV6_RECVERR_RFC4884	31
+ 
+ /* IPV6_MTU_DISCOVER values */
+ #define IPV6_PMTUDISC_DONT		0
+diff --git a/net/ipv4/icmp.c b/net/ipv4/icmp.c
+index 7498c58460a1..cf36f955bfe6 100644
+--- a/net/ipv4/icmp.c
++++ b/net/ipv4/icmp.c
+@@ -1173,6 +1173,7 @@ void ip_icmp_error_rfc4884(const struct sk_buff *skb,
+ 	if (!ip_icmp_error_rfc4884_validate(skb, off))
+ 		out->flags |= SO_EE_RFC4884_FLAG_INVALID;
+ }
++EXPORT_SYMBOL_GPL(ip_icmp_error_rfc4884);
+ 
+ int icmp_err(struct sk_buff *skb, u32 info)
+ {
+diff --git a/net/ipv6/datagram.c b/net/ipv6/datagram.c
+index 390bedde21a5..cc8ad7ddecda 100644
+--- a/net/ipv6/datagram.c
++++ b/net/ipv6/datagram.c
+@@ -19,6 +19,7 @@
+ #include <linux/route.h>
+ #include <linux/slab.h>
+ #include <linux/export.h>
++#include <linux/icmp.h>
+ 
+ #include <net/ipv6.h>
+ #include <net/ndisc.h>
+@@ -284,6 +285,17 @@ int ip6_datagram_connect_v6_only(struct sock *sk, struct sockaddr *uaddr,
+ }
+ EXPORT_SYMBOL_GPL(ip6_datagram_connect_v6_only);
+ 
++static void ipv6_icmp_error_rfc4884(const struct sk_buff *skb,
++				    struct sock_ee_data_rfc4884 *out)
++{
++	switch (icmp6_hdr(skb)->icmp6_type) {
++	case ICMPV6_TIME_EXCEED:
++	case ICMPV6_DEST_UNREACH:
++		ip_icmp_error_rfc4884(skb, out, sizeof(struct icmp6hdr),
++				      icmp6_hdr(skb)->icmp6_datagram_len * 8);
++	}
++}
++
+ void ipv6_icmp_error(struct sock *sk, struct sk_buff *skb, int err,
+ 		     __be16 port, u32 info, u8 *payload)
+ {
+@@ -313,6 +325,10 @@ void ipv6_icmp_error(struct sock *sk, struct sk_buff *skb, int err,
+ 	serr->port = port;
+ 
+ 	__skb_pull(skb, payload - skb->data);
++
++	if (inet6_sk(sk)->recverr_rfc4884)
++		ipv6_icmp_error_rfc4884(skb, &serr->ee.ee_rfc4884);
++
+ 	skb_reset_transport_header(skb);
+ 
+ 	if (sock_queue_err_skb(sk, skb))
+diff --git a/net/ipv6/ipv6_sockglue.c b/net/ipv6/ipv6_sockglue.c
+index d2282f5c9760..20c740976334 100644
+--- a/net/ipv6/ipv6_sockglue.c
++++ b/net/ipv6/ipv6_sockglue.c
+@@ -965,6 +965,14 @@ static int do_ipv6_setsockopt(struct sock *sk, int level, int optname,
+ 		np->rxopt.bits.recvfragsize = valbool;
+ 		retv = 0;
+ 		break;
++	case IPV6_RECVERR_RFC4884:
++		if (optlen < sizeof(int))
++			goto e_inval;
++		if (val < 0 || val > 1)
++			goto e_inval;
++		np->recverr_rfc4884 = valbool;
++		retv = 0;
++		break;
+ 	}
+ 
+ 	release_sock(sk);
+@@ -1439,6 +1447,10 @@ static int do_ipv6_getsockopt(struct sock *sk, int level, int optname,
+ 		val = np->rtalert_isolate;
+ 		break;
+ 
++	case IPV6_RECVERR_RFC4884:
++		val = np->recverr_rfc4884;
++		break;
++
+ 	default:
+ 		return -ENOPROTOOPT;
+ 	}

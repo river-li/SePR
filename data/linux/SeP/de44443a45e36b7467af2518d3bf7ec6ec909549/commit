@@ -1,0 +1,8 @@
+commit de44443a45e36b7467af2518d3bf7ec6ec909549
+Author: Alexander Shiyan <shc_work@mail.ru>
+Commit: Richard Kuo <rkuo@codeaurora.org>
+
+    HEXAGON: Remove non existent reference to GENERIC_KERNEL_EXECVE & GENERIC_KERNEL_THREAD
+    
+    Signed-off-by: Alexander Shiyan <shc_work@mail.ru>
+    Signed-off-by: Richard Kuo <rkuo@codeaurora.org>

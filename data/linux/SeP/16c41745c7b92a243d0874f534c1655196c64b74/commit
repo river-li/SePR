@@ -1,0 +1,10 @@
+commit 16c41745c7b92a243d0874f534c1655196c64b74
+Author: Phil Blundell <philb@gnu.org>
+Commit: David S. Miller <davem@davemloft.net>
+
+    econet: fix CVE-2010-3850
+    
+    Add missing check for capable(CAP_NET_ADMIN) in SIOCSIFADDR operation.
+    
+    Signed-off-by: Phil Blundell <philb@gnu.org>
+    Signed-off-by: David S. Miller <davem@davemloft.net>

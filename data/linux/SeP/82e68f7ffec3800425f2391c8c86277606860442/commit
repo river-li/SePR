@@ -1,0 +1,15 @@
+commit 82e68f7ffec3800425f2391c8c86277606860442
+Author: Willy Tarreau <w@1wt.eu>
+Commit: Linus Torvalds <torvalds@linux-foundation.org>
+
+    sound: ensure device number is valid in snd_seq_oss_synth_make_info
+    
+    snd_seq_oss_synth_make_info() incorrectly reports information
+    to userspace without first checking for the validity of the
+    device number, leading to possible information leak (CVE-2008-3272).
+    
+    Reported-By: Tobias Klein <tk@trapkit.de>
+    Acked-and-tested-by: Takashi Iwai <tiwai@suse.de>
+    Cc: stable@kernel.org
+    Signed-off-by: Willy Tarreau <w@1wt.eu>
+    Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>

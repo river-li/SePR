@@ -1,0 +1,7 @@
+commit 26689452f5ca201add63b1b1ff0dbcf82d6885e7
+Author: Heiko Carstens <hca@linux.ibm.com>
+Commit: Heiko Carstens <hca@linux.ibm.com>
+
+    [CVE-2009-0029] s390 specific system call wrappers
+    
+    Signed-off-by: Heiko Carstens <heiko.carstens@de.ibm.com>

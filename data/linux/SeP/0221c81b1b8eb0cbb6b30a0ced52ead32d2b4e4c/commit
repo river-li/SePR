@@ -1,0 +1,17 @@
+commit 0221c81b1b8eb0cbb6b30a0ced52ead32d2b4e4c
+Merge: 48f286a28fe1 def57543418a
+Author: Linus Torvalds <torvalds@linux-foundation.org>
+Commit: Linus Torvalds <torvalds@linux-foundation.org>
+
+    Merge branch 'audit.b62' of git://git.kernel.org/pub/scm/linux/kernel/git/viro/audit-current
+    
+    * 'audit.b62' of git://git.kernel.org/pub/scm/linux/kernel/git/viro/audit-current:
+      Audit: remove spaces from audit_log_d_path
+      audit: audit_set_auditable defined but not used
+      audit: incorrect ref counting in audit tree tag_chunk
+      audit: Fix possible return value truncation in audit_get_context()
+      audit: ignore terminating NUL in AUDIT_USER_TTY messages
+      Audit: fix handling of 'strings' with NULL characters
+      make the e->rule.xxx shorter in kernel auditfilter.c
+      auditsc: fix kernel-doc notation
+      audit: EXECVE record - removed bogus newline

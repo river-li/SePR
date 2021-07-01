@@ -1,0 +1,17 @@
+commit 8cdb5240ec5928b20490a2bb34cb87e9a5f40226
+Author: Theodore Ts'o <tytso@mit.edu>
+Commit: Theodore Ts'o <tytso@mit.edu>
+
+    ext4: never move the system.data xattr out of the inode body
+    
+    When expanding the extra isize space, we must never move the
+    system.data xattr out of the inode body.  For performance reasons, it
+    doesn't make any sense, and the inline data implementation assumes
+    that system.data xattr is never in the external xattr block.
+    
+    This addresses CVE-2018-10880
+    
+    https://bugzilla.kernel.org/show_bug.cgi?id=200005
+    
+    Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+    Cc: stable@kernel.org

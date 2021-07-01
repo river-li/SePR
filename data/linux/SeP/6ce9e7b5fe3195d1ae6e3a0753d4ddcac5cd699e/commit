@@ -1,0 +1,45 @@
+commit 6ce9e7b5fe3195d1ae6e3a0753d4ddcac5cd699e
+Author: Eric Dumazet <eric.dumazet@gmail.com>
+Commit: David S. Miller <davem@davemloft.net>
+
+    ip: Report qdisc packet drops
+    
+    Christoph Lameter pointed out that packet drops at qdisc level where not
+    accounted in SNMP counters. Only if application sets IP_RECVERR, drops
+    are reported to user (-ENOBUFS errors) and SNMP counters updated.
+    
+    IP_RECVERR is used to enable extended reliable error message passing,
+    but these are not needed to update system wide SNMP stats.
+    
+    This patch changes things a bit to allow SNMP counters to be updated,
+    regardless of IP_RECVERR being set or not on the socket.
+    
+    Example after an UDP tx flood
+    # netstat -s
+    ...
+    IP:
+        1487048 outgoing packets dropped
+    ...
+    Udp:
+    ...
+        SndbufErrors: 1487048
+    
+    
+    send() syscalls, do however still return an OK status, to not
+    break applications.
+    
+    Note : send() manual page explicitly says for -ENOBUFS error :
+    
+     "The output queue for a network interface was full.
+      This generally indicates that the interface has stopped sending,
+      but may be caused by transient congestion.
+      (Normally, this does not occur in Linux. Packets are just silently
+      dropped when a device queue overflows.) "
+    
+    This is not true for IP_RECVERR enabled sockets : a send() syscall
+    that hit a qdisc drop returns an ENOBUFS error.
+    
+    Many thanks to Christoph, David, and last but not least, Alexey !
+    
+    Signed-off-by: Eric Dumazet <eric.dumazet@gmail.com>
+    Signed-off-by: David S. Miller <davem@davemloft.net>

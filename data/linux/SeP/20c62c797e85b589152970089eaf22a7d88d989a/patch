@@ -1,0 +1,517 @@
+diff --git a/drivers/net/wireless/ath/ath10k/pci.c b/drivers/net/wireless/ath/ath10k/pci.c
+index bc1633945a56..195dafb98131 100644
+--- a/drivers/net/wireless/ath/ath10k/pci.c
++++ b/drivers/net/wireless/ath/ath10k/pci.c
+@@ -3396,9 +3396,7 @@ static void ath10k_pci_remove(struct pci_dev *pdev)
+ 
+ MODULE_DEVICE_TABLE(pci, ath10k_pci_id_table);
+ 
+-#ifdef CONFIG_PM
+-
+-static int ath10k_pci_pm_suspend(struct device *dev)
++static __maybe_unused int ath10k_pci_pm_suspend(struct device *dev)
+ {
+ 	struct ath10k *ar = dev_get_drvdata(dev);
+ 	int ret;
+@@ -3414,7 +3412,7 @@ static int ath10k_pci_pm_suspend(struct device *dev)
+ 	return ret;
+ }
+ 
+-static int ath10k_pci_pm_resume(struct device *dev)
++static __maybe_unused int ath10k_pci_pm_resume(struct device *dev)
+ {
+ 	struct ath10k *ar = dev_get_drvdata(dev);
+ 	int ret;
+@@ -3433,7 +3431,6 @@ static int ath10k_pci_pm_resume(struct device *dev)
+ static SIMPLE_DEV_PM_OPS(ath10k_pci_pm_ops,
+ 			 ath10k_pci_pm_suspend,
+ 			 ath10k_pci_pm_resume);
+-#endif
+ 
+ static struct pci_driver ath10k_pci_driver = {
+ 	.name = "ath10k_pci",
+diff --git a/drivers/net/wireless/broadcom/brcm80211/brcmfmac/cfg80211.c b/drivers/net/wireless/broadcom/brcm80211/brcmfmac/cfg80211.c
+index aaed4ab503ad..4157c90ad973 100644
+--- a/drivers/net/wireless/broadcom/brcm80211/brcmfmac/cfg80211.c
++++ b/drivers/net/wireless/broadcom/brcm80211/brcmfmac/cfg80211.c
+@@ -980,7 +980,7 @@ static void brcmf_escan_prep(struct brcmf_cfg80211_info *cfg,
+ 
+ 	eth_broadcast_addr(params_le->bssid);
+ 	params_le->bss_type = DOT11_BSSTYPE_ANY;
+-	params_le->scan_type = 0;
++	params_le->scan_type = BRCMF_SCANTYPE_ACTIVE;
+ 	params_le->channel_num = 0;
+ 	params_le->nprobes = cpu_to_le32(-1);
+ 	params_le->active_time = cpu_to_le32(-1);
+@@ -988,12 +988,9 @@ static void brcmf_escan_prep(struct brcmf_cfg80211_info *cfg,
+ 	params_le->home_time = cpu_to_le32(-1);
+ 	memset(&params_le->ssid_le, 0, sizeof(params_le->ssid_le));
+ 
+-	/* if request is null exit so it will be all channel broadcast scan */
+-	if (!request)
+-		return;
+-
+ 	n_ssids = request->n_ssids;
+ 	n_channels = request->n_channels;
++
+ 	/* Copy channel array if applicable */
+ 	brcmf_dbg(SCAN, "### List of channelspecs to scan ### %d\n",
+ 		  n_channels);
+@@ -1030,16 +1027,8 @@ static void brcmf_escan_prep(struct brcmf_cfg80211_info *cfg,
+ 			ptr += sizeof(ssid_le);
+ 		}
+ 	} else {
+-		brcmf_dbg(SCAN, "Broadcast scan %p\n", request->ssids);
+-		if ((request->ssids) && request->ssids->ssid_len) {
+-			brcmf_dbg(SCAN, "SSID %s len=%d\n",
+-				  params_le->ssid_le.SSID,
+-				  request->ssids->ssid_len);
+-			params_le->ssid_le.SSID_len =
+-				cpu_to_le32(request->ssids->ssid_len);
+-			memcpy(&params_le->ssid_le.SSID, request->ssids->ssid,
+-				request->ssids->ssid_len);
+-		}
++		brcmf_dbg(SCAN, "Performing passive scan\n");
++		params_le->scan_type = BRCMF_SCANTYPE_PASSIVE;
+ 	}
+ 	/* Adding mask to channel numbers */
+ 	params_le->channel_num =
+@@ -3162,6 +3151,7 @@ brcmf_cfg80211_escan_handler(struct brcmf_if *ifp,
+ 	struct brcmf_cfg80211_info *cfg = ifp->drvr->config;
+ 	s32 status;
+ 	struct brcmf_escan_result_le *escan_result_le;
++	u32 escan_buflen;
+ 	struct brcmf_bss_info_le *bss_info_le;
+ 	struct brcmf_bss_info_le *bss = NULL;
+ 	u32 bi_length;
+@@ -3181,11 +3171,23 @@ brcmf_cfg80211_escan_handler(struct brcmf_if *ifp,
+ 
+ 	if (status == BRCMF_E_STATUS_PARTIAL) {
+ 		brcmf_dbg(SCAN, "ESCAN Partial result\n");
++		if (e->datalen < sizeof(*escan_result_le)) {
++			brcmf_err("invalid event data length\n");
++			goto exit;
++		}
+ 		escan_result_le = (struct brcmf_escan_result_le *) data;
+ 		if (!escan_result_le) {
+ 			brcmf_err("Invalid escan result (NULL pointer)\n");
+ 			goto exit;
+ 		}
++		escan_buflen = le32_to_cpu(escan_result_le->buflen);
++		if (escan_buflen > BRCMF_ESCAN_BUF_SIZE ||
++		    escan_buflen > e->datalen ||
++		    escan_buflen < sizeof(*escan_result_le)) {
++			brcmf_err("Invalid escan buffer length: %d\n",
++				  escan_buflen);
++			goto exit;
++		}
+ 		if (le16_to_cpu(escan_result_le->bss_count) != 1) {
+ 			brcmf_err("Invalid bss_count %d: ignoring\n",
+ 				  escan_result_le->bss_count);
+@@ -3202,9 +3204,8 @@ brcmf_cfg80211_escan_handler(struct brcmf_if *ifp,
+ 		}
+ 
+ 		bi_length = le32_to_cpu(bss_info_le->length);
+-		if (bi_length != (le32_to_cpu(escan_result_le->buflen) -
+-					WL_ESCAN_RESULTS_FIXED_SIZE)) {
+-			brcmf_err("Invalid bss_info length %d: ignoring\n",
++		if (bi_length != escan_buflen -	WL_ESCAN_RESULTS_FIXED_SIZE) {
++			brcmf_err("Ignoring invalid bss_info length: %d\n",
+ 				  bi_length);
+ 			goto exit;
+ 		}
+diff --git a/drivers/net/wireless/broadcom/brcm80211/brcmfmac/fwil_types.h b/drivers/net/wireless/broadcom/brcm80211/brcmfmac/fwil_types.h
+index 8391989b1882..e0d22fedb2b4 100644
+--- a/drivers/net/wireless/broadcom/brcm80211/brcmfmac/fwil_types.h
++++ b/drivers/net/wireless/broadcom/brcm80211/brcmfmac/fwil_types.h
+@@ -45,6 +45,11 @@
+ #define BRCMF_SCAN_PARAMS_COUNT_MASK	0x0000ffff
+ #define BRCMF_SCAN_PARAMS_NSSID_SHIFT	16
+ 
++/* scan type definitions */
++#define BRCMF_SCANTYPE_DEFAULT		0xFF
++#define BRCMF_SCANTYPE_ACTIVE		0
++#define BRCMF_SCANTYPE_PASSIVE		1
++
+ #define BRCMF_WSEC_MAX_PSK_LEN		32
+ #define	BRCMF_WSEC_PASSPHRASE		BIT(0)
+ 
+diff --git a/drivers/net/wireless/intel/iwlwifi/mvm/d3.c b/drivers/net/wireless/intel/iwlwifi/mvm/d3.c
+index 5de19ea10575..b205a7bfb828 100644
+--- a/drivers/net/wireless/intel/iwlwifi/mvm/d3.c
++++ b/drivers/net/wireless/intel/iwlwifi/mvm/d3.c
+@@ -2167,7 +2167,7 @@ static int __iwl_mvm_resume(struct iwl_mvm *mvm, bool test)
+ 	 * 1. We are not using a unified image
+ 	 * 2. We are using a unified image but had an error while exiting D3
+ 	 */
+-	set_bit(IWL_MVM_STATUS_IN_HW_RESTART, &mvm->status);
++	set_bit(IWL_MVM_STATUS_HW_RESTART_REQUESTED, &mvm->status);
+ 	set_bit(IWL_MVM_STATUS_D3_RECONFIG, &mvm->status);
+ 	/*
+ 	 * When switching images we return 1, which causes mac80211
+diff --git a/drivers/net/wireless/intel/iwlwifi/mvm/mac80211.c b/drivers/net/wireless/intel/iwlwifi/mvm/mac80211.c
+index 15f2d826bb4b..3bcaa82f59b2 100644
+--- a/drivers/net/wireless/intel/iwlwifi/mvm/mac80211.c
++++ b/drivers/net/wireless/intel/iwlwifi/mvm/mac80211.c
+@@ -1546,6 +1546,11 @@ static void iwl_mvm_mc_iface_iterator(void *_data, u8 *mac,
+ 	struct iwl_mvm_mc_iter_data *data = _data;
+ 	struct iwl_mvm *mvm = data->mvm;
+ 	struct iwl_mcast_filter_cmd *cmd = mvm->mcast_filter_cmd;
++	struct iwl_host_cmd hcmd = {
++		.id = MCAST_FILTER_CMD,
++		.flags = CMD_ASYNC,
++		.dataflags[0] = IWL_HCMD_DFL_NOCOPY,
++	};
+ 	int ret, len;
+ 
+ 	/* if we don't have free ports, mcast frames will be dropped */
+@@ -1560,7 +1565,10 @@ static void iwl_mvm_mc_iface_iterator(void *_data, u8 *mac,
+ 	memcpy(cmd->bssid, vif->bss_conf.bssid, ETH_ALEN);
+ 	len = roundup(sizeof(*cmd) + cmd->count * ETH_ALEN, 4);
+ 
+-	ret = iwl_mvm_send_cmd_pdu(mvm, MCAST_FILTER_CMD, CMD_ASYNC, len, cmd);
++	hcmd.len[0] = len;
++	hcmd.data[0] = cmd;
++
++	ret = iwl_mvm_send_cmd(mvm, &hcmd);
+ 	if (ret)
+ 		IWL_ERR(mvm, "mcast filter cmd error. ret=%d\n", ret);
+ }
+@@ -1635,6 +1643,12 @@ static void iwl_mvm_configure_filter(struct ieee80211_hw *hw,
+ 	if (!cmd)
+ 		goto out;
+ 
++	if (changed_flags & FIF_ALLMULTI)
++		cmd->pass_all = !!(*total_flags & FIF_ALLMULTI);
++
++	if (cmd->pass_all)
++		cmd->count = 0;
++
+ 	iwl_mvm_recalc_multicast(mvm);
+ out:
+ 	mutex_unlock(&mvm->mutex);
+@@ -2563,7 +2577,7 @@ static void iwl_mvm_purge_deferred_tx_frames(struct iwl_mvm *mvm,
+ 			 * queues, so we should never get a second deferred
+ 			 * frame for the RA/TID.
+ 			 */
+-			iwl_mvm_start_mac_queues(mvm, info->hw_queue);
++			iwl_mvm_start_mac_queues(mvm, BIT(info->hw_queue));
+ 			ieee80211_free_txskb(mvm->hw, skb);
+ 		}
+ 	}
+@@ -3975,6 +3989,43 @@ static int iwl_mvm_post_channel_switch(struct ieee80211_hw *hw,
+ 	return ret;
+ }
+ 
++static void iwl_mvm_flush_no_vif(struct iwl_mvm *mvm, u32 queues, bool drop)
++{
++	if (drop) {
++		if (iwl_mvm_has_new_tx_api(mvm))
++			/* TODO new tx api */
++			WARN_ONCE(1,
++				  "Need to implement flush TX queue\n");
++		else
++			iwl_mvm_flush_tx_path(mvm,
++				iwl_mvm_flushable_queues(mvm) & queues,
++				0);
++	} else {
++		if (iwl_mvm_has_new_tx_api(mvm)) {
++			struct ieee80211_sta *sta;
++			int i;
++
++			mutex_lock(&mvm->mutex);
++
++			for (i = 0; i < ARRAY_SIZE(mvm->fw_id_to_mac_id); i++) {
++				sta = rcu_dereference_protected(
++						mvm->fw_id_to_mac_id[i],
++						lockdep_is_held(&mvm->mutex));
++				if (IS_ERR_OR_NULL(sta))
++					continue;
++
++				iwl_mvm_wait_sta_queues_empty(mvm,
++						iwl_mvm_sta_from_mac80211(sta));
++			}
++
++			mutex_unlock(&mvm->mutex);
++		} else {
++			iwl_trans_wait_tx_queues_empty(mvm->trans,
++						       queues);
++		}
++	}
++}
++
+ static void iwl_mvm_mac_flush(struct ieee80211_hw *hw,
+ 			      struct ieee80211_vif *vif, u32 queues, bool drop)
+ {
+@@ -3985,7 +4036,12 @@ static void iwl_mvm_mac_flush(struct ieee80211_hw *hw,
+ 	int i;
+ 	u32 msk = 0;
+ 
+-	if (!vif || vif->type != NL80211_IFTYPE_STATION)
++	if (!vif) {
++		iwl_mvm_flush_no_vif(mvm, queues, drop);
++		return;
++	}
++
++	if (vif->type != NL80211_IFTYPE_STATION)
+ 		return;
+ 
+ 	/* Make sure we're done with the deferred traffic before flushing */
+diff --git a/drivers/net/wireless/intel/iwlwifi/mvm/rs.c b/drivers/net/wireless/intel/iwlwifi/mvm/rs.c
+index ba7bd049d3d4..0fe723ca844e 100644
+--- a/drivers/net/wireless/intel/iwlwifi/mvm/rs.c
++++ b/drivers/net/wireless/intel/iwlwifi/mvm/rs.c
+@@ -661,7 +661,8 @@ static void rs_tl_turn_on_agg(struct iwl_mvm *mvm, struct iwl_mvm_sta *mvmsta,
+ 	    (lq_sta->tx_agg_tid_en & BIT(tid)) &&
+ 	    (tid_data->tx_count_last >= IWL_MVM_RS_AGG_START_THRESHOLD)) {
+ 		IWL_DEBUG_RATE(mvm, "try to aggregate tid %d\n", tid);
+-		rs_tl_turn_on_agg_for_tid(mvm, lq_sta, tid, sta);
++		if (rs_tl_turn_on_agg_for_tid(mvm, lq_sta, tid, sta) == 0)
++			tid_data->state = IWL_AGG_QUEUED;
+ 	}
+ }
+ 
+diff --git a/drivers/net/wireless/intel/iwlwifi/mvm/rxmq.c b/drivers/net/wireless/intel/iwlwifi/mvm/rxmq.c
+index 67ffd9774712..77f77bc5d083 100644
+--- a/drivers/net/wireless/intel/iwlwifi/mvm/rxmq.c
++++ b/drivers/net/wireless/intel/iwlwifi/mvm/rxmq.c
+@@ -672,11 +672,12 @@ static bool iwl_mvm_reorder(struct iwl_mvm *mvm,
+ 	 * If there was a significant jump in the nssn - adjust.
+ 	 * If the SN is smaller than the NSSN it might need to first go into
+ 	 * the reorder buffer, in which case we just release up to it and the
+-	 * rest of the function will take of storing it and releasing up to the
+-	 * nssn
++	 * rest of the function will take care of storing it and releasing up to
++	 * the nssn
+ 	 */
+ 	if (!iwl_mvm_is_sn_less(nssn, buffer->head_sn + buffer->buf_size,
+-				buffer->buf_size)) {
++				buffer->buf_size) ||
++	    !ieee80211_sn_less(sn, buffer->head_sn + buffer->buf_size)) {
+ 		u16 min_sn = ieee80211_sn_less(sn, nssn) ? sn : nssn;
+ 
+ 		iwl_mvm_release_frames(mvm, sta, napi, buffer, min_sn);
+diff --git a/drivers/net/wireless/intel/iwlwifi/mvm/scan.c b/drivers/net/wireless/intel/iwlwifi/mvm/scan.c
+index 50983615dce6..774122fed454 100644
+--- a/drivers/net/wireless/intel/iwlwifi/mvm/scan.c
++++ b/drivers/net/wireless/intel/iwlwifi/mvm/scan.c
+@@ -555,7 +555,7 @@ static int iwl_mvm_lmac_scan_abort(struct iwl_mvm *mvm)
+ 	struct iwl_host_cmd cmd = {
+ 		.id = SCAN_OFFLOAD_ABORT_CMD,
+ 	};
+-	u32 status;
++	u32 status = CAN_ABORT_STATUS;
+ 
+ 	ret = iwl_mvm_send_cmd_status(mvm, &cmd, &status);
+ 	if (ret)
+diff --git a/drivers/net/wireless/intel/iwlwifi/mvm/sta.c b/drivers/net/wireless/intel/iwlwifi/mvm/sta.c
+index 411a2055dc45..c4a343534c5e 100644
+--- a/drivers/net/wireless/intel/iwlwifi/mvm/sta.c
++++ b/drivers/net/wireless/intel/iwlwifi/mvm/sta.c
+@@ -1285,7 +1285,7 @@ static int iwl_mvm_add_int_sta_common(struct iwl_mvm *mvm,
+ {
+ 	struct iwl_mvm_add_sta_cmd cmd;
+ 	int ret;
+-	u32 status;
++	u32 status = ADD_STA_SUCCESS;
+ 
+ 	lockdep_assert_held(&mvm->mutex);
+ 
+@@ -2385,8 +2385,10 @@ int iwl_mvm_sta_tx_agg_start(struct iwl_mvm *mvm, struct ieee80211_vif *vif,
+ 	if (WARN_ON_ONCE(tid >= IWL_MAX_TID_COUNT))
+ 		return -EINVAL;
+ 
+-	if (mvmsta->tid_data[tid].state != IWL_AGG_OFF) {
+-		IWL_ERR(mvm, "Start AGG when state is not IWL_AGG_OFF %d!\n",
++	if (mvmsta->tid_data[tid].state != IWL_AGG_QUEUED &&
++	    mvmsta->tid_data[tid].state != IWL_AGG_OFF) {
++		IWL_ERR(mvm,
++			"Start AGG when state is not IWL_AGG_QUEUED or IWL_AGG_OFF %d!\n",
+ 			mvmsta->tid_data[tid].state);
+ 		return -ENXIO;
+ 	}
+diff --git a/drivers/net/wireless/intel/iwlwifi/mvm/sta.h b/drivers/net/wireless/intel/iwlwifi/mvm/sta.h
+index d13893806513..aedabe101cf0 100644
+--- a/drivers/net/wireless/intel/iwlwifi/mvm/sta.h
++++ b/drivers/net/wireless/intel/iwlwifi/mvm/sta.h
+@@ -281,6 +281,7 @@ struct iwl_mvm_vif;
+  * These states relate to a specific RA / TID.
+  *
+  * @IWL_AGG_OFF: aggregation is not used
++ * @IWL_AGG_QUEUED: aggregation start work has been queued
+  * @IWL_AGG_STARTING: aggregation are starting (between start and oper)
+  * @IWL_AGG_ON: aggregation session is up
+  * @IWL_EMPTYING_HW_QUEUE_ADDBA: establishing a BA session - waiting for the
+@@ -290,6 +291,7 @@ struct iwl_mvm_vif;
+  */
+ enum iwl_mvm_agg_state {
+ 	IWL_AGG_OFF = 0,
++	IWL_AGG_QUEUED,
+ 	IWL_AGG_STARTING,
+ 	IWL_AGG_ON,
+ 	IWL_EMPTYING_HW_QUEUE_ADDBA,
+diff --git a/drivers/net/wireless/intel/iwlwifi/mvm/tt.c b/drivers/net/wireless/intel/iwlwifi/mvm/tt.c
+index 8876c2abc440..4d907f60bce9 100644
+--- a/drivers/net/wireless/intel/iwlwifi/mvm/tt.c
++++ b/drivers/net/wireless/intel/iwlwifi/mvm/tt.c
+@@ -529,6 +529,7 @@ int iwl_mvm_ctdp_command(struct iwl_mvm *mvm, u32 op, u32 state)
+ 
+ 	lockdep_assert_held(&mvm->mutex);
+ 
++	status = 0;
+ 	ret = iwl_mvm_send_cmd_pdu_status(mvm, WIDE_ID(PHY_OPS_GROUP,
+ 						       CTDP_CONFIG_CMD),
+ 					  sizeof(cmd), &cmd, &status);
+diff --git a/drivers/net/wireless/intel/iwlwifi/mvm/tx.c b/drivers/net/wireless/intel/iwlwifi/mvm/tx.c
+index 172b5e63d3fb..6f2e2af23219 100644
+--- a/drivers/net/wireless/intel/iwlwifi/mvm/tx.c
++++ b/drivers/net/wireless/intel/iwlwifi/mvm/tx.c
+@@ -564,8 +564,8 @@ static int iwl_mvm_get_ctrl_vif_queue(struct iwl_mvm *mvm,
+ 	case NL80211_IFTYPE_AP:
+ 	case NL80211_IFTYPE_ADHOC:
+ 		/*
+-		 * Handle legacy hostapd as well, where station will be added
+-		 * only just before sending the association response.
++		 * Non-bufferable frames use the broadcast station, thus they
++		 * use the probe queue.
+ 		 * Also take care of the case where we send a deauth to a
+ 		 * station that we don't have, or similarly an association
+ 		 * response (with non-success status) for a station we can't
+@@ -573,9 +573,9 @@ static int iwl_mvm_get_ctrl_vif_queue(struct iwl_mvm *mvm,
+ 		 * Also, disassociate frames might happen, particular with
+ 		 * reason 7 ("Class 3 frame received from nonassociated STA").
+ 		 */
+-		if (ieee80211_is_probe_resp(fc) || ieee80211_is_auth(fc) ||
+-		    ieee80211_is_deauth(fc) || ieee80211_is_assoc_resp(fc) ||
+-		    ieee80211_is_disassoc(fc))
++		if (ieee80211_is_mgmt(fc) &&
++		    (!ieee80211_is_bufferable_mmpdu(fc) ||
++		     ieee80211_is_deauth(fc) || ieee80211_is_disassoc(fc)))
+ 			return mvm->probe_queue;
+ 		if (info->hw_queue == info->control.vif->cab_queue)
+ 			return mvmvif->cab_queue;
+diff --git a/drivers/net/wireless/quantenna/qtnfmac/cfg80211.c b/drivers/net/wireless/quantenna/qtnfmac/cfg80211.c
+index 856fa6e8327e..a450bc6bc774 100644
+--- a/drivers/net/wireless/quantenna/qtnfmac/cfg80211.c
++++ b/drivers/net/wireless/quantenna/qtnfmac/cfg80211.c
+@@ -115,6 +115,8 @@ int qtnf_del_virtual_intf(struct wiphy *wiphy, struct wireless_dev *wdev)
+ 
+ 	vif = qtnf_netdev_get_priv(wdev->netdev);
+ 
++	qtnf_scan_done(vif->mac, true);
++
+ 	if (qtnf_cmd_send_del_intf(vif))
+ 		pr_err("VIF%u.%u: failed to delete VIF\n", vif->mac->macid,
+ 		       vif->vifid);
+@@ -335,6 +337,8 @@ static int qtnf_stop_ap(struct wiphy *wiphy, struct net_device *dev)
+ 	struct qtnf_vif *vif = qtnf_netdev_get_priv(dev);
+ 	int ret;
+ 
++	qtnf_scan_done(vif->mac, true);
++
+ 	ret = qtnf_cmd_send_stop_ap(vif);
+ 	if (ret) {
+ 		pr_err("VIF%u.%u: failed to stop AP operation in FW\n",
+@@ -570,8 +574,6 @@ qtnf_del_station(struct wiphy *wiphy, struct net_device *dev,
+ 	    !qtnf_sta_list_lookup(&vif->sta_list, params->mac))
+ 		return 0;
+ 
+-	qtnf_scan_done(vif->mac, true);
+-
+ 	ret = qtnf_cmd_send_del_sta(vif, params);
+ 	if (ret)
+ 		pr_err("VIF%u.%u: failed to delete STA %pM\n",
+@@ -1134,8 +1136,9 @@ void qtnf_virtual_intf_cleanup(struct net_device *ndev)
+ 		}
+ 
+ 		vif->sta_state = QTNF_STA_DISCONNECTED;
+-		qtnf_scan_done(mac, true);
+ 	}
++
++	qtnf_scan_done(mac, true);
+ }
+ 
+ void qtnf_cfg80211_vif_reset(struct qtnf_vif *vif)
+diff --git a/drivers/net/wireless/quantenna/qtnfmac/cfg80211.h b/drivers/net/wireless/quantenna/qtnfmac/cfg80211.h
+index 6a4af52522b8..66db26613b1f 100644
+--- a/drivers/net/wireless/quantenna/qtnfmac/cfg80211.h
++++ b/drivers/net/wireless/quantenna/qtnfmac/cfg80211.h
+@@ -34,6 +34,9 @@ static inline void qtnf_scan_done(struct qtnf_wmac *mac, bool aborted)
+ 		.aborted = aborted,
+ 	};
+ 
++	if (timer_pending(&mac->scan_timeout))
++		del_timer_sync(&mac->scan_timeout);
++
+ 	mutex_lock(&mac->mac_lock);
+ 
+ 	if (mac->scan_req) {
+diff --git a/drivers/net/wireless/quantenna/qtnfmac/event.c b/drivers/net/wireless/quantenna/qtnfmac/event.c
+index 0fc2814eafad..43d2e7fd6e02 100644
+--- a/drivers/net/wireless/quantenna/qtnfmac/event.c
++++ b/drivers/net/wireless/quantenna/qtnfmac/event.c
+@@ -345,8 +345,6 @@ qtnf_event_handle_scan_complete(struct qtnf_wmac *mac,
+ 		return -EINVAL;
+ 	}
+ 
+-	if (timer_pending(&mac->scan_timeout))
+-		del_timer_sync(&mac->scan_timeout);
+ 	qtnf_scan_done(mac, le32_to_cpu(status->flags) & QLINK_SCAN_ABORTED);
+ 
+ 	return 0;
+diff --git a/drivers/net/wireless/quantenna/qtnfmac/pearl/pcie.c b/drivers/net/wireless/quantenna/qtnfmac/pearl/pcie.c
+index 502e72b7cdcc..69131965a298 100644
+--- a/drivers/net/wireless/quantenna/qtnfmac/pearl/pcie.c
++++ b/drivers/net/wireless/quantenna/qtnfmac/pearl/pcie.c
+@@ -661,14 +661,18 @@ static int qtnf_pcie_data_tx(struct qtnf_bus *bus, struct sk_buff *skb)
+ 	struct qtnf_pcie_bus_priv *priv = (void *)get_bus_priv(bus);
+ 	dma_addr_t txbd_paddr, skb_paddr;
+ 	struct qtnf_tx_bd *txbd;
++	unsigned long flags;
+ 	int len, i;
+ 	u32 info;
+ 	int ret = 0;
+ 
++	spin_lock_irqsave(&priv->tx0_lock, flags);
++
+ 	if (!qtnf_tx_queue_ready(priv)) {
+ 		if (skb->dev)
+ 			netif_stop_queue(skb->dev);
+ 
++		spin_unlock_irqrestore(&priv->tx0_lock, flags);
+ 		return NETDEV_TX_BUSY;
+ 	}
+ 
+@@ -717,8 +721,10 @@ static int qtnf_pcie_data_tx(struct qtnf_bus *bus, struct sk_buff *skb)
+ 		dev_kfree_skb_any(skb);
+ 	}
+ 
+-	qtnf_pcie_data_tx_reclaim(priv);
+ 	priv->tx_done_count++;
++	spin_unlock_irqrestore(&priv->tx0_lock, flags);
++
++	qtnf_pcie_data_tx_reclaim(priv);
+ 
+ 	return NETDEV_TX_OK;
+ }
+@@ -1247,6 +1253,7 @@ static int qtnf_pcie_probe(struct pci_dev *pdev, const struct pci_device_id *id)
+ 	strcpy(bus->fwname, QTN_PCI_PEARL_FW_NAME);
+ 	init_completion(&bus->request_firmware_complete);
+ 	mutex_init(&bus->bus_lock);
++	spin_lock_init(&pcie_priv->tx0_lock);
+ 	spin_lock_init(&pcie_priv->irq_lock);
+ 	spin_lock_init(&pcie_priv->tx_reclaim_lock);
+ 
+diff --git a/drivers/net/wireless/quantenna/qtnfmac/pearl/pcie_bus_priv.h b/drivers/net/wireless/quantenna/qtnfmac/pearl/pcie_bus_priv.h
+index e76a23716ee0..86ac1ccedb52 100644
+--- a/drivers/net/wireless/quantenna/qtnfmac/pearl/pcie_bus_priv.h
++++ b/drivers/net/wireless/quantenna/qtnfmac/pearl/pcie_bus_priv.h
+@@ -34,6 +34,8 @@ struct qtnf_pcie_bus_priv {
+ 
+ 	/* lock for tx reclaim operations */
+ 	spinlock_t tx_reclaim_lock;
++	/* lock for tx0 operations */
++	spinlock_t tx0_lock;
+ 	u8 msi_enabled;
+ 	int mps;
+ 

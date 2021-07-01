@@ -1,0 +1,29 @@
+diff --git a/MAINTAINERS b/MAINTAINERS
+index 95eafcc2bc85..3b45a1bdb62e 100644
+--- a/MAINTAINERS
++++ b/MAINTAINERS
+@@ -2706,10 +2706,11 @@ F:	fs/ceph/
+ CERTIFICATE HANDLING:
+ M:	David Howells <dhowells@redhat.com>
+ M:	David Woodhouse <dwmw2@infradead.org>
+-L:	keyrings@linux-nfs.org
++L:	keyrings@vger.kernel.org
+ S:	Maintained
+ F:	Documentation/module-signing.txt
+ F:	certs/
++F:	scripts/sign-file.c
+ F:	scripts/extract-cert.c
+ 
+ CERTIFIED WIRELESS USB (WUSB) SUBSYSTEM:
+diff --git a/security/keys/process_keys.c b/security/keys/process_keys.c
+index a3f85d2a00bb..e6d50172872f 100644
+--- a/security/keys/process_keys.c
++++ b/security/keys/process_keys.c
+@@ -794,6 +794,7 @@ long join_session_keyring(const char *name)
+ 		ret = PTR_ERR(keyring);
+ 		goto error2;
+ 	} else if (keyring == new->session_keyring) {
++		key_put(keyring);
+ 		ret = 0;
+ 		goto error2;
+ 	}

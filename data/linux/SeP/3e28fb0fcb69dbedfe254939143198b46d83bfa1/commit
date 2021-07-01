@@ -1,0 +1,20 @@
+commit 3e28fb0fcb69dbedfe254939143198b46d83bfa1
+Merge: bc5725f97408 492855939bdb
+Author: Linus Torvalds <torvalds@linux-foundation.org>
+Commit: Linus Torvalds <torvalds@linux-foundation.org>
+
+    Merge tag 'vfio-v5.1-rc4' of git://github.com/awilliam/linux-vfio
+    
+    Pull VFIO fixes from Alex Williamson:
+    
+     - Fix clang printk format errors (Louis Taylor)
+    
+     - Declare structure static to fix sparse warning (Wang Hai)
+    
+     - Limit user DMA mappings per container (CVE-2019-3882) (Alex
+       Williamson)
+    
+    * tag 'vfio-v5.1-rc4' of git://github.com/awilliam/linux-vfio:
+      vfio/type1: Limit DMA mappings per container
+      vfio/spapr_tce: Make symbol 'tce_iommu_driver_ops' static
+      vfio/pci: use correct format characters

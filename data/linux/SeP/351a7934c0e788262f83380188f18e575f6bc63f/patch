@@ -1,0 +1,288 @@
+diff --git a/fs/cifs/cifsacl.c b/fs/cifs/cifsacl.c
+index c819b0bd491a..7ff866dbb89e 100644
+--- a/fs/cifs/cifsacl.c
++++ b/fs/cifs/cifsacl.c
+@@ -865,8 +865,8 @@ static int build_sec_desc(struct cifs_ntsd *pntsd, struct cifs_ntsd *pnntsd,
+ 	return rc;
+ }
+ 
+-static struct cifs_ntsd *get_cifs_acl_by_fid(struct cifs_sb_info *cifs_sb,
+-		__u16 fid, u32 *pacllen)
++struct cifs_ntsd *get_cifs_acl_by_fid(struct cifs_sb_info *cifs_sb,
++		const struct cifs_fid *cifsfid, u32 *pacllen)
+ {
+ 	struct cifs_ntsd *pntsd = NULL;
+ 	unsigned int xid;
+@@ -877,7 +877,8 @@ static struct cifs_ntsd *get_cifs_acl_by_fid(struct cifs_sb_info *cifs_sb,
+ 		return ERR_CAST(tlink);
+ 
+ 	xid = get_xid();
+-	rc = CIFSSMBGetCIFSACL(xid, tlink_tcon(tlink), fid, &pntsd, pacllen);
++	rc = CIFSSMBGetCIFSACL(xid, tlink_tcon(tlink), cifsfid->netfid, &pntsd,
++				pacllen);
+ 	free_xid(xid);
+ 
+ 	cifs_put_tlink(tlink);
+@@ -946,7 +947,7 @@ struct cifs_ntsd *get_cifs_acl(struct cifs_sb_info *cifs_sb,
+ 	if (!open_file)
+ 		return get_cifs_acl_by_path(cifs_sb, path, pacllen);
+ 
+-	pntsd = get_cifs_acl_by_fid(cifs_sb, open_file->fid.netfid, pacllen);
++	pntsd = get_cifs_acl_by_fid(cifs_sb, &open_file->fid, pacllen);
+ 	cifsFileInfo_put(open_file);
+ 	return pntsd;
+ }
+@@ -1006,19 +1007,31 @@ int set_cifs_acl(struct cifs_ntsd *pnntsd, __u32 acllen,
+ /* Translate the CIFS ACL (simlar to NTFS ACL) for a file into mode bits */
+ int
+ cifs_acl_to_fattr(struct cifs_sb_info *cifs_sb, struct cifs_fattr *fattr,
+-		  struct inode *inode, const char *path, const __u16 *pfid)
++		  struct inode *inode, const char *path,
++		  const struct cifs_fid *pfid)
+ {
+ 	struct cifs_ntsd *pntsd = NULL;
+ 	u32 acllen = 0;
+ 	int rc = 0;
++	struct tcon_link *tlink = cifs_sb_tlink(cifs_sb);
++	struct cifs_tcon *tcon;
+ 
+ 	cifs_dbg(NOISY, "converting ACL to mode for %s\n", path);
+ 
+-	if (pfid)
+-		pntsd = get_cifs_acl_by_fid(cifs_sb, *pfid, &acllen);
+-	else
+-		pntsd = get_cifs_acl(cifs_sb, inode, path, &acllen);
++	if (IS_ERR(tlink))
++		return PTR_ERR(tlink);
++	tcon = tlink_tcon(tlink);
+ 
++	if (pfid && (tcon->ses->server->ops->get_acl_by_fid))
++		pntsd = tcon->ses->server->ops->get_acl_by_fid(cifs_sb, pfid,
++							  &acllen);
++	else if (tcon->ses->server->ops->get_acl)
++		pntsd = tcon->ses->server->ops->get_acl(cifs_sb, inode, path,
++							&acllen);
++	else {
++		cifs_put_tlink(tlink);
++		return -EOPNOTSUPP;
++	}
+ 	/* if we can retrieve the ACL, now parse Access Control Entries, ACEs */
+ 	if (IS_ERR(pntsd)) {
+ 		rc = PTR_ERR(pntsd);
+@@ -1030,6 +1043,8 @@ cifs_acl_to_fattr(struct cifs_sb_info *cifs_sb, struct cifs_fattr *fattr,
+ 			cifs_dbg(VFS, "parse sec desc failed rc = %d\n", rc);
+ 	}
+ 
++	cifs_put_tlink(tlink);
++
+ 	return rc;
+ }
+ 
+diff --git a/fs/cifs/cifsglob.h b/fs/cifs/cifsglob.h
+index 86dc28c7aa5c..cf32f0393369 100644
+--- a/fs/cifs/cifsglob.h
++++ b/fs/cifs/cifsglob.h
+@@ -398,6 +398,8 @@ struct smb_version_operations {
+ 			const struct nls_table *, int);
+ 	struct cifs_ntsd * (*get_acl)(struct cifs_sb_info *, struct inode *,
+ 			const char *, u32 *);
++	struct cifs_ntsd * (*get_acl_by_fid)(struct cifs_sb_info *,
++			const struct cifs_fid *, u32 *);
+ 	int (*set_acl)(struct cifs_ntsd *, __u32, struct inode *, const char *,
+ 			int);
+ };
+diff --git a/fs/cifs/cifsproto.h b/fs/cifs/cifsproto.h
+index d00e09dfc452..acc4ee8ed075 100644
+--- a/fs/cifs/cifsproto.h
++++ b/fs/cifs/cifsproto.h
+@@ -151,7 +151,7 @@ extern struct inode *cifs_iget(struct super_block *sb,
+ 
+ extern int cifs_get_inode_info(struct inode **inode, const char *full_path,
+ 			       FILE_ALL_INFO *data, struct super_block *sb,
+-			       int xid, const __u16 *fid);
++			       int xid, const struct cifs_fid *fid);
+ extern int cifs_get_inode_info_unix(struct inode **pinode,
+ 			const unsigned char *search_path,
+ 			struct super_block *sb, unsigned int xid);
+@@ -162,11 +162,13 @@ extern int cifs_rename_pending_delete(const char *full_path,
+ 				      const unsigned int xid);
+ extern int cifs_acl_to_fattr(struct cifs_sb_info *cifs_sb,
+ 			      struct cifs_fattr *fattr, struct inode *inode,
+-			      const char *path, const __u16 *pfid);
++			      const char *path, const struct cifs_fid *pfid);
+ extern int id_mode_to_cifs_acl(struct inode *inode, const char *path, __u64,
+ 					kuid_t, kgid_t);
+ extern struct cifs_ntsd *get_cifs_acl(struct cifs_sb_info *, struct inode *,
+ 					const char *, u32 *);
++extern struct cifs_ntsd *get_cifs_acl_by_fid(struct cifs_sb_info *,
++						const struct cifs_fid *, u32 *);
+ extern int set_cifs_acl(struct cifs_ntsd *, __u32, struct inode *,
+ 				const char *, int);
+ 
+diff --git a/fs/cifs/dir.c b/fs/cifs/dir.c
+index d3a6796caa5a..3db0c5fd9a11 100644
+--- a/fs/cifs/dir.c
++++ b/fs/cifs/dir.c
+@@ -378,7 +378,7 @@ cifs_do_create(struct inode *inode, struct dentry *direntry, unsigned int xid,
+ 					      xid);
+ 	else {
+ 		rc = cifs_get_inode_info(&newinode, full_path, buf, inode->i_sb,
+-					 xid, &fid->netfid);
++					 xid, fid);
+ 		if (newinode) {
+ 			if (server->ops->set_lease_key)
+ 				server->ops->set_lease_key(newinode, fid);
+diff --git a/fs/cifs/file.c b/fs/cifs/file.c
+index 755584684f6c..53c15074bb36 100644
+--- a/fs/cifs/file.c
++++ b/fs/cifs/file.c
+@@ -244,7 +244,7 @@ cifs_nt_open(char *full_path, struct inode *inode, struct cifs_sb_info *cifs_sb,
+ 					      xid);
+ 	else
+ 		rc = cifs_get_inode_info(&inode, full_path, buf, inode->i_sb,
+-					 xid, &fid->netfid);
++					 xid, fid);
+ 
+ out:
+ 	kfree(buf);
+@@ -2389,7 +2389,7 @@ cifs_iovec_write(struct file *file, const struct iovec *iov,
+ 		 unsigned long nr_segs, loff_t *poffset)
+ {
+ 	unsigned long nr_pages, i;
+-	size_t copied, len, cur_len;
++	size_t bytes, copied, len, cur_len;
+ 	ssize_t total_written = 0;
+ 	loff_t offset;
+ 	struct iov_iter it;
+@@ -2444,14 +2444,45 @@ cifs_iovec_write(struct file *file, const struct iovec *iov,
+ 
+ 		save_len = cur_len;
+ 		for (i = 0; i < nr_pages; i++) {
+-			copied = min_t(const size_t, cur_len, PAGE_SIZE);
++			bytes = min_t(const size_t, cur_len, PAGE_SIZE);
+ 			copied = iov_iter_copy_from_user(wdata->pages[i], &it,
+-							 0, copied);
++							 0, bytes);
+ 			cur_len -= copied;
+ 			iov_iter_advance(&it, copied);
++			/*
++			 * If we didn't copy as much as we expected, then that
++			 * may mean we trod into an unmapped area. Stop copying
++			 * at that point. On the next pass through the big
++			 * loop, we'll likely end up getting a zero-length
++			 * write and bailing out of it.
++			 */
++			if (copied < bytes)
++				break;
+ 		}
+ 		cur_len = save_len - cur_len;
+ 
++		/*
++		 * If we have no data to send, then that probably means that
++		 * the copy above failed altogether. That's most likely because
++		 * the address in the iovec was bogus. Set the rc to -EFAULT,
++		 * free anything we allocated and bail out.
++		 */
++		if (!cur_len) {
++			for (i = 0; i < nr_pages; i++)
++				put_page(wdata->pages[i]);
++			kfree(wdata);
++			rc = -EFAULT;
++			break;
++		}
++
++		/*
++		 * i + 1 now represents the number of pages we actually used in
++		 * the copy phase above. Bring nr_pages down to that, and free
++		 * any pages that we didn't use.
++		 */
++		for ( ; nr_pages > i + 1; nr_pages--)
++			put_page(wdata->pages[nr_pages - 1]);
++
+ 		wdata->sync_mode = WB_SYNC_ALL;
+ 		wdata->nr_pages = nr_pages;
+ 		wdata->offset = (__u64)offset;
+diff --git a/fs/cifs/inode.c b/fs/cifs/inode.c
+index be58b8fcdb3c..aadc2b68678b 100644
+--- a/fs/cifs/inode.c
++++ b/fs/cifs/inode.c
+@@ -677,7 +677,7 @@ cifs_get_file_info(struct file *filp)
+ int
+ cifs_get_inode_info(struct inode **inode, const char *full_path,
+ 		    FILE_ALL_INFO *data, struct super_block *sb, int xid,
+-		    const __u16 *fid)
++		    const struct cifs_fid *fid)
+ {
+ 	bool validinum = false;
+ 	__u16 srchflgs;
+diff --git a/fs/cifs/smb1ops.c b/fs/cifs/smb1ops.c
+index bfd66d84831e..526fb89f9230 100644
+--- a/fs/cifs/smb1ops.c
++++ b/fs/cifs/smb1ops.c
+@@ -1073,6 +1073,7 @@ struct smb_version_operations smb1_operations = {
+ #endif /* CIFS_XATTR */
+ #ifdef CONFIG_CIFS_ACL
+ 	.get_acl = get_cifs_acl,
++	.get_acl_by_fid = get_cifs_acl_by_fid,
+ 	.set_acl = set_cifs_acl,
+ #endif /* CIFS_ACL */
+ };
+diff --git a/fs/cifs/smb2glob.h b/fs/cifs/smb2glob.h
+index c38350851b08..bc0bb9c34f72 100644
+--- a/fs/cifs/smb2glob.h
++++ b/fs/cifs/smb2glob.h
+@@ -57,4 +57,7 @@
+ #define SMB2_CMACAES_SIZE (16)
+ #define SMB3_SIGNKEY_SIZE (16)
+ 
++/* Maximum buffer size value we can send with 1 credit */
++#define SMB2_MAX_BUFFER_SIZE 65536
++
+ #endif	/* _SMB2_GLOB_H */
+diff --git a/fs/cifs/smb2ops.c b/fs/cifs/smb2ops.c
+index 757da3e54d3d..192f51a12cf1 100644
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -182,11 +182,8 @@ smb2_negotiate_wsize(struct cifs_tcon *tcon, struct smb_vol *volume_info)
+ 	/* start with specified wsize, or default */
+ 	wsize = volume_info->wsize ? volume_info->wsize : CIFS_DEFAULT_IOSIZE;
+ 	wsize = min_t(unsigned int, wsize, server->max_write);
+-	/*
+-	 * limit write size to 2 ** 16, because we don't support multicredit
+-	 * requests now.
+-	 */
+-	wsize = min_t(unsigned int, wsize, 2 << 15);
++	/* set it to the maximum buffer size value we can send with 1 credit */
++	wsize = min_t(unsigned int, wsize, SMB2_MAX_BUFFER_SIZE);
+ 
+ 	return wsize;
+ }
+@@ -200,11 +197,8 @@ smb2_negotiate_rsize(struct cifs_tcon *tcon, struct smb_vol *volume_info)
+ 	/* start with specified rsize, or default */
+ 	rsize = volume_info->rsize ? volume_info->rsize : CIFS_DEFAULT_IOSIZE;
+ 	rsize = min_t(unsigned int, rsize, server->max_read);
+-	/*
+-	 * limit write size to 2 ** 16, because we don't support multicredit
+-	 * requests now.
+-	 */
+-	rsize = min_t(unsigned int, rsize, 2 << 15);
++	/* set it to the maximum buffer size value we can send with 1 credit */
++	rsize = min_t(unsigned int, rsize, SMB2_MAX_BUFFER_SIZE);
+ 
+ 	return rsize;
+ }
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index a3f7a9c3cc69..860344701067 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -413,7 +413,9 @@ SMB2_negotiate(const unsigned int xid, struct cifs_ses *ses)
+ 
+ 	/* SMB2 only has an extended negflavor */
+ 	server->negflavor = CIFS_NEGFLAVOR_EXTENDED;
+-	server->maxBuf = le32_to_cpu(rsp->MaxTransactSize);
++	/* set it to the maximum buffer size value we can send with 1 credit */
++	server->maxBuf = min_t(unsigned int, le32_to_cpu(rsp->MaxTransactSize),
++			       SMB2_MAX_BUFFER_SIZE);
+ 	server->max_read = le32_to_cpu(rsp->MaxReadSize);
+ 	server->max_write = le32_to_cpu(rsp->MaxWriteSize);
+ 	/* BB Do we need to validate the SecurityMode? */

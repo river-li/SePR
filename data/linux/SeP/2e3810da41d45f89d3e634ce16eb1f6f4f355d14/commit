@@ -1,0 +1,16 @@
+commit 2e3810da41d45f89d3e634ce16eb1f6f4f355d14
+Merge: 0ad4989d6270 f3747379accb
+Author: Linus Torvalds <torvalds@linux-foundation.org>
+Commit: Linus Torvalds <torvalds@linux-foundation.org>
+
+    Merge tag 'for-linus' of git://git.kernel.org/pub/scm/virt/kvm/kvm
+    
+    Pull kvm fixes from Paolo Bonzini:
+     "Three small fixes.
+    
+      Two for x86 and one avoids that sparse bails out"
+    
+    * tag 'for-linus' of git://git.kernel.org/pub/scm/virt/kvm/kvm:
+      KVM: x86: SYSENTER emulation is broken
+      KVM: x86: Fix of previously incomplete fix for CVE-2014-8480
+      KVM: fix sparse warning in include/trace/events/kvm.h

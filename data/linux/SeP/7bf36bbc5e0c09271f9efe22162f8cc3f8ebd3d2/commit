@@ -1,0 +1,24 @@
+commit 7bf36bbc5e0c09271f9efe22162f8cc3f8ebd3d2
+Author: Andi Kleen <ak@linux.intel.com>
+Commit: Linus Torvalds <torvalds@g5.osdl.org>
+
+    [PATCH] x86_64: When user could have changed RIP always force IRET
+    
+    Intel EM64T CPUs handle uncanonical return addresses differently
+    from AMD CPUs.
+    
+    The exception is reported in the SYSRET, not the next instruction.
+    This leads to the kernel exception handler running on the user stack
+    with the wrong GS because the kernel didn't expect exceptions
+    on this instruction.
+    
+    This version of the patch has the teething problems that plagued an earlier
+    version fixed.
+    
+    This is CVE-2006-0744
+    
+    Thanks to Ernie Petrides and Asit B. Mallick for analysis and initial
+    patches.
+    
+    Signed-off-by: Andi Kleen <ak@suse.de>
+    Signed-off-by: Linus Torvalds <torvalds@osdl.org>

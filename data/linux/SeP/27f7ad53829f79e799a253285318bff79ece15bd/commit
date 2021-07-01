@@ -1,0 +1,19 @@
+commit 27f7ad53829f79e799a253285318bff79ece15bd
+Author: Takashi Iwai <tiwai@suse.de>
+Commit: Takashi Iwai <tiwai@suse.de>
+
+    ALSA: seq/oss - Fix double-free at error path of snd_seq_oss_open()
+    
+    The error handling in snd_seq_oss_open() has several bad codes that
+    do dereferecing released pointers and double-free of kmalloc'ed data.
+    The object dp is release in free_devinfo() that is called via
+    private_free callback.  The rest shouldn't touch this object any more.
+    
+    The patch changes delete_port() to call kfree() in any case, and gets
+    rid of unnecessary calls of destructors in snd_seq_oss_open().
+    
+    Fixes CVE-2010-3080.
+    
+    Reported-and-tested-by: Tavis Ormandy <taviso@cmpxchg8b.com>
+    Cc: <stable@kernel.org>
+    Signed-off-by: Takashi Iwai <tiwai@suse.de>

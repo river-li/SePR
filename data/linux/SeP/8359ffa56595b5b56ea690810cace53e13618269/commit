@@ -1,0 +1,21 @@
+commit 8359ffa56595b5b56ea690810cace53e13618269
+Merge: 386aa05192eb e9c6a182649f
+Author: Linus Torvalds <torvalds@linux-foundation.org>
+Commit: Linus Torvalds <torvalds@linux-foundation.org>
+
+    Merge tag 'dm-3.12-fix-cve' of git://git.kernel.org/pub/scm/linux/kernel/git/device-mapper/linux-dm
+    
+    Pull device-mapper fix from Alasdair Kergon:
+     "A patch to avoid data corruption in a device-mapper snapshot.
+    
+      This is primarily a data corruption bug that all users of
+      device-mapper snapshots will want to fix.  The CVE is due to a data
+      leak under specific circumstances if, for example, the snapshot is
+      presented to a virtual machine: a block written as data inside the VM
+      can get interpreted incorrectly on the host outside the VM as
+      metadata, causing the host to provide the VM with access to blocks it
+      would not otherwise see.  This is likely to affect few, if any,
+      people"
+    
+    * tag 'dm-3.12-fix-cve' of git://git.kernel.org/pub/scm/linux/kernel/git/device-mapper/linux-dm:
+      dm snapshot: fix data corruption

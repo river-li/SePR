@@ -1,0 +1,12 @@
+commit fce934949c0f0003c1777fbf8c0706ba82a8cf7e
+Author: Christoph Hellwig <hch@lst.de>
+Commit: David S. Miller <davem@davemloft.net>
+
+    ipv6: add ip6_sock_set_recverr
+    
+    Add a helper to directly set the IPV6_RECVERR sockopt from kernel space
+    without going through a fake uaccess.
+    
+    Signed-off-by: Christoph Hellwig <hch@lst.de>
+    Reviewed-by: David Howells <dhowells@redhat.com>
+    Signed-off-by: David S. Miller <davem@davemloft.net>

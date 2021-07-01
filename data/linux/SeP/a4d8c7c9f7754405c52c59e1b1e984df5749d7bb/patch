@@ -1,0 +1,181 @@
+diff --git a/crypto/asymmetric_keys/x509_cert_parser.c b/crypto/asymmetric_keys/x509_cert_parser.c
+index 3000ea3b6687..021d39c0ba75 100644
+--- a/crypto/asymmetric_keys/x509_cert_parser.c
++++ b/crypto/asymmetric_keys/x509_cert_parser.c
+@@ -531,7 +531,11 @@ int x509_decode_time(time64_t *_t,  size_t hdrlen,
+ 	if (*p != 'Z')
+ 		goto unsupported_time;
+ 
+-	mon_len = month_lengths[mon];
++	if (year < 1970 ||
++	    mon < 1 || mon > 12)
++		goto invalid_time;
++
++	mon_len = month_lengths[mon - 1];
+ 	if (mon == 2) {
+ 		if (year % 4 == 0) {
+ 			mon_len = 29;
+@@ -543,14 +547,12 @@ int x509_decode_time(time64_t *_t,  size_t hdrlen,
+ 		}
+ 	}
+ 
+-	if (year < 1970 ||
+-	    mon < 1 || mon > 12 ||
+-	    day < 1 || day > mon_len ||
++	if (day < 1 || day > mon_len ||
+ 	    hour > 23 ||
+ 	    min > 59 ||
+ 	    sec > 59)
+ 		goto invalid_time;
+-	
++
+ 	*_t = mktime64(year, mon, day, hour, min, sec);
+ 	return 0;
+ 
+diff --git a/drivers/char/tpm/tpm-chip.c b/drivers/char/tpm/tpm-chip.c
+index f26b0ae23bea..45cc39aabeee 100644
+--- a/drivers/char/tpm/tpm-chip.c
++++ b/drivers/char/tpm/tpm-chip.c
+@@ -226,21 +226,23 @@ int tpm_chip_register(struct tpm_chip *chip)
+ 	if (rc)
+ 		goto out_err;
+ 
+-	if (!(chip->flags & TPM_CHIP_FLAG_TPM2)) {
+-		rc = __compat_only_sysfs_link_entry_to_kobj(&chip->pdev->kobj,
+-							    &chip->dev.kobj,
+-							    "ppi");
+-		if (rc)
+-			goto out_err;
+-	}
+-
+ 	/* Make the chip available. */
+ 	spin_lock(&driver_lock);
+-	list_add_rcu(&chip->list, &tpm_chip_list);
++	list_add_tail_rcu(&chip->list, &tpm_chip_list);
+ 	spin_unlock(&driver_lock);
+ 
+ 	chip->flags |= TPM_CHIP_FLAG_REGISTERED;
+ 
++	if (!(chip->flags & TPM_CHIP_FLAG_TPM2)) {
++		rc = __compat_only_sysfs_link_entry_to_kobj(&chip->pdev->kobj,
++							    &chip->dev.kobj,
++							    "ppi");
++		if (rc && rc != -ENOENT) {
++			tpm_chip_unregister(chip);
++			return rc;
++		}
++	}
++
+ 	return 0;
+ out_err:
+ 	tpm1_chip_unregister(chip);
+diff --git a/drivers/char/tpm/tpm2-cmd.c b/drivers/char/tpm/tpm2-cmd.c
+index bd7039fafa8a..c12130485fc1 100644
+--- a/drivers/char/tpm/tpm2-cmd.c
++++ b/drivers/char/tpm/tpm2-cmd.c
+@@ -443,12 +443,13 @@ int tpm2_seal_trusted(struct tpm_chip *chip,
+ 			     TPM_DIGEST_SIZE);
+ 
+ 	/* sensitive */
+-	tpm_buf_append_u16(&buf, 4 + TPM_DIGEST_SIZE + payload->key_len);
++	tpm_buf_append_u16(&buf, 4 + TPM_DIGEST_SIZE + payload->key_len + 1);
+ 
+ 	tpm_buf_append_u16(&buf, TPM_DIGEST_SIZE);
+ 	tpm_buf_append(&buf, options->blobauth, TPM_DIGEST_SIZE);
+-	tpm_buf_append_u16(&buf, payload->key_len);
++	tpm_buf_append_u16(&buf, payload->key_len + 1);
+ 	tpm_buf_append(&buf, payload->key, payload->key_len);
++	tpm_buf_append_u8(&buf, payload->migratable);
+ 
+ 	/* public */
+ 	tpm_buf_append_u16(&buf, 14);
+@@ -573,6 +574,8 @@ static int tpm2_unseal(struct tpm_chip *chip,
+ 		       u32 blob_handle)
+ {
+ 	struct tpm_buf buf;
++	u16 data_len;
++	u8 *data;
+ 	int rc;
+ 
+ 	rc = tpm_buf_init(&buf, TPM2_ST_SESSIONS, TPM2_CC_UNSEAL);
+@@ -591,11 +594,13 @@ static int tpm2_unseal(struct tpm_chip *chip,
+ 		rc = -EPERM;
+ 
+ 	if (!rc) {
+-		payload->key_len = be16_to_cpup(
++		data_len = be16_to_cpup(
+ 			(__be16 *) &buf.data[TPM_HEADER_SIZE + 4]);
++		data = &buf.data[TPM_HEADER_SIZE + 6];
+ 
+-		memcpy(payload->key, &buf.data[TPM_HEADER_SIZE + 6],
+-		       payload->key_len);
++		memcpy(payload->key, data, data_len - 1);
++		payload->key_len = data_len - 1;
++		payload->migratable = data[data_len - 1];
+ 	}
+ 
+ 	tpm_buf_destroy(&buf);
+diff --git a/drivers/char/tpm/tpm_of.c b/drivers/char/tpm/tpm_of.c
+index 1141456a4b1f..570f30c5c5f4 100644
+--- a/drivers/char/tpm/tpm_of.c
++++ b/drivers/char/tpm/tpm_of.c
+@@ -53,17 +53,18 @@ int read_log(struct tpm_bios_log *log)
+ 		goto cleanup_eio;
+ 	}
+ 
+-	of_node_put(np);
+ 	log->bios_event_log = kmalloc(*sizep, GFP_KERNEL);
+ 	if (!log->bios_event_log) {
+ 		pr_err("%s: ERROR - Not enough memory for BIOS measurements\n",
+ 		       __func__);
++		of_node_put(np);
+ 		return -ENOMEM;
+ 	}
+ 
+ 	log->bios_event_log_end = log->bios_event_log + *sizep;
+ 
+ 	memcpy(log->bios_event_log, __va(*basep), *sizep);
++	of_node_put(np);
+ 
+ 	return 0;
+ 
+diff --git a/drivers/char/tpm/tpm_tis.c b/drivers/char/tpm/tpm_tis.c
+index 696ef1d56b4f..65f7eecc45b0 100644
+--- a/drivers/char/tpm/tpm_tis.c
++++ b/drivers/char/tpm/tpm_tis.c
+@@ -645,6 +645,7 @@ static int tpm_tis_init(struct device *dev, struct tpm_info *tpm_info,
+ {
+ 	u32 vendor, intfcaps, intmask;
+ 	int rc, i, irq_s, irq_e, probe;
++	int irq_r = -1;
+ 	struct tpm_chip *chip;
+ 	struct priv_data *priv;
+ 
+@@ -751,6 +752,7 @@ static int tpm_tis_init(struct device *dev, struct tpm_info *tpm_info,
+ 		irq_s =
+ 		    ioread8(chip->vendor.iobase +
+ 			    TPM_INT_VECTOR(chip->vendor.locality));
++		irq_r = irq_s;
+ 		if (irq_s) {
+ 			irq_e = irq_s;
+ 		} else {
+@@ -805,6 +807,8 @@ static int tpm_tis_init(struct device *dev, struct tpm_info *tpm_info,
+ 			iowrite32(intmask,
+ 				  chip->vendor.iobase +
+ 				  TPM_INT_ENABLE(chip->vendor.locality));
++
++			devm_free_irq(dev, i, chip);
+ 		}
+ 	}
+ 	if (chip->vendor.irq) {
+@@ -831,7 +835,9 @@ static int tpm_tis_init(struct device *dev, struct tpm_info *tpm_info,
+ 				  chip->vendor.iobase +
+ 				  TPM_INT_ENABLE(chip->vendor.locality));
+ 		}
+-	}
++	} else if (irq_r != -1)
++		iowrite8(irq_r, chip->vendor.iobase +
++			 TPM_INT_VECTOR(chip->vendor.locality));
+ 
+ 	if (chip->flags & TPM_CHIP_FLAG_TPM2) {
+ 		chip->vendor.timeout_a = msecs_to_jiffies(TPM2_TIMEOUT_A);

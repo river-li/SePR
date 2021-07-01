@@ -1,0 +1,101 @@
+diff --git a/kernel/debug/gdbstub.c b/kernel/debug/gdbstub.c
+index 7510dc687c0d..4b280fc7dd67 100644
+--- a/kernel/debug/gdbstub.c
++++ b/kernel/debug/gdbstub.c
+@@ -1033,13 +1033,14 @@ int gdb_serial_stub(struct kgdb_state *ks)
+ 				return DBG_PASS_EVENT;
+ 			}
+ #endif
++			/* Fall through */
+ 		case 'C': /* Exception passing */
+ 			tmp = gdb_cmd_exception_pass(ks);
+ 			if (tmp > 0)
+ 				goto default_handle;
+ 			if (tmp == 0)
+ 				break;
+-			/* Fall through on tmp < 0 */
++			/* Fall through - on tmp < 0 */
+ 		case 'c': /* Continue packet */
+ 		case 's': /* Single step packet */
+ 			if (kgdb_contthread && kgdb_contthread != current) {
+@@ -1048,7 +1049,7 @@ int gdb_serial_stub(struct kgdb_state *ks)
+ 				break;
+ 			}
+ 			dbg_activate_sw_breakpoints();
+-			/* Fall through to default processing */
++			/* Fall through - to default processing */
+ 		default:
+ default_handle:
+ 			error = kgdb_arch_handle_exception(ks->ex_vector,
+@@ -1094,10 +1095,10 @@ int gdbstub_state(struct kgdb_state *ks, char *cmd)
+ 		return error;
+ 	case 's':
+ 	case 'c':
+-		strcpy(remcom_in_buffer, cmd);
++		strscpy(remcom_in_buffer, cmd, sizeof(remcom_in_buffer));
+ 		return 0;
+ 	case '$':
+-		strcpy(remcom_in_buffer, cmd);
++		strscpy(remcom_in_buffer, cmd, sizeof(remcom_in_buffer));
+ 		gdbstub_use_prev_in_buf = strlen(remcom_in_buffer);
+ 		gdbstub_prev_in_buf_pos = 0;
+ 		return 0;
+diff --git a/kernel/debug/kdb/Makefile b/kernel/debug/kdb/Makefile
+index d4fc58f4b88d..efac857c5511 100644
+--- a/kernel/debug/kdb/Makefile
++++ b/kernel/debug/kdb/Makefile
+@@ -6,7 +6,6 @@
+ # Copyright (c) 2009 Wind River Systems, Inc. All Rights Reserved.
+ #
+ 
+-CCVERSION	:= $(shell $(CC) -v 2>&1 | sed -ne '$$p')
+ obj-y := kdb_io.o kdb_main.o kdb_support.o kdb_bt.o gen-kdb_cmds.o kdb_bp.o kdb_debugger.o
+ obj-$(CONFIG_KDB_KEYBOARD)    += kdb_keyboard.o
+ 
+diff --git a/kernel/debug/kdb/kdb_io.c b/kernel/debug/kdb/kdb_io.c
+index 6a4b41484afe..3a5184eb6977 100644
+--- a/kernel/debug/kdb/kdb_io.c
++++ b/kernel/debug/kdb/kdb_io.c
+@@ -446,7 +446,7 @@ static char *kdb_read(char *buffer, size_t bufsize)
+ char *kdb_getstr(char *buffer, size_t bufsize, const char *prompt)
+ {
+ 	if (prompt && kdb_prompt_str != prompt)
+-		strncpy(kdb_prompt_str, prompt, CMD_BUFLEN);
++		strscpy(kdb_prompt_str, prompt, CMD_BUFLEN);
+ 	kdb_printf(kdb_prompt_str);
+ 	kdb_nextline = 1;	/* Prompt and input resets line number */
+ 	return kdb_read(buffer, bufsize);
+diff --git a/kernel/debug/kdb/kdb_main.c b/kernel/debug/kdb/kdb_main.c
+index 82a3b32a7cfc..9ecfa37c7fbf 100644
+--- a/kernel/debug/kdb/kdb_main.c
++++ b/kernel/debug/kdb/kdb_main.c
+@@ -2522,7 +2522,6 @@ static int kdb_summary(int argc, const char **argv)
+ 	kdb_printf("machine    %s\n", init_uts_ns.name.machine);
+ 	kdb_printf("nodename   %s\n", init_uts_ns.name.nodename);
+ 	kdb_printf("domainname %s\n", init_uts_ns.name.domainname);
+-	kdb_printf("ccversion  %s\n", __stringify(CCVERSION));
+ 
+ 	now = __ktime_get_real_seconds();
+ 	time64_to_tm(now, 0, &tm);
+@@ -2584,7 +2583,7 @@ static int kdb_per_cpu(int argc, const char **argv)
+ 		diag = kdbgetularg(argv[3], &whichcpu);
+ 		if (diag)
+ 			return diag;
+-		if (!cpu_online(whichcpu)) {
++		if (whichcpu >= nr_cpu_ids || !cpu_online(whichcpu)) {
+ 			kdb_printf("cpu %ld is not online\n", whichcpu);
+ 			return KDB_BADCPUNUM;
+ 		}
+diff --git a/kernel/debug/kdb/kdb_support.c b/kernel/debug/kdb/kdb_support.c
+index 50bf9b119bad..b8e6306e7e13 100644
+--- a/kernel/debug/kdb/kdb_support.c
++++ b/kernel/debug/kdb/kdb_support.c
+@@ -192,7 +192,7 @@ int kallsyms_symbol_complete(char *prefix_name, int max_len)
+ 
+ 	while ((name = kdb_walk_kallsyms(&pos))) {
+ 		if (strncmp(name, prefix_name, prefix_len) == 0) {
+-			strcpy(ks_namebuf, name);
++			strscpy(ks_namebuf, name, sizeof(ks_namebuf));
+ 			/* Work out the longest name that matches the prefix */
+ 			if (++number == 1) {
+ 				prev_len = min_t(int, max_len-1,

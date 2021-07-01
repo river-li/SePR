@@ -1,0 +1,15 @@
+commit ffcfb8db540ff879c2a85bf7e404954281443414
+Author: Arnaldo Carvalho de Melo <acme@redhat.com>
+Commit: David S. Miller <davem@davemloft.net>
+
+    Subject: [PATCH] appletalk: Fix skb leak when ipddp interface is not loaded
+    
+    And also do a better job of returning proper NET_{RX,XMIT}_ values.
+    
+    Based on a patch and suggestions by Mark Smith.
+    
+    This fixes CVE-2009-2903
+    
+    Reported-by: Mark Smith <lk-netdev@lk-netdev.nosense.org>
+    Signed-off-by: Arnaldo Carvalho de Melo <acme@redhat.com>
+    Signed-off-by: David S. Miller <davem@davemloft.net>

@@ -1,0 +1,19 @@
+commit 9fc282baa8f743a7049e301d13cf9968ee95a91c
+Merge: c61ea31dac03 de02d72bb3cc
+Author: Linus Torvalds <torvalds@linux-foundation.org>
+Commit: Linus Torvalds <torvalds@linux-foundation.org>
+
+    Merge git://git.kernel.org/pub/scm/linux/kernel/git/davem/net-2.6
+    
+    * git://git.kernel.org/pub/scm/linux/kernel/git/davem/net-2.6:
+      net: Fix FDDI and TR config checks in ipv4 arp and LLC.
+      IPv4: unresolved multicast route cleanup
+      mac80211: remove association work when processing deauth request
+      ar9170: wait for asynchronous firmware loading
+      ipv4: udp: fix short packet and bad checksum logging
+      phy: Fix initialization in micrel driver.
+      sctp: Fix a race between ICMP protocol unreachable and connect()
+      veth: Dont kfree_skb() after dev_forward_skb()
+      IPv6: fix IPV6_RECVERR handling of locally-generated errors
+      net/gianfar: drop recycled skbs on MTU change
+      iwlwifi: work around passive scan issue

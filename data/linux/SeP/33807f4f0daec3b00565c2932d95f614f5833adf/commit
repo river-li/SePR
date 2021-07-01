@@ -1,0 +1,17 @@
+commit 33807f4f0daec3b00565c2932d95f614f5833adf
+Merge: adf961d7e800 dca1c8d17a2f
+Author: Linus Torvalds <torvalds@linux-foundation.org>
+Commit: Linus Torvalds <torvalds@linux-foundation.org>
+
+    Merge branch 'for-next' of git://git.samba.org/sfrench/cifs-2.6
+    
+    Pull CIFS fixes from Steve French:
+     "A fix for the problem which Al spotted in cifs_writev and a followup
+      (noticed when fixing CVE-2014-0069) patch to ensure that cifs never
+      sends more than the smb frame length over the socket (as we saw with
+      that cifs_iovec_write problem that Jeff fixed last month)"
+    
+    * 'for-next' of git://git.samba.org/sfrench/cifs-2.6:
+      cifs: mask off top byte in get_rfc1002_length()
+      cifs: sanity check length of data to send before sending
+      CIFS: Fix wrong pos argument of cifs_find_lock_conflict

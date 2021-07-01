@@ -1,0 +1,13 @@
+diff --git a/drivers/net/ethernet/rdc/r6040.c b/drivers/net/ethernet/rdc/r6040.c
+index 87aa43935070..cb0eca807852 100644
+--- a/drivers/net/ethernet/rdc/r6040.c
++++ b/drivers/net/ethernet/rdc/r6040.c
+@@ -1160,7 +1160,7 @@ static int __devinit r6040_init_one(struct pci_dev *pdev,
+ 	lp->dev = dev;
+ 
+ 	/* Init RDC private data */
+-	lp->mcr0 = MCR0_XMTEN | MCR0;
++	lp->mcr0 = MCR0_XMTEN | MCR0_RCVEN;
+ 
+ 	/* The RDC-specific entries in the device structure. */
+ 	dev->netdev_ops = &r6040_netdev_ops;

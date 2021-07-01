@@ -1,0 +1,54 @@
+diff --git a/net/ipv4/netfilter/Kconfig b/net/ipv4/netfilter/Kconfig
+index 3d560dec63ab..d4072533da21 100644
+--- a/net/ipv4/netfilter/Kconfig
++++ b/net/ipv4/netfilter/Kconfig
+@@ -170,8 +170,8 @@ config IP_NF_PPTP
+ 	  Documentation/modules.txt.  If unsure, say `N'.
+ 
+ config IP_NF_H323
+-	tristate  'H.323 protocol support'
+-	depends on IP_NF_CONNTRACK
++	tristate  'H.323 protocol support (EXPERIMENTAL)'
++	depends on IP_NF_CONNTRACK && EXPERIMENTAL
+ 	help
+ 	  H.323 is a VoIP signalling protocol from ITU-T. As one of the most
+ 	  important VoIP protocols, it is widely used by voice hardware and
+diff --git a/net/ipv4/netfilter/ip_conntrack_core.c b/net/ipv4/netfilter/ip_conntrack_core.c
+index 979a2eac6f00..a297da7bbef5 100644
+--- a/net/ipv4/netfilter/ip_conntrack_core.c
++++ b/net/ipv4/netfilter/ip_conntrack_core.c
+@@ -1318,6 +1318,7 @@ getorigdst(struct sock *sk, int optval, void __user *user, int *len)
+ 			.tuple.dst.u.tcp.port;
+ 		sin.sin_addr.s_addr = ct->tuplehash[IP_CT_DIR_ORIGINAL]
+ 			.tuple.dst.ip;
++		memset(sin.sin_zero, 0, sizeof(sin.sin_zero));
+ 
+ 		DEBUGP("SO_ORIGINAL_DST: %u.%u.%u.%u %u\n",
+ 		       NIPQUAD(sin.sin_addr.s_addr), ntohs(sin.sin_port));
+diff --git a/net/ipv4/netfilter/ip_conntrack_helper_pptp.c b/net/ipv4/netfilter/ip_conntrack_helper_pptp.c
+index 7d3ba4302e9e..8ccfe17bb253 100644
+--- a/net/ipv4/netfilter/ip_conntrack_helper_pptp.c
++++ b/net/ipv4/netfilter/ip_conntrack_helper_pptp.c
+@@ -469,8 +469,8 @@ pptp_inbound_pkt(struct sk_buff **pskb,
+ 			DEBUGP("%s but no session\n", pptp_msg_name[msg]);
+ 			break;
+ 		}
+-		if (info->sstate != PPTP_CALL_IN_REP
+-		    && info->sstate != PPTP_CALL_IN_CONF) {
++		if (info->cstate != PPTP_CALL_IN_REP
++		    && info->cstate != PPTP_CALL_IN_CONF) {
+ 			DEBUGP("%s but never sent IN_CALL_REPLY\n",
+ 				pptp_msg_name[msg]);
+ 			break;
+diff --git a/net/ipv4/netfilter/nf_conntrack_l3proto_ipv4.c b/net/ipv4/netfilter/nf_conntrack_l3proto_ipv4.c
+index 5bc9f64d7b5b..77d974443c7b 100644
+--- a/net/ipv4/netfilter/nf_conntrack_l3proto_ipv4.c
++++ b/net/ipv4/netfilter/nf_conntrack_l3proto_ipv4.c
+@@ -348,6 +348,7 @@ getorigdst(struct sock *sk, int optval, void __user *user, int *len)
+ 			.tuple.dst.u.tcp.port;
+ 		sin.sin_addr.s_addr = ct->tuplehash[IP_CT_DIR_ORIGINAL]
+ 			.tuple.dst.u3.ip;
++		memset(sin.sin_zero, 0, sizeof(sin.sin_zero));
+ 
+ 		DEBUGP("SO_ORIGINAL_DST: %u.%u.%u.%u %u\n",
+ 		       NIPQUAD(sin.sin_addr.s_addr), ntohs(sin.sin_port));

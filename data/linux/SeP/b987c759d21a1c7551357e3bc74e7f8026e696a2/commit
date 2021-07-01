@@ -1,0 +1,22 @@
+commit b987c759d21a1c7551357e3bc74e7f8026e696a2
+Merge: b89c44bb233b f0fe970df383
+Author: Linus Torvalds <torvalds@linux-foundation.org>
+Commit: Linus Torvalds <torvalds@linux-foundation.org>
+
+    Merge tag 'ecryptfs-4.7-rc7-fixes' of git://git.kernel.org/pub/scm/linux/kernel/git/tyhicks/ecryptfs
+    
+    Pull eCryptfs fixes from Tyler Hicks:
+     "Provide a more concise fix for CVE-2016-1583:
+       - Additionally fixes linux-stable regressions caused by the
+         cherry-picking of the original fix
+    
+      Some very minor changes that have queued up:
+       - Fix typos in code comments
+       - Remove unnecessary check for NULL before destroying kmem_cache"
+    
+    * tag 'ecryptfs-4.7-rc7-fixes' of git://git.kernel.org/pub/scm/linux/kernel/git/tyhicks/ecryptfs:
+      ecryptfs: don't allow mmap when the lower fs doesn't support it
+      Revert "ecryptfs: forbid opening files without mmap handler"
+      ecryptfs: fix spelling mistakes
+      eCryptfs: fix typos in comment
+      ecryptfs: drop null test before destroy functions

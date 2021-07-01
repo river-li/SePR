@@ -1,0 +1,22 @@
+commit f205b5dc1c9e62237ac6e21642724d8cbc85f7ee
+Merge: f61143c45077 c9f838d104fe
+Author: Linus Torvalds <torvalds@linux-foundation.org>
+Commit: Linus Torvalds <torvalds@linux-foundation.org>
+
+    Merge tag 'keys-fixes-20170419' of git://git.kernel.org/pub/scm/linux/kernel/git/dhowells/linux-fs
+    
+    Pull keyrings fixes from David Howells:
+    
+     (1) Disallow keyrings whose name begins with a '.' to be joined
+         [CVE-2016-9604].
+    
+     (2) Change the name of the dead type to ".dead" to prevent user access
+         [CVE-2017-6951].
+    
+     (3) Fix keyctl_set_reqkey_keyring() to not leak thread keyrings
+         [CVE-2017-7472]
+    
+    * tag 'keys-fixes-20170419' of git://git.kernel.org/pub/scm/linux/kernel/git/dhowells/linux-fs:
+      KEYS: fix keyctl_set_reqkey_keyring() to not leak thread keyrings
+      KEYS: Change the name of the dead type to ".dead" to prevent user access
+      KEYS: Disallow keyrings beginning with '.' to be joined as session keyrings

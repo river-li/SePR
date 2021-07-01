@@ -1,0 +1,31 @@
+diff --git a/lib/assoc_array.c b/lib/assoc_array.c
+index 2404d03e251a..03dd576e6773 100644
+--- a/lib/assoc_array.c
++++ b/lib/assoc_array.c
+@@ -11,6 +11,7 @@
+  * 2 of the Licence, or (at your option) any later version.
+  */
+ //#define DEBUG
++#include <linux/rcupdate.h>
+ #include <linux/slab.h>
+ #include <linux/err.h>
+ #include <linux/assoc_array_priv.h>
+diff --git a/security/keys/gc.c b/security/keys/gc.c
+index 9609a7f0faea..c7952375ac53 100644
+--- a/security/keys/gc.c
++++ b/security/keys/gc.c
+@@ -148,12 +148,12 @@ static noinline void key_gc_unused_keys(struct list_head *keys)
+ 		if (test_bit(KEY_FLAG_INSTANTIATED, &key->flags))
+ 			atomic_dec(&key->user->nikeys);
+ 
+-		key_user_put(key->user);
+-
+ 		/* now throw away the key memory */
+ 		if (key->type->destroy)
+ 			key->type->destroy(key);
+ 
++		key_user_put(key->user);
++
+ 		kfree(key->description);
+ 
+ #ifdef KEY_DEBUGGING

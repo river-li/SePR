@@ -1,0 +1,18 @@
+commit 9581d442b9058d3699b4be568b6e5eae38a41493
+Author: Avi Kivity <avi@redhat.com>
+Commit: Marcelo Tosatti <mtosatti@redhat.com>
+
+    KVM: Fix fs/gs reload oops with invalid ldt
+    
+    kvm reloads the host's fs and gs blindly, however the underlying segment
+    descriptors may be invalid due to the user modifying the ldt after loading
+    them.
+    
+    Fix by using the safe accessors (loadsegment() and load_gs_index()) instead
+    of home grown unsafe versions.
+    
+    This is CVE-2010-3698.
+    
+    KVM-Stable-Tag.
+    Signed-off-by: Avi Kivity <avi@redhat.com>
+    Signed-off-by: Marcelo Tosatti <mtosatti@redhat.com>

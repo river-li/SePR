@@ -1,0 +1,12 @@
+commit 9924a1992a86ebdb7ca36ef790d2ba0da506296c
+Merge: 946edc47b610 6d1068b3a985
+Author: Linus Torvalds <torvalds@linux-foundation.org>
+Commit: Linus Torvalds <torvalds@linux-foundation.org>
+
+    Merge git://git.kernel.org/pub/scm/virt/kvm/kvm
+    
+    Pull KVM fix from Marcelo Tosatti:
+     "A correction for user triggerable oops"
+    
+    * git://git.kernel.org/pub/scm/virt/kvm/kvm:
+      KVM: x86: invalid opcode oops on SET_SREGS with OSXSAVE bit set (CVE-2012-4461)

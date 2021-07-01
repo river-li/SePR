@@ -1,0 +1,31 @@
+diff --git a/crypto/asymmetric_keys/x509_cert_parser.c b/crypto/asymmetric_keys/x509_cert_parser.c
+index 865f46ea724f..c80765b211cf 100644
+--- a/crypto/asymmetric_keys/x509_cert_parser.c
++++ b/crypto/asymmetric_keys/x509_cert_parser.c
+@@ -133,7 +133,6 @@ struct x509_certificate *x509_cert_parse(const void *data, size_t datalen)
+ 	return cert;
+ 
+ error_decode:
+-	kfree(cert->pub->key);
+ 	kfree(ctx);
+ error_no_ctx:
+ 	x509_free_certificate(cert);
+diff --git a/lib/mpi/mpi-pow.c b/lib/mpi/mpi-pow.c
+index 5464c8744ea9..e24388a863a7 100644
+--- a/lib/mpi/mpi-pow.c
++++ b/lib/mpi/mpi-pow.c
+@@ -64,8 +64,13 @@ int mpi_powm(MPI res, MPI base, MPI exp, MPI mod)
+ 	if (!esize) {
+ 		/* Exponent is zero, result is 1 mod MOD, i.e., 1 or 0
+ 		 * depending on if MOD equals 1.  */
+-		rp[0] = 1;
+ 		res->nlimbs = (msize == 1 && mod->d[0] == 1) ? 0 : 1;
++		if (res->nlimbs) {
++			if (mpi_resize(res, 1) < 0)
++				goto enomem;
++			rp = res->d;
++			rp[0] = 1;
++		}
+ 		res->sign = 0;
+ 		goto leave;
+ 	}

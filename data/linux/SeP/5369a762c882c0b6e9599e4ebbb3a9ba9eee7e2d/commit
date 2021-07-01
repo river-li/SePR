@@ -1,0 +1,17 @@
+commit 5369a762c882c0b6e9599e4ebbb3a9ba9eee7e2d
+Author: Theodore Ts'o <tytso@mit.edu>
+Commit: Theodore Ts'o <tytso@mit.edu>
+
+    ext4: add corruption check in ext4_xattr_set_entry()
+    
+    In theory this should have been caught earlier when the xattr list was
+    verified, but in case it got missed, it's simple enough to add check
+    to make sure we don't overrun the xattr buffer.
+    
+    This addresses CVE-2018-10879.
+    
+    https://bugzilla.kernel.org/show_bug.cgi?id=200001
+    
+    Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+    Reviewed-by: Andreas Dilger <adilger@dilger.ca>
+    Cc: stable@kernel.org

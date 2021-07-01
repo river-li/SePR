@@ -1,0 +1,14 @@
+commit c55aee1bf0e6b6feec8b2927b43f7a09a6d5f754
+Author: Oliver Neukum <oneukum@suse.com>
+Commit: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+    USB: cypress_m8: add endpoint sanity check
+    
+    An attack using missing endpoints exists.
+    
+    CVE-2016-3137
+    
+    Signed-off-by: Oliver Neukum <ONeukum@suse.com>
+    CC: stable@vger.kernel.org
+    Signed-off-by: Johan Hovold <johan@kernel.org>
+    Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>

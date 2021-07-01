@@ -1,0 +1,17 @@
+commit 2e3219b5c8a2e44e0b83ae6e04f52f20a82ac0f2
+Author: Wei Yongjun <yjwei@cn.fujitsu.com>
+Commit: David S. Miller <davem@davemloft.net>
+
+    sctp: fix append error cause to ERROR chunk correctly
+    
+    commit 5fa782c2f5ef6c2e4f04d3e228412c9b4a4c8809
+      sctp: Fix skb_over_panic resulting from multiple invalid \
+        parameter errors (CVE-2010-1173) (v4)
+    
+    cause 'error cause' never be add the the ERROR chunk due to
+    some typo when check valid length in sctp_init_cause_fixed().
+    
+    Signed-off-by: Wei Yongjun <yjwei@cn.fujitsu.com>
+    Reviewed-by: Neil Horman <nhorman@tuxdriver.com>
+    Acked-by: Vlad Yasevich <vladislav.yasevich@hp.com>
+    Signed-off-by: David S. Miller <davem@davemloft.net>

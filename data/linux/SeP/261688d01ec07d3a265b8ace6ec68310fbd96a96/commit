@@ -1,0 +1,11 @@
+commit 261688d01ec07d3a265b8ace6ec68310fbd96a96
+Author: David S. Miller <davem@davemloft.net>
+Commit: David S. Miller <davem@davemloft.net>
+
+    [PKT_SCHED]: em_meta: Kill TCF_META_ID_{INDEV,SECURITY,TCVERDICT}
+    
+    More unusable TCF_META_* match types that need to get eliminated
+    before 2.6.13 goes out the door.
+    
+    Signed-off-by: David S. Miller <davem@davemloft.net>
+    Acked-by: Thomas Graf <tgraf@suug.ch>

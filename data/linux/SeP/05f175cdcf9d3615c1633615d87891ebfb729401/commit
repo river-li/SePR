@@ -1,0 +1,10 @@
+commit 05f175cdcf9d3615c1633615d87891ebfb729401
+Author: YOSHIFUJI Hideaki <yoshfuji@linux-ipv6.org>
+Commit: YOSHIFUJI Hideaki <yoshfuji@linux-ipv6.org>
+
+    [IPV6]: Fix IPV6_RECVERR for connected raw sockets.
+    
+    Based on patch from Dmitry Butskoy <buc@odusz.so-cdu.ru>.
+    
+    Closes: 10437
+    Signed-off-by: YOSHIFUJI Hideaki <yoshfuji@linux-ipv6.org>

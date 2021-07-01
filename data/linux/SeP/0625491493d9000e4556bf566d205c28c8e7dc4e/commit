@@ -1,0 +1,10 @@
+commit 0625491493d9000e4556bf566d205c28c8e7dc4e
+Author: Eric Dumazet <eric.dumazet@gmail.com>
+Commit: David S. Miller <davem@davemloft.net>
+
+    ipv6: ip6_push_pending_frames() should increment IPSTATS_MIB_OUTDISCARDS
+    
+    qdisc drops should be notified to IP_RECVERR enabled sockets, as done in IPV4.
+    
+    Signed-off-by: Eric Dumazet <eric.dumazet@gmail.com>
+    Signed-off-by: David S. Miller <davem@davemloft.net>

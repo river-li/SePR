@@ -1,0 +1,13 @@
+commit 246e6a0d781091c4657890ffa497c2576bd99095
+Merge: 956e46efb247 de44443a45e3
+Author: Linus Torvalds <torvalds@linux-foundation.org>
+Commit: Linus Torvalds <torvalds@linux-foundation.org>
+
+    Merge branch 'for-linus' of git://git.kernel.org/pub/scm/linux/kernel/git/rkuo/linux-hexagon-kernel
+    
+    Pull Hexagon fixes from Richard Kuo:
+     "A bug fix and a Kconfig cleanup"
+    
+    * 'for-linus' of git://git.kernel.org/pub/scm/linux/kernel/git/rkuo/linux-hexagon-kernel:
+      HEXAGON: Remove non existent reference to GENERIC_KERNEL_EXECVE & GENERIC_KERNEL_THREAD
+      Hexagon: fix register used to call do_work_pending

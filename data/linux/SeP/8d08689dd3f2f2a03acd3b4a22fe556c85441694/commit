@@ -1,0 +1,13 @@
+commit 8d08689dd3f2f2a03acd3b4a22fe556c85441694
+Merge: 8ea1c981b630 34a315883f60
+Author: Arnd Bergmann <arnd@arndb.de>
+Commit: Arnd Bergmann <arnd@arndb.de>
+
+    Merge tag 'socfpga_dts_for_v4.5' of git://git.kernel.org/pub/scm/linux/kernel/git/dinguyen/linux into next/dt
+    
+    Merge "SoCFPGA DTS update for v4.5" from Dinh Nguyen:
+    
+    - Add DT board file for Denx MCVEVK board
+    
+    * tag 'socfpga_dts_for_v4.5' of git://git.kernel.org/pub/scm/linux/kernel/git/dinguyen/linux:
+      ARM: socfpga: Add support for DENX MCV SoM and MCVEVK baseboard

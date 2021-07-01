@@ -1,0 +1,9 @@
+commit 601045bff74569374b3d5b34dbb9bad71adf3aa5
+Merge: 912902ce78b0 93d17397e4e2
+Author: Radim Krčmář <rkrcmar@redhat.com>
+Commit: Radim Krčmář <rkrcmar@redhat.com>
+
+    Merge branch 'kvm-ppc-next' of git://git.kernel.org/pub/scm/linux/kernel/git/paulus/powerpc into next
+    
+    Fix for CVE-2016-5412, a denial-of-service vulnerability in HV KVM on
+    POWER8 machines

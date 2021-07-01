@@ -1,0 +1,21 @@
+commit 43937003de5b677781b2fe4c871d628ab00cc341
+Merge: 14970f204b19 31e6ec4519c0
+Author: Linus Torvalds <torvalds@linux-foundation.org>
+Commit: Linus Torvalds <torvalds@linux-foundation.org>
+
+    Merge branch 'for-linus' of git://git.kernel.org/pub/scm/linux/kernel/git/jmorris/linux-security
+    
+    Pull key fixes from James Morris:
+    
+     - fix a buffer overflow when displaying /proc/keys [CVE-2016-7042].
+    
+     - fix broken initialisation in the big_key implementation that can
+       result in an oops.
+    
+     - make big_key depend on having a random number generator available in
+       Kconfig.
+    
+    * 'for-linus' of git://git.kernel.org/pub/scm/linux/kernel/git/jmorris/linux-security:
+      security/keys: make BIG_KEYS dependent on stdrng.
+      KEYS: Sort out big_key initialisation
+      KEYS: Fix short sprintf buffer in /proc/keys show function

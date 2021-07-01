@@ -1,0 +1,20 @@
+commit 41df7f6d43723deb7364340b44bc5d94bf717456
+Author: Kees Cook <keescook@chromium.org>
+Commit: Jiri Kosina <jkosina@suse.cz>
+
+    HID: steelseries: validate output report details
+    
+    A HID device could send a malicious output report that would cause the
+    steelseries HID driver to write beyond the output report allocation
+    during initialization, causing a heap overflow:
+    
+    [  167.981534] usb 1-1: New USB device found, idVendor=1038, idProduct=1410
+    ...
+    [  182.050547] BUG kmalloc-256 (Tainted: G        W   ): Redzone overwritten
+    
+    CVE-2013-2891
+    
+    Signed-off-by: Kees Cook <keescook@chromium.org>
+    Cc: stable@vger.kernel.org
+    Reviewed-by: Benjamin Tissoires <benjamin.tissoires@redhat.com>
+    Signed-off-by: Jiri Kosina <jkosina@suse.cz>

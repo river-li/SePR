@@ -1,0 +1,10 @@
+commit 59dc67b0cc35cd93c3f4869fdd0d6cfb2a26ecbc
+Author: Catalin Marinas <catalin.marinas@arm.com>
+Commit: Catalin Marinas <catalin.marinas@arm.com>
+
+    arm64: Use generic kernel_execve() implementation
+    
+    This patch enables CONFIG_GENERIC_KERNEL_EXECVE on arm64 and removes the
+    arm64-specific implementation of kernel_execve().
+    
+    Signed-off-by: Catalin Marinas <catalin.marinas@arm.com>

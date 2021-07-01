@@ -1,0 +1,61 @@
+diff --git a/drivers/xen/events.c b/drivers/xen/events.c
+index 0be4df39e953..74d77dfa5f63 100644
+--- a/drivers/xen/events.c
++++ b/drivers/xen/events.c
+@@ -840,7 +840,7 @@ int bind_evtchn_to_irq(unsigned int evtchn)
+ 
+ 	if (irq == -1) {
+ 		irq = xen_allocate_irq_dynamic();
+-		if (irq == -1)
++		if (irq < 0)
+ 			goto out;
+ 
+ 		irq_set_chip_and_handler_name(irq, &xen_dynamic_chip,
+@@ -944,7 +944,7 @@ int bind_virq_to_irq(unsigned int virq, unsigned int cpu)
+ 
+ 	if (irq == -1) {
+ 		irq = xen_allocate_irq_dynamic();
+-		if (irq == -1)
++		if (irq < 0)
+ 			goto out;
+ 
+ 		irq_set_chip_and_handler_name(irq, &xen_percpu_chip,
+diff --git a/drivers/xen/xen-pciback/pciback_ops.c b/drivers/xen/xen-pciback/pciback_ops.c
+index 97f5d264c31e..37c1f825f513 100644
+--- a/drivers/xen/xen-pciback/pciback_ops.c
++++ b/drivers/xen/xen-pciback/pciback_ops.c
+@@ -135,7 +135,6 @@ int xen_pcibk_enable_msi(struct xen_pcibk_device *pdev,
+ 			 struct pci_dev *dev, struct xen_pci_op *op)
+ {
+ 	struct xen_pcibk_dev_data *dev_data;
+-	int otherend = pdev->xdev->otherend_id;
+ 	int status;
+ 
+ 	if (unlikely(verbose_request))
+@@ -144,8 +143,9 @@ int xen_pcibk_enable_msi(struct xen_pcibk_device *pdev,
+ 	status = pci_enable_msi(dev);
+ 
+ 	if (status) {
+-		printk(KERN_ERR "error enable msi for guest %x status %x\n",
+-			otherend, status);
++		pr_warn_ratelimited(DRV_NAME ": %s: error enabling MSI for guest %u: err %d\n",
++				    pci_name(dev), pdev->xdev->otherend_id,
++				    status);
+ 		op->value = 0;
+ 		return XEN_PCI_ERR_op_failed;
+ 	}
+@@ -223,10 +223,10 @@ int xen_pcibk_enable_msix(struct xen_pcibk_device *pdev,
+ 						pci_name(dev), i,
+ 						op->msix_entries[i].vector);
+ 		}
+-	} else {
+-		printk(KERN_WARNING DRV_NAME ": %s: failed to enable MSI-X: err %d!\n",
+-			pci_name(dev), result);
+-	}
++	} else
++		pr_warn_ratelimited(DRV_NAME ": %s: error enabling MSI-X for guest %u: err %d!\n",
++				    pci_name(dev), pdev->xdev->otherend_id,
++				    result);
+ 	kfree(entries);
+ 
+ 	op->value = result;

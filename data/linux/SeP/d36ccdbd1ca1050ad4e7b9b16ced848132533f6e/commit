@@ -1,0 +1,13 @@
+commit d36ccdbd1ca1050ad4e7b9b16ced848132533f6e
+Merge: 7c24d9f3b27b 23567fd052a9
+Author: Linus Torvalds <torvalds@linux-foundation.org>
+Commit: Linus Torvalds <torvalds@linux-foundation.org>
+
+    Merge branch 'for-linus' of git://git.kernel.org/pub/scm/linux/kernel/git/jmorris/linux-security
+    
+    Pull security subsystem update from James Morris:
+     "A CVE fix and a maintainers file update"
+    
+    * 'for-linus' of git://git.kernel.org/pub/scm/linux/kernel/git/jmorris/linux-security:
+      KEYS: Fix keyring ref leak in join_session_keyring()
+      Fix the MAINTAINERS record for the certs/ directory

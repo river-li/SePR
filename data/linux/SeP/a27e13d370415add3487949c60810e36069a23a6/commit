@@ -1,0 +1,12 @@
+commit a27e13d370415add3487949c60810e36069a23a6
+Author: Phil Blundell <philb@gnu.org>
+Commit: David S. Miller <davem@davemloft.net>
+
+    econet: fix CVE-2010-3848
+    
+    Don't declare variable sized array of iovecs on the stack since this
+    could cause stack overflow if msg->msgiovlen is large.  Instead, coalesce
+    the user-supplied data into a new buffer and use a single iovec for it.
+    
+    Signed-off-by: Phil Blundell <philb@gnu.org>
+    Signed-off-by: David S. Miller <davem@davemloft.net>

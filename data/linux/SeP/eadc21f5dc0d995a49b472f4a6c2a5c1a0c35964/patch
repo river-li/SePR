@@ -1,0 +1,863 @@
+diff --git a/drivers/iio/adc/twl6030-gpadc.c b/drivers/iio/adc/twl6030-gpadc.c
+index 89d8aa1d2818..df12c57e6ce0 100644
+--- a/drivers/iio/adc/twl6030-gpadc.c
++++ b/drivers/iio/adc/twl6030-gpadc.c
+@@ -1001,7 +1001,7 @@ static struct platform_driver twl6030_gpadc_driver = {
+ 
+ module_platform_driver(twl6030_gpadc_driver);
+ 
+-MODULE_ALIAS("platform: " DRIVER_NAME);
++MODULE_ALIAS("platform:" DRIVER_NAME);
+ MODULE_AUTHOR("Balaji T K <balajitk@ti.com>");
+ MODULE_AUTHOR("Graeme Gregory <gg@slimlogic.co.uk>");
+ MODULE_AUTHOR("Oleksandr Kozaruk <oleksandr.kozaruk@ti.com");
+diff --git a/drivers/iio/imu/adis16400.h b/drivers/iio/imu/adis16400.h
+index 0916bf6b6c31..73b189c1c0fb 100644
+--- a/drivers/iio/imu/adis16400.h
++++ b/drivers/iio/imu/adis16400.h
+@@ -139,6 +139,7 @@
+ #define ADIS16400_NO_BURST		BIT(1)
+ #define ADIS16400_HAS_SLOW_MODE		BIT(2)
+ #define ADIS16400_HAS_SERIAL_NUMBER	BIT(3)
++#define ADIS16400_BURST_DIAG_STAT	BIT(4)
+ 
+ struct adis16400_state;
+ 
+@@ -165,6 +166,7 @@ struct adis16400_state {
+ 	int				filt_int;
+ 
+ 	struct adis adis;
++	unsigned long avail_scan_mask[2];
+ };
+ 
+ /* At the moment triggers are only used for ring buffer
+diff --git a/drivers/iio/imu/adis16400_buffer.c b/drivers/iio/imu/adis16400_buffer.c
+index 6e727ffe5262..90c24a23c679 100644
+--- a/drivers/iio/imu/adis16400_buffer.c
++++ b/drivers/iio/imu/adis16400_buffer.c
+@@ -18,7 +18,8 @@ int adis16400_update_scan_mode(struct iio_dev *indio_dev,
+ {
+ 	struct adis16400_state *st = iio_priv(indio_dev);
+ 	struct adis *adis = &st->adis;
+-	uint16_t *tx;
++	unsigned int burst_length;
++	u8 *tx;
+ 
+ 	if (st->variant->flags & ADIS16400_NO_BURST)
+ 		return adis_update_scan_mode(indio_dev, scan_mask);
+@@ -26,26 +27,29 @@ int adis16400_update_scan_mode(struct iio_dev *indio_dev,
+ 	kfree(adis->xfer);
+ 	kfree(adis->buffer);
+ 
++	/* All but the timestamp channel */
++	burst_length = (indio_dev->num_channels - 1) * sizeof(u16);
++	if (st->variant->flags & ADIS16400_BURST_DIAG_STAT)
++		burst_length += sizeof(u16);
++
+ 	adis->xfer = kcalloc(2, sizeof(*adis->xfer), GFP_KERNEL);
+ 	if (!adis->xfer)
+ 		return -ENOMEM;
+ 
+-	adis->buffer = kzalloc(indio_dev->scan_bytes + sizeof(u16),
+-		GFP_KERNEL);
++	adis->buffer = kzalloc(burst_length + sizeof(u16), GFP_KERNEL);
+ 	if (!adis->buffer)
+ 		return -ENOMEM;
+ 
+-	tx = adis->buffer + indio_dev->scan_bytes;
+-
++	tx = adis->buffer + burst_length;
+ 	tx[0] = ADIS_READ_REG(ADIS16400_GLOB_CMD);
+ 	tx[1] = 0;
+ 
+ 	adis->xfer[0].tx_buf = tx;
+ 	adis->xfer[0].bits_per_word = 8;
+ 	adis->xfer[0].len = 2;
+-	adis->xfer[1].tx_buf = tx;
++	adis->xfer[1].rx_buf = adis->buffer;
+ 	adis->xfer[1].bits_per_word = 8;
+-	adis->xfer[1].len = indio_dev->scan_bytes;
++	adis->xfer[1].len = burst_length;
+ 
+ 	spi_message_init(&adis->msg);
+ 	spi_message_add_tail(&adis->xfer[0], &adis->msg);
+@@ -61,6 +65,7 @@ irqreturn_t adis16400_trigger_handler(int irq, void *p)
+ 	struct adis16400_state *st = iio_priv(indio_dev);
+ 	struct adis *adis = &st->adis;
+ 	u32 old_speed_hz = st->adis.spi->max_speed_hz;
++	void *buffer;
+ 	int ret;
+ 
+ 	if (!adis->buffer)
+@@ -81,7 +86,12 @@ irqreturn_t adis16400_trigger_handler(int irq, void *p)
+ 		spi_setup(st->adis.spi);
+ 	}
+ 
+-	iio_push_to_buffers_with_timestamp(indio_dev, adis->buffer,
++	if (st->variant->flags & ADIS16400_BURST_DIAG_STAT)
++		buffer = adis->buffer + sizeof(u16);
++	else
++		buffer = adis->buffer;
++
++	iio_push_to_buffers_with_timestamp(indio_dev, buffer,
+ 		pf->timestamp);
+ 
+ 	iio_trigger_notify_done(indio_dev->trig);
+diff --git a/drivers/iio/imu/adis16400_core.c b/drivers/iio/imu/adis16400_core.c
+index fa795dcd5f75..2fd68f2219a7 100644
+--- a/drivers/iio/imu/adis16400_core.c
++++ b/drivers/iio/imu/adis16400_core.c
+@@ -405,6 +405,11 @@ static int adis16400_read_raw(struct iio_dev *indio_dev,
+ 			*val = st->variant->temp_scale_nano / 1000000;
+ 			*val2 = (st->variant->temp_scale_nano % 1000000);
+ 			return IIO_VAL_INT_PLUS_MICRO;
++		case IIO_PRESSURE:
++			/* 20 uBar = 0.002kPascal */
++			*val = 0;
++			*val2 = 2000;
++			return IIO_VAL_INT_PLUS_MICRO;
+ 		default:
+ 			return -EINVAL;
+ 		}
+@@ -454,10 +459,10 @@ static int adis16400_read_raw(struct iio_dev *indio_dev,
+ 	}
+ }
+ 
+-#define ADIS16400_VOLTAGE_CHAN(addr, bits, name, si) { \
++#define ADIS16400_VOLTAGE_CHAN(addr, bits, name, si, chn) { \
+ 	.type = IIO_VOLTAGE, \
+ 	.indexed = 1, \
+-	.channel = 0, \
++	.channel = chn, \
+ 	.extend_name = name, \
+ 	.info_mask_separate = BIT(IIO_CHAN_INFO_RAW) | \
+ 		BIT(IIO_CHAN_INFO_SCALE), \
+@@ -474,10 +479,10 @@ static int adis16400_read_raw(struct iio_dev *indio_dev,
+ }
+ 
+ #define ADIS16400_SUPPLY_CHAN(addr, bits) \
+-	ADIS16400_VOLTAGE_CHAN(addr, bits, "supply", ADIS16400_SCAN_SUPPLY)
++	ADIS16400_VOLTAGE_CHAN(addr, bits, "supply", ADIS16400_SCAN_SUPPLY, 0)
+ 
+ #define ADIS16400_AUX_ADC_CHAN(addr, bits) \
+-	ADIS16400_VOLTAGE_CHAN(addr, bits, NULL, ADIS16400_SCAN_ADC)
++	ADIS16400_VOLTAGE_CHAN(addr, bits, NULL, ADIS16400_SCAN_ADC, 1)
+ 
+ #define ADIS16400_GYRO_CHAN(mod, addr, bits) { \
+ 	.type = IIO_ANGL_VEL, \
+@@ -773,7 +778,8 @@ static struct adis16400_chip_info adis16400_chips[] = {
+ 		.channels = adis16448_channels,
+ 		.num_channels = ARRAY_SIZE(adis16448_channels),
+ 		.flags = ADIS16400_HAS_PROD_ID |
+-				ADIS16400_HAS_SERIAL_NUMBER,
++				ADIS16400_HAS_SERIAL_NUMBER |
++				ADIS16400_BURST_DIAG_STAT,
+ 		.gyro_scale_micro = IIO_DEGREE_TO_RAD(10000), /* 0.01 deg/s */
+ 		.accel_scale_micro = IIO_G_TO_M_S_2(833), /* 1/1200 g */
+ 		.temp_scale_nano = 73860000, /* 0.07386 C */
+@@ -791,11 +797,6 @@ static const struct iio_info adis16400_info = {
+ 	.debugfs_reg_access = adis_debugfs_reg_access,
+ };
+ 
+-static const unsigned long adis16400_burst_scan_mask[] = {
+-	~0UL,
+-	0,
+-};
+-
+ static const char * const adis16400_status_error_msgs[] = {
+ 	[ADIS16400_DIAG_STAT_ZACCL_FAIL] = "Z-axis accelerometer self-test failure",
+ 	[ADIS16400_DIAG_STAT_YACCL_FAIL] = "Y-axis accelerometer self-test failure",
+@@ -843,6 +844,20 @@ static const struct adis_data adis16400_data = {
+ 		BIT(ADIS16400_DIAG_STAT_POWER_LOW),
+ };
+ 
++static void adis16400_setup_chan_mask(struct adis16400_state *st)
++{
++	const struct adis16400_chip_info *chip_info = st->variant;
++	unsigned i;
++
++	for (i = 0; i < chip_info->num_channels; i++) {
++		const struct iio_chan_spec *ch = &chip_info->channels[i];
++
++		if (ch->scan_index >= 0 &&
++		    ch->scan_index != ADIS16400_SCAN_TIMESTAMP)
++			st->avail_scan_mask[0] |= BIT(ch->scan_index);
++	}
++}
++
+ static int adis16400_probe(struct spi_device *spi)
+ {
+ 	struct adis16400_state *st;
+@@ -866,8 +881,10 @@ static int adis16400_probe(struct spi_device *spi)
+ 	indio_dev->info = &adis16400_info;
+ 	indio_dev->modes = INDIO_DIRECT_MODE;
+ 
+-	if (!(st->variant->flags & ADIS16400_NO_BURST))
+-		indio_dev->available_scan_masks = adis16400_burst_scan_mask;
++	if (!(st->variant->flags & ADIS16400_NO_BURST)) {
++		adis16400_setup_chan_mask(st);
++		indio_dev->available_scan_masks = st->avail_scan_mask;
++	}
+ 
+ 	ret = adis_init(&st->adis, indio_dev, spi, &adis16400_data);
+ 	if (ret)
+diff --git a/drivers/staging/ozwpan/ozhcd.c b/drivers/staging/ozwpan/ozhcd.c
+index 5ff4716b72c3..784b5ecfa849 100644
+--- a/drivers/staging/ozwpan/ozhcd.c
++++ b/drivers/staging/ozwpan/ozhcd.c
+@@ -746,8 +746,8 @@ void oz_hcd_pd_reset(void *hpd, void *hport)
+ /*
+  * Context: softirq
+  */
+-void oz_hcd_get_desc_cnf(void *hport, u8 req_id, int status, const u8 *desc,
+-			int length, int offset, int total_size)
++void oz_hcd_get_desc_cnf(void *hport, u8 req_id, u8 status, const u8 *desc,
++			u8 length, u16 offset, u16 total_size)
+ {
+ 	struct oz_port *port = hport;
+ 	struct urb *urb;
+@@ -759,8 +759,8 @@ void oz_hcd_get_desc_cnf(void *hport, u8 req_id, int status, const u8 *desc,
+ 	if (!urb)
+ 		return;
+ 	if (status == 0) {
+-		int copy_len;
+-		int required_size = urb->transfer_buffer_length;
++		unsigned int copy_len;
++		unsigned int required_size = urb->transfer_buffer_length;
+ 
+ 		if (required_size > total_size)
+ 			required_size = total_size;
+diff --git a/drivers/staging/ozwpan/ozusbif.h b/drivers/staging/ozwpan/ozusbif.h
+index 4249fa374012..d2a6085345be 100644
+--- a/drivers/staging/ozwpan/ozusbif.h
++++ b/drivers/staging/ozwpan/ozusbif.h
+@@ -29,8 +29,8 @@ void oz_usb_request_heartbeat(void *hpd);
+ 
+ /* Confirmation functions.
+  */
+-void oz_hcd_get_desc_cnf(void *hport, u8 req_id, int status,
+-	const u8 *desc, int length, int offset, int total_size);
++void oz_hcd_get_desc_cnf(void *hport, u8 req_id, u8 status,
++	const u8 *desc, u8 length, u16 offset, u16 total_size);
+ void oz_hcd_control_cnf(void *hport, u8 req_id, u8 rcode,
+ 	const u8 *data, int data_len);
+ 
+diff --git a/drivers/staging/ozwpan/ozusbsvc1.c b/drivers/staging/ozwpan/ozusbsvc1.c
+index d434d8c6fff6..f660bb198c65 100644
+--- a/drivers/staging/ozwpan/ozusbsvc1.c
++++ b/drivers/staging/ozwpan/ozusbsvc1.c
+@@ -326,7 +326,11 @@ static void oz_usb_handle_ep_data(struct oz_usb_ctx *usb_ctx,
+ 			struct oz_multiple_fixed *body =
+ 				(struct oz_multiple_fixed *)data_hdr;
+ 			u8 *data = body->data;
+-			int n = (len - sizeof(struct oz_multiple_fixed)+1)
++			unsigned int n;
++			if (!body->unit_size ||
++				len < sizeof(struct oz_multiple_fixed) - 1)
++				break;
++			n = (len - (sizeof(struct oz_multiple_fixed) - 1))
+ 				/ body->unit_size;
+ 			while (n--) {
+ 				oz_hcd_data_ind(usb_ctx->hport, body->endpoint,
+@@ -390,10 +394,15 @@ void oz_usb_rx(struct oz_pd *pd, struct oz_elt *elt)
+ 	case OZ_GET_DESC_RSP: {
+ 			struct oz_get_desc_rsp *body =
+ 				(struct oz_get_desc_rsp *)usb_hdr;
+-			int data_len = elt->length -
+-					sizeof(struct oz_get_desc_rsp) + 1;
+-			u16 offs = le16_to_cpu(get_unaligned(&body->offset));
+-			u16 total_size =
++			u16 offs, total_size;
++			u8 data_len;
++
++			if (elt->length < sizeof(struct oz_get_desc_rsp) - 1)
++				break;
++			data_len = elt->length -
++					(sizeof(struct oz_get_desc_rsp) - 1);
++			offs = le16_to_cpu(get_unaligned(&body->offset));
++			total_size =
+ 				le16_to_cpu(get_unaligned(&body->total_size));
+ 			oz_dbg(ON, "USB_REQ_GET_DESCRIPTOR - cnf\n");
+ 			oz_hcd_get_desc_cnf(usb_ctx->hport, body->req_id,
+diff --git a/drivers/staging/rtl8712/rtl8712_led.c b/drivers/staging/rtl8712/rtl8712_led.c
+index f1d47a0676c3..ada8d5dafd49 100644
+--- a/drivers/staging/rtl8712/rtl8712_led.c
++++ b/drivers/staging/rtl8712/rtl8712_led.c
+@@ -898,11 +898,11 @@ static void SwLedControlMode1(struct _adapter *padapter,
+ 			  IS_LED_WPS_BLINKING(pLed))
+ 				return;
+ 			if (pLed->bLedLinkBlinkInProgress == true) {
+-				del_timer_sync(&pLed->BlinkTimer);
++				del_timer(&pLed->BlinkTimer);
+ 				pLed->bLedLinkBlinkInProgress = false;
+ 			}
+ 			if (pLed->bLedBlinkInProgress == true) {
+-				del_timer_sync(&pLed->BlinkTimer);
++				del_timer(&pLed->BlinkTimer);
+ 				pLed->bLedBlinkInProgress = false;
+ 			}
+ 			pLed->bLedNoLinkBlinkInProgress = true;
+@@ -921,11 +921,11 @@ static void SwLedControlMode1(struct _adapter *padapter,
+ 			    IS_LED_WPS_BLINKING(pLed))
+ 				return;
+ 			if (pLed->bLedNoLinkBlinkInProgress == true) {
+-				del_timer_sync(&pLed->BlinkTimer);
++				del_timer(&pLed->BlinkTimer);
+ 				pLed->bLedNoLinkBlinkInProgress = false;
+ 			}
+ 			if (pLed->bLedBlinkInProgress == true) {
+-				del_timer_sync(&pLed->BlinkTimer);
++				del_timer(&pLed->BlinkTimer);
+ 				pLed->bLedBlinkInProgress = false;
+ 			}
+ 			pLed->bLedLinkBlinkInProgress = true;
+@@ -946,15 +946,15 @@ static void SwLedControlMode1(struct _adapter *padapter,
+ 			if (IS_LED_WPS_BLINKING(pLed))
+ 				return;
+ 			if (pLed->bLedNoLinkBlinkInProgress == true) {
+-				del_timer_sync(&pLed->BlinkTimer);
++				del_timer(&pLed->BlinkTimer);
+ 				pLed->bLedNoLinkBlinkInProgress = false;
+ 			}
+ 			if (pLed->bLedLinkBlinkInProgress == true) {
+-				del_timer_sync(&pLed->BlinkTimer);
++				del_timer(&pLed->BlinkTimer);
+ 				 pLed->bLedLinkBlinkInProgress = false;
+ 			}
+ 			if (pLed->bLedBlinkInProgress == true) {
+-				del_timer_sync(&pLed->BlinkTimer);
++				del_timer(&pLed->BlinkTimer);
+ 				pLed->bLedBlinkInProgress = false;
+ 			}
+ 			pLed->bLedScanBlinkInProgress = true;
+@@ -975,11 +975,11 @@ static void SwLedControlMode1(struct _adapter *padapter,
+ 			    IS_LED_WPS_BLINKING(pLed))
+ 				return;
+ 			if (pLed->bLedNoLinkBlinkInProgress == true) {
+-				del_timer_sync(&pLed->BlinkTimer);
++				del_timer(&pLed->BlinkTimer);
+ 				pLed->bLedNoLinkBlinkInProgress = false;
+ 			}
+ 			if (pLed->bLedLinkBlinkInProgress == true) {
+-				del_timer_sync(&pLed->BlinkTimer);
++				del_timer(&pLed->BlinkTimer);
+ 				pLed->bLedLinkBlinkInProgress = false;
+ 			}
+ 			pLed->bLedBlinkInProgress = true;
+@@ -998,19 +998,19 @@ static void SwLedControlMode1(struct _adapter *padapter,
+ 	case LED_CTL_START_WPS_BOTTON:
+ 		 if (pLed->bLedWPSBlinkInProgress == false) {
+ 			if (pLed->bLedNoLinkBlinkInProgress == true) {
+-				del_timer_sync(&pLed->BlinkTimer);
++				del_timer(&pLed->BlinkTimer);
+ 				pLed->bLedNoLinkBlinkInProgress = false;
+ 			}
+ 			if (pLed->bLedLinkBlinkInProgress == true) {
+-				del_timer_sync(&pLed->BlinkTimer);
++				del_timer(&pLed->BlinkTimer);
+ 				 pLed->bLedLinkBlinkInProgress = false;
+ 			}
+ 			if (pLed->bLedBlinkInProgress == true) {
+-				del_timer_sync(&pLed->BlinkTimer);
++				del_timer(&pLed->BlinkTimer);
+ 				pLed->bLedBlinkInProgress = false;
+ 			}
+ 			if (pLed->bLedScanBlinkInProgress == true) {
+-				del_timer_sync(&pLed->BlinkTimer);
++				del_timer(&pLed->BlinkTimer);
+ 				pLed->bLedScanBlinkInProgress = false;
+ 			}
+ 			pLed->bLedWPSBlinkInProgress = true;
+@@ -1025,23 +1025,23 @@ static void SwLedControlMode1(struct _adapter *padapter,
+ 		break;
+ 	case LED_CTL_STOP_WPS:
+ 		if (pLed->bLedNoLinkBlinkInProgress == true) {
+-			del_timer_sync(&pLed->BlinkTimer);
++			del_timer(&pLed->BlinkTimer);
+ 			pLed->bLedNoLinkBlinkInProgress = false;
+ 		}
+ 		if (pLed->bLedLinkBlinkInProgress == true) {
+-			del_timer_sync(&pLed->BlinkTimer);
++			del_timer(&pLed->BlinkTimer);
+ 			 pLed->bLedLinkBlinkInProgress = false;
+ 		}
+ 		if (pLed->bLedBlinkInProgress == true) {
+-			del_timer_sync(&pLed->BlinkTimer);
++			del_timer(&pLed->BlinkTimer);
+ 			pLed->bLedBlinkInProgress = false;
+ 		}
+ 		if (pLed->bLedScanBlinkInProgress == true) {
+-			del_timer_sync(&pLed->BlinkTimer);
++			del_timer(&pLed->BlinkTimer);
+ 			pLed->bLedScanBlinkInProgress = false;
+ 		}
+ 		if (pLed->bLedWPSBlinkInProgress)
+-			del_timer_sync(&pLed->BlinkTimer);
++			del_timer(&pLed->BlinkTimer);
+ 		else
+ 			pLed->bLedWPSBlinkInProgress = true;
+ 		pLed->CurrLedState = LED_BLINK_WPS_STOP;
+@@ -1057,7 +1057,7 @@ static void SwLedControlMode1(struct _adapter *padapter,
+ 		break;
+ 	case LED_CTL_STOP_WPS_FAIL:
+ 		if (pLed->bLedWPSBlinkInProgress) {
+-			del_timer_sync(&pLed->BlinkTimer);
++			del_timer(&pLed->BlinkTimer);
+ 			pLed->bLedWPSBlinkInProgress = false;
+ 		}
+ 		pLed->bLedNoLinkBlinkInProgress = true;
+@@ -1073,23 +1073,23 @@ static void SwLedControlMode1(struct _adapter *padapter,
+ 		pLed->CurrLedState = LED_OFF;
+ 		pLed->BlinkingLedState = LED_OFF;
+ 		if (pLed->bLedNoLinkBlinkInProgress) {
+-			del_timer_sync(&pLed->BlinkTimer);
++			del_timer(&pLed->BlinkTimer);
+ 			pLed->bLedNoLinkBlinkInProgress = false;
+ 		}
+ 		if (pLed->bLedLinkBlinkInProgress) {
+-			del_timer_sync(&pLed->BlinkTimer);
++			del_timer(&pLed->BlinkTimer);
+ 			pLed->bLedLinkBlinkInProgress = false;
+ 		}
+ 		if (pLed->bLedBlinkInProgress) {
+-			del_timer_sync(&pLed->BlinkTimer);
++			del_timer(&pLed->BlinkTimer);
+ 			pLed->bLedBlinkInProgress = false;
+ 		}
+ 		if (pLed->bLedWPSBlinkInProgress) {
+-			del_timer_sync(&pLed->BlinkTimer);
++			del_timer(&pLed->BlinkTimer);
+ 			pLed->bLedWPSBlinkInProgress = false;
+ 		}
+ 		if (pLed->bLedScanBlinkInProgress) {
+-			del_timer_sync(&pLed->BlinkTimer);
++			del_timer(&pLed->BlinkTimer);
+ 			pLed->bLedScanBlinkInProgress = false;
+ 		}
+ 		mod_timer(&pLed->BlinkTimer,
+@@ -1116,7 +1116,7 @@ static void SwLedControlMode2(struct _adapter *padapter,
+ 				return;
+ 
+ 			if (pLed->bLedBlinkInProgress == true) {
+-				del_timer_sync(&pLed->BlinkTimer);
++				del_timer(&pLed->BlinkTimer);
+ 				pLed->bLedBlinkInProgress = false;
+ 			}
+ 			pLed->bLedScanBlinkInProgress = true;
+@@ -1154,11 +1154,11 @@ static void SwLedControlMode2(struct _adapter *padapter,
+ 		pLed->CurrLedState = LED_ON;
+ 		pLed->BlinkingLedState = LED_ON;
+ 		if (pLed->bLedBlinkInProgress) {
+-			del_timer_sync(&pLed->BlinkTimer);
++			del_timer(&pLed->BlinkTimer);
+ 			pLed->bLedBlinkInProgress = false;
+ 		}
+ 		if (pLed->bLedScanBlinkInProgress) {
+-			del_timer_sync(&pLed->BlinkTimer);
++			del_timer(&pLed->BlinkTimer);
+ 			pLed->bLedScanBlinkInProgress = false;
+ 		}
+ 
+@@ -1170,11 +1170,11 @@ static void SwLedControlMode2(struct _adapter *padapter,
+ 	case LED_CTL_START_WPS_BOTTON:
+ 		if (pLed->bLedWPSBlinkInProgress == false) {
+ 			if (pLed->bLedBlinkInProgress == true) {
+-				del_timer_sync(&pLed->BlinkTimer);
++				del_timer(&pLed->BlinkTimer);
+ 				pLed->bLedBlinkInProgress = false;
+ 			}
+ 			if (pLed->bLedScanBlinkInProgress == true) {
+-				del_timer_sync(&pLed->BlinkTimer);
++				del_timer(&pLed->BlinkTimer);
+ 				pLed->bLedScanBlinkInProgress = false;
+ 			}
+ 			pLed->bLedWPSBlinkInProgress = true;
+@@ -1214,15 +1214,15 @@ static void SwLedControlMode2(struct _adapter *padapter,
+ 		pLed->CurrLedState = LED_OFF;
+ 		pLed->BlinkingLedState = LED_OFF;
+ 		if (pLed->bLedBlinkInProgress) {
+-			del_timer_sync(&pLed->BlinkTimer);
++			del_timer(&pLed->BlinkTimer);
+ 			pLed->bLedBlinkInProgress = false;
+ 		}
+ 		if (pLed->bLedScanBlinkInProgress) {
+-			del_timer_sync(&pLed->BlinkTimer);
++			del_timer(&pLed->BlinkTimer);
+ 			pLed->bLedScanBlinkInProgress = false;
+ 		}
+ 		if (pLed->bLedWPSBlinkInProgress) {
+-			del_timer_sync(&pLed->BlinkTimer);
++			del_timer(&pLed->BlinkTimer);
+ 			pLed->bLedWPSBlinkInProgress = false;
+ 		}
+ 		mod_timer(&pLed->BlinkTimer,
+@@ -1248,7 +1248,7 @@ static void SwLedControlMode3(struct _adapter *padapter,
+ 			if (IS_LED_WPS_BLINKING(pLed))
+ 				return;
+ 			if (pLed->bLedBlinkInProgress == true) {
+-				del_timer_sync(&pLed->BlinkTimer);
++				del_timer(&pLed->BlinkTimer);
+ 				pLed->bLedBlinkInProgress = false;
+ 			}
+ 			pLed->bLedScanBlinkInProgress = true;
+@@ -1286,11 +1286,11 @@ static void SwLedControlMode3(struct _adapter *padapter,
+ 		pLed->CurrLedState = LED_ON;
+ 		pLed->BlinkingLedState = LED_ON;
+ 		if (pLed->bLedBlinkInProgress) {
+-			del_timer_sync(&pLed->BlinkTimer);
++			del_timer(&pLed->BlinkTimer);
+ 			pLed->bLedBlinkInProgress = false;
+ 		}
+ 		if (pLed->bLedScanBlinkInProgress) {
+-			del_timer_sync(&pLed->BlinkTimer);
++			del_timer(&pLed->BlinkTimer);
+ 			pLed->bLedScanBlinkInProgress = false;
+ 		}
+ 		mod_timer(&pLed->BlinkTimer,
+@@ -1300,11 +1300,11 @@ static void SwLedControlMode3(struct _adapter *padapter,
+ 	case LED_CTL_START_WPS_BOTTON:
+ 		if (pLed->bLedWPSBlinkInProgress == false) {
+ 			if (pLed->bLedBlinkInProgress == true) {
+-				del_timer_sync(&pLed->BlinkTimer);
++				del_timer(&pLed->BlinkTimer);
+ 				pLed->bLedBlinkInProgress = false;
+ 			}
+ 			if (pLed->bLedScanBlinkInProgress == true) {
+-				del_timer_sync(&pLed->BlinkTimer);
++				del_timer(&pLed->BlinkTimer);
+ 				pLed->bLedScanBlinkInProgress = false;
+ 			}
+ 			pLed->bLedWPSBlinkInProgress = true;
+@@ -1319,7 +1319,7 @@ static void SwLedControlMode3(struct _adapter *padapter,
+ 		break;
+ 	case LED_CTL_STOP_WPS:
+ 		if (pLed->bLedWPSBlinkInProgress) {
+-			del_timer_sync(&(pLed->BlinkTimer));
++			del_timer(&pLed->BlinkTimer);
+ 			pLed->bLedWPSBlinkInProgress = false;
+ 		} else
+ 			pLed->bLedWPSBlinkInProgress = true;
+@@ -1336,7 +1336,7 @@ static void SwLedControlMode3(struct _adapter *padapter,
+ 		break;
+ 	case LED_CTL_STOP_WPS_FAIL:
+ 		if (pLed->bLedWPSBlinkInProgress) {
+-			del_timer_sync(&pLed->BlinkTimer);
++			del_timer(&pLed->BlinkTimer);
+ 			pLed->bLedWPSBlinkInProgress = false;
+ 		}
+ 		pLed->CurrLedState = LED_OFF;
+@@ -1357,15 +1357,15 @@ static void SwLedControlMode3(struct _adapter *padapter,
+ 		pLed->CurrLedState = LED_OFF;
+ 		pLed->BlinkingLedState = LED_OFF;
+ 		if (pLed->bLedBlinkInProgress) {
+-			del_timer_sync(&pLed->BlinkTimer);
++			del_timer(&pLed->BlinkTimer);
+ 			pLed->bLedBlinkInProgress = false;
+ 		}
+ 		if (pLed->bLedScanBlinkInProgress) {
+-			del_timer_sync(&pLed->BlinkTimer);
++			del_timer(&pLed->BlinkTimer);
+ 			pLed->bLedScanBlinkInProgress = false;
+ 		}
+ 		if (pLed->bLedWPSBlinkInProgress) {
+-			del_timer_sync(&pLed->BlinkTimer);
++			del_timer(&pLed->BlinkTimer);
+ 			pLed->bLedWPSBlinkInProgress = false;
+ 		}
+ 		mod_timer(&pLed->BlinkTimer,
+@@ -1388,7 +1388,7 @@ static void SwLedControlMode4(struct _adapter *padapter,
+ 	case LED_CTL_START_TO_LINK:
+ 		if (pLed1->bLedWPSBlinkInProgress) {
+ 			pLed1->bLedWPSBlinkInProgress = false;
+-			del_timer_sync(&pLed1->BlinkTimer);
++			del_timer(&pLed1->BlinkTimer);
+ 			pLed1->BlinkingLedState = LED_OFF;
+ 			pLed1->CurrLedState = LED_OFF;
+ 			if (pLed1->bLedOn)
+@@ -1400,11 +1400,11 @@ static void SwLedControlMode4(struct _adapter *padapter,
+ 			    IS_LED_WPS_BLINKING(pLed))
+ 				return;
+ 			if (pLed->bLedBlinkInProgress == true) {
+-				del_timer_sync(&pLed->BlinkTimer);
++				del_timer(&pLed->BlinkTimer);
+ 				pLed->bLedBlinkInProgress = false;
+ 			}
+ 			if (pLed->bLedNoLinkBlinkInProgress == true) {
+-				del_timer_sync(&pLed->BlinkTimer);
++				del_timer(&pLed->BlinkTimer);
+ 				pLed->bLedNoLinkBlinkInProgress = false;
+ 			}
+ 			pLed->bLedStartToLinkBlinkInProgress = true;
+@@ -1426,7 +1426,7 @@ static void SwLedControlMode4(struct _adapter *padapter,
+ 		if (LedAction == LED_CTL_LINK) {
+ 			if (pLed1->bLedWPSBlinkInProgress) {
+ 				pLed1->bLedWPSBlinkInProgress = false;
+-				del_timer_sync(&pLed1->BlinkTimer);
++				del_timer(&pLed1->BlinkTimer);
+ 				pLed1->BlinkingLedState = LED_OFF;
+ 				pLed1->CurrLedState = LED_OFF;
+ 				if (pLed1->bLedOn)
+@@ -1439,7 +1439,7 @@ static void SwLedControlMode4(struct _adapter *padapter,
+ 			    IS_LED_WPS_BLINKING(pLed))
+ 				return;
+ 			if (pLed->bLedBlinkInProgress == true) {
+-				del_timer_sync(&pLed->BlinkTimer);
++				del_timer(&pLed->BlinkTimer);
+ 				pLed->bLedBlinkInProgress = false;
+ 			}
+ 			pLed->bLedNoLinkBlinkInProgress = true;
+@@ -1460,11 +1460,11 @@ static void SwLedControlMode4(struct _adapter *padapter,
+ 			if (IS_LED_WPS_BLINKING(pLed))
+ 				return;
+ 			if (pLed->bLedNoLinkBlinkInProgress == true) {
+-				del_timer_sync(&pLed->BlinkTimer);
++				del_timer(&pLed->BlinkTimer);
+ 				pLed->bLedNoLinkBlinkInProgress = false;
+ 			}
+ 			if (pLed->bLedBlinkInProgress == true) {
+-				del_timer_sync(&pLed->BlinkTimer);
++				del_timer(&pLed->BlinkTimer);
+ 				pLed->bLedBlinkInProgress = false;
+ 			}
+ 			pLed->bLedScanBlinkInProgress = true;
+@@ -1485,7 +1485,7 @@ static void SwLedControlMode4(struct _adapter *padapter,
+ 			    IS_LED_WPS_BLINKING(pLed))
+ 				return;
+ 			if (pLed->bLedNoLinkBlinkInProgress == true) {
+-				del_timer_sync(&pLed->BlinkTimer);
++				del_timer(&pLed->BlinkTimer);
+ 				pLed->bLedNoLinkBlinkInProgress = false;
+ 			}
+ 			pLed->bLedBlinkInProgress = true;
+@@ -1503,7 +1503,7 @@ static void SwLedControlMode4(struct _adapter *padapter,
+ 	case LED_CTL_START_WPS_BOTTON:
+ 		if (pLed1->bLedWPSBlinkInProgress) {
+ 			pLed1->bLedWPSBlinkInProgress = false;
+-			del_timer_sync(&(pLed1->BlinkTimer));
++			del_timer(&pLed1->BlinkTimer);
+ 			pLed1->BlinkingLedState = LED_OFF;
+ 			pLed1->CurrLedState = LED_OFF;
+ 			if (pLed1->bLedOn)
+@@ -1512,15 +1512,15 @@ static void SwLedControlMode4(struct _adapter *padapter,
+ 		}
+ 		if (pLed->bLedWPSBlinkInProgress == false) {
+ 			if (pLed->bLedNoLinkBlinkInProgress == true) {
+-				del_timer_sync(&pLed->BlinkTimer);
++				del_timer(&pLed->BlinkTimer);
+ 				pLed->bLedNoLinkBlinkInProgress = false;
+ 			}
+ 			if (pLed->bLedBlinkInProgress == true) {
+-				del_timer_sync(&pLed->BlinkTimer);
++				del_timer(&pLed->BlinkTimer);
+ 				pLed->bLedBlinkInProgress = false;
+ 			}
+ 			if (pLed->bLedScanBlinkInProgress == true) {
+-				del_timer_sync(&pLed->BlinkTimer);
++				del_timer(&pLed->BlinkTimer);
+ 				pLed->bLedScanBlinkInProgress = false;
+ 			}
+ 			pLed->bLedWPSBlinkInProgress = true;
+@@ -1538,7 +1538,7 @@ static void SwLedControlMode4(struct _adapter *padapter,
+ 		break;
+ 	case LED_CTL_STOP_WPS:	/*WPS connect success*/
+ 		if (pLed->bLedWPSBlinkInProgress) {
+-			del_timer_sync(&pLed->BlinkTimer);
++			del_timer(&pLed->BlinkTimer);
+ 			pLed->bLedWPSBlinkInProgress = false;
+ 		}
+ 		pLed->bLedNoLinkBlinkInProgress = true;
+@@ -1552,7 +1552,7 @@ static void SwLedControlMode4(struct _adapter *padapter,
+ 		break;
+ 	case LED_CTL_STOP_WPS_FAIL:	/*WPS authentication fail*/
+ 		if (pLed->bLedWPSBlinkInProgress) {
+-			del_timer_sync(&pLed->BlinkTimer);
++			del_timer(&pLed->BlinkTimer);
+ 			pLed->bLedWPSBlinkInProgress = false;
+ 		}
+ 		pLed->bLedNoLinkBlinkInProgress = true;
+@@ -1565,7 +1565,7 @@ static void SwLedControlMode4(struct _adapter *padapter,
+ 			  msecs_to_jiffies(LED_BLINK_NO_LINK_INTERVAL_ALPHA));
+ 		/*LED1 settings*/
+ 		if (pLed1->bLedWPSBlinkInProgress)
+-			del_timer_sync(&pLed1->BlinkTimer);
++			del_timer(&pLed1->BlinkTimer);
+ 		else
+ 			pLed1->bLedWPSBlinkInProgress = true;
+ 		pLed1->CurrLedState = LED_BLINK_WPS_STOP;
+@@ -1578,7 +1578,7 @@ static void SwLedControlMode4(struct _adapter *padapter,
+ 		break;
+ 	case LED_CTL_STOP_WPS_FAIL_OVERLAP:	/*WPS session overlap*/
+ 		if (pLed->bLedWPSBlinkInProgress) {
+-			del_timer_sync(&pLed->BlinkTimer);
++			del_timer(&pLed->BlinkTimer);
+ 			pLed->bLedWPSBlinkInProgress = false;
+ 		}
+ 		pLed->bLedNoLinkBlinkInProgress = true;
+@@ -1591,7 +1591,7 @@ static void SwLedControlMode4(struct _adapter *padapter,
+ 			  msecs_to_jiffies(LED_BLINK_NO_LINK_INTERVAL_ALPHA));
+ 		/*LED1 settings*/
+ 		if (pLed1->bLedWPSBlinkInProgress)
+-			del_timer_sync(&pLed1->BlinkTimer);
++			del_timer(&pLed1->BlinkTimer);
+ 		else
+ 			pLed1->bLedWPSBlinkInProgress = true;
+ 		pLed1->CurrLedState = LED_BLINK_WPS_STOP_OVERLAP;
+@@ -1607,31 +1607,31 @@ static void SwLedControlMode4(struct _adapter *padapter,
+ 		pLed->CurrLedState = LED_OFF;
+ 		pLed->BlinkingLedState = LED_OFF;
+ 		if (pLed->bLedNoLinkBlinkInProgress) {
+-			del_timer_sync(&pLed->BlinkTimer);
++			del_timer(&pLed->BlinkTimer);
+ 			pLed->bLedNoLinkBlinkInProgress = false;
+ 		}
+ 		if (pLed->bLedLinkBlinkInProgress) {
+-			del_timer_sync(&pLed->BlinkTimer);
++			del_timer(&pLed->BlinkTimer);
+ 			pLed->bLedLinkBlinkInProgress = false;
+ 		}
+ 		if (pLed->bLedBlinkInProgress) {
+-			del_timer_sync(&pLed->BlinkTimer);
++			del_timer(&pLed->BlinkTimer);
+ 			pLed->bLedBlinkInProgress = false;
+ 		}
+ 		if (pLed->bLedWPSBlinkInProgress) {
+-			del_timer_sync(&pLed->BlinkTimer);
++			del_timer(&pLed->BlinkTimer);
+ 			pLed->bLedWPSBlinkInProgress = false;
+ 		}
+ 		if (pLed->bLedScanBlinkInProgress) {
+-			del_timer_sync(&pLed->BlinkTimer);
++			del_timer(&pLed->BlinkTimer);
+ 			pLed->bLedScanBlinkInProgress = false;
+ 		}
+ 		if (pLed->bLedStartToLinkBlinkInProgress) {
+-			del_timer_sync(&pLed->BlinkTimer);
++			del_timer(&pLed->BlinkTimer);
+ 			pLed->bLedStartToLinkBlinkInProgress = false;
+ 		}
+ 		if (pLed1->bLedWPSBlinkInProgress) {
+-			del_timer_sync(&pLed1->BlinkTimer);
++			del_timer(&pLed1->BlinkTimer);
+ 			pLed1->bLedWPSBlinkInProgress = false;
+ 		}
+ 		pLed1->BlinkingLedState = LED_UNKNOWN;
+@@ -1671,7 +1671,7 @@ static void SwLedControlMode5(struct _adapter *padapter,
+ 			; /* dummy branch */
+ 		else if (pLed->bLedScanBlinkInProgress == false) {
+ 			if (pLed->bLedBlinkInProgress == true) {
+-				del_timer_sync(&pLed->BlinkTimer);
++				del_timer(&pLed->BlinkTimer);
+ 				pLed->bLedBlinkInProgress = false;
+ 			}
+ 			pLed->bLedScanBlinkInProgress = true;
+@@ -1705,7 +1705,7 @@ static void SwLedControlMode5(struct _adapter *padapter,
+ 		pLed->CurrLedState = LED_OFF;
+ 		pLed->BlinkingLedState = LED_OFF;
+ 		if (pLed->bLedBlinkInProgress) {
+-			del_timer_sync(&pLed->BlinkTimer);
++			del_timer(&pLed->BlinkTimer);
+ 			pLed->bLedBlinkInProgress = false;
+ 		}
+ 		SwLedOff(padapter, pLed);
+@@ -1756,7 +1756,7 @@ static void SwLedControlMode6(struct _adapter *padapter,
+ 	case LED_CTL_START_WPS_BOTTON:
+ 		if (pLed->bLedWPSBlinkInProgress == false) {
+ 			if (pLed->bLedBlinkInProgress == true) {
+-				del_timer_sync(&pLed->BlinkTimer);
++				del_timer(&pLed->BlinkTimer);
+ 				pLed->bLedBlinkInProgress = false;
+ 			}
+ 			pLed->bLedWPSBlinkInProgress = true;
+@@ -1772,7 +1772,7 @@ static void SwLedControlMode6(struct _adapter *padapter,
+ 	case LED_CTL_STOP_WPS_FAIL:
+ 	case LED_CTL_STOP_WPS:
+ 		if (pLed->bLedWPSBlinkInProgress) {
+-			del_timer_sync(&pLed->BlinkTimer);
++			del_timer(&pLed->BlinkTimer);
+ 			pLed->bLedWPSBlinkInProgress = false;
+ 		}
+ 		pLed->CurrLedState = LED_ON;
+@@ -1784,11 +1784,11 @@ static void SwLedControlMode6(struct _adapter *padapter,
+ 		pLed->CurrLedState = LED_OFF;
+ 		pLed->BlinkingLedState = LED_OFF;
+ 		if (pLed->bLedBlinkInProgress) {
+-			del_timer_sync(&pLed->BlinkTimer);
++			del_timer(&pLed->BlinkTimer);
+ 			pLed->bLedBlinkInProgress = false;
+ 		}
+ 		if (pLed->bLedWPSBlinkInProgress) {
+-			del_timer_sync(&pLed->BlinkTimer);
++			del_timer(&pLed->BlinkTimer);
+ 			pLed->bLedWPSBlinkInProgress = false;
+ 		}
+ 		SwLedOff(padapter, pLed);
+diff --git a/drivers/staging/rtl8712/rtl871x_cmd.c b/drivers/staging/rtl8712/rtl871x_cmd.c
+index 1a1c38f885d6..e35854d28f90 100644
+--- a/drivers/staging/rtl8712/rtl871x_cmd.c
++++ b/drivers/staging/rtl8712/rtl871x_cmd.c
+@@ -910,7 +910,7 @@ void r8712_createbss_cmd_callback(struct _adapter *padapter,
+ 	if (pcmd->res != H2C_SUCCESS)
+ 		mod_timer(&pmlmepriv->assoc_timer,
+ 			  jiffies + msecs_to_jiffies(1));
+-	del_timer_sync(&pmlmepriv->assoc_timer);
++	del_timer(&pmlmepriv->assoc_timer);
+ #ifdef __BIG_ENDIAN
+ 	/* endian_convert */
+ 	pnetwork->Length = le32_to_cpu(pnetwork->Length);
+diff --git a/drivers/staging/rtl8712/rtl871x_mlme.c b/drivers/staging/rtl8712/rtl871x_mlme.c
+index fb2b195b90af..c044b0e55ba9 100644
+--- a/drivers/staging/rtl8712/rtl871x_mlme.c
++++ b/drivers/staging/rtl8712/rtl871x_mlme.c
+@@ -582,7 +582,7 @@ void r8712_surveydone_event_callback(struct _adapter *adapter, u8 *pbuf)
+ 	spin_lock_irqsave(&pmlmepriv->lock, irqL);
+ 
+ 	if (check_fwstate(pmlmepriv, _FW_UNDER_SURVEY) == true) {
+-		del_timer_sync(&pmlmepriv->scan_to_timer);
++		del_timer(&pmlmepriv->scan_to_timer);
+ 
+ 		_clr_fwstate_(pmlmepriv, _FW_UNDER_SURVEY);
+ 	}
+@@ -696,7 +696,7 @@ void r8712_ind_disconnect(struct _adapter *padapter)
+ 	}
+ 	if (padapter->pwrctrlpriv.pwr_mode !=
+ 	    padapter->registrypriv.power_mgnt) {
+-		del_timer_sync(&pmlmepriv->dhcp_timer);
++		del_timer(&pmlmepriv->dhcp_timer);
+ 		r8712_set_ps_mode(padapter, padapter->registrypriv.power_mgnt,
+ 				  padapter->registrypriv.smart_ps);
+ 	}
+@@ -910,7 +910,7 @@ void r8712_joinbss_event_callback(struct _adapter *adapter, u8 *pbuf)
+ 			if (check_fwstate(pmlmepriv, WIFI_STATION_STATE)
+ 				== true)
+ 				r8712_indicate_connect(adapter);
+-			del_timer_sync(&pmlmepriv->assoc_timer);
++			del_timer(&pmlmepriv->assoc_timer);
+ 		} else
+ 			goto ignore_joinbss_callback;
+ 	} else {
+diff --git a/drivers/staging/rtl8712/rtl871x_pwrctrl.c b/drivers/staging/rtl8712/rtl871x_pwrctrl.c
+index aaa584435c87..9bc04f474d18 100644
+--- a/drivers/staging/rtl8712/rtl871x_pwrctrl.c
++++ b/drivers/staging/rtl8712/rtl871x_pwrctrl.c
+@@ -103,7 +103,7 @@ void r8712_cpwm_int_hdl(struct _adapter *padapter,
+ 
+ 	if (pwrpriv->cpwm_tog == ((preportpwrstate->state) & 0x80))
+ 		return;
+-	del_timer_sync(&padapter->pwrctrlpriv.rpwm_check_timer);
++	del_timer(&padapter->pwrctrlpriv.rpwm_check_timer);
+ 	_enter_pwrlock(&pwrpriv->lock);
+ 	pwrpriv->cpwm = (preportpwrstate->state) & 0xf;
+ 	if (pwrpriv->cpwm >= PS_STATE_S2) {
+diff --git a/drivers/staging/rtl8712/rtl871x_sta_mgt.c b/drivers/staging/rtl8712/rtl871x_sta_mgt.c
+index 7bb96c47f188..a9b93d0f6f56 100644
+--- a/drivers/staging/rtl8712/rtl871x_sta_mgt.c
++++ b/drivers/staging/rtl8712/rtl871x_sta_mgt.c
+@@ -198,7 +198,7 @@ void r8712_free_stainfo(struct _adapter *padapter, struct sta_info *psta)
+ 	 * cancel reordering_ctrl_timer */
+ 	for (i = 0; i < 16; i++) {
+ 		preorder_ctrl = &psta->recvreorder_ctrl[i];
+-		del_timer_sync(&preorder_ctrl->reordering_ctrl_timer);
++		del_timer(&preorder_ctrl->reordering_ctrl_timer);
+ 	}
+ 	spin_lock(&(pfree_sta_queue->lock));
+ 	/* insert into free_sta_queue; 20061114 */

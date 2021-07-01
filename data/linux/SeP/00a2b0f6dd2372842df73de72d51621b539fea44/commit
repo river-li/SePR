@@ -1,0 +1,14 @@
+commit 00a2b0f6dd2372842df73de72d51621b539fea44
+Author: Jan Kara <jack@suse.cz>
+Commit: Greg Kroah-Hartman <gregkh@suse.de>
+
+    Fix possible UDF deadlock and memory corruption (CVE-2006-4145)
+    
+    UDF code is not really ready to handle extents larger that 1GB. This is
+    the easy way to forbid creating those.
+    
+    Also truncation code did not count with the case when there are no
+    extents in the file and we are extending the file.
+    
+    Signed-off-by: Jan Kara <jack@suse.cz>
+    Signed-off-by: Greg Kroah-Hartman <gregkh@suse.de>

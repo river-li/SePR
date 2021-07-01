@@ -1,0 +1,351 @@
+diff --git a/arch/sparc/Kconfig b/arch/sparc/Kconfig
+index de58c02633b4..c3ea215334f6 100644
+--- a/arch/sparc/Kconfig
++++ b/arch/sparc/Kconfig
+@@ -36,6 +36,7 @@ config SPARC64
+ 	select HAVE_KRETPROBES
+ 	select HAVE_KPROBES
+ 	select HAVE_LMB
++	select HAVE_SYSCALL_WRAPPERS
+ 	select USE_GENERIC_SMP_HELPERS if SMP
+ 	select RTC_DRV_CMOS
+ 	select RTC_DRV_BQ4802
+diff --git a/arch/sparc/kernel/central.c b/arch/sparc/kernel/central.c
+index 05f1c916db06..f3b5466c389c 100644
+--- a/arch/sparc/kernel/central.c
++++ b/arch/sparc/kernel/central.c
+@@ -103,6 +103,7 @@ static int __devinit clock_board_probe(struct of_device *op,
+ 	p->leds_resource.name = "leds";
+ 
+ 	p->leds_pdev.name = "sunfire-clockboard-leds";
++	p->leds_pdev.id = -1;
+ 	p->leds_pdev.resource = &p->leds_resource;
+ 	p->leds_pdev.num_resources = 1;
+ 	p->leds_pdev.dev.parent = &op->dev;
+@@ -197,6 +198,7 @@ static int __devinit fhc_probe(struct of_device *op,
+ 		p->leds_resource.name = "leds";
+ 
+ 		p->leds_pdev.name = "sunfire-fhc-leds";
++		p->leds_pdev.id = p->board_num;
+ 		p->leds_pdev.resource = &p->leds_resource;
+ 		p->leds_pdev.num_resources = 1;
+ 		p->leds_pdev.dev.parent = &op->dev;
+diff --git a/arch/sparc/kernel/cpu.c b/arch/sparc/kernel/cpu.c
+index f0b825505da5..32d32b4824f5 100644
+--- a/arch/sparc/kernel/cpu.c
++++ b/arch/sparc/kernel/cpu.c
+@@ -239,14 +239,26 @@ unsigned int fsr_storage;
+ 
+ static void set_cpu_and_fpu(int psr_impl, int psr_vers, int fpu_vers)
+ {
++	const struct manufacturer_info *manuf;
++	int i;
++
+ 	sparc_cpu_type = NULL;
+ 	sparc_fpu_type = NULL;
+-	if (psr_impl < ARRAY_SIZE(manufacturer_info))
++	manuf = NULL;
++
++	for (i = 0; i < ARRAY_SIZE(manufacturer_info); i++)
++	{
++		if (psr_impl == manufacturer_info[i].psr_impl) {
++			manuf = &manufacturer_info[i];
++			break;
++		}
++	}
++	if (manuf != NULL)
+ 	{
+ 		const struct cpu_info *cpu;
+ 		const struct fpu_info *fpu;
+ 
+-		cpu = &manufacturer_info[psr_impl].cpu_info[0];
++		cpu = &manuf->cpu_info[0];
+ 		while (cpu->psr_vers != -1)
+ 		{
+ 			if (cpu->psr_vers == psr_vers) {
+@@ -256,7 +268,7 @@ static void set_cpu_and_fpu(int psr_impl, int psr_vers, int fpu_vers)
+ 			}
+ 			cpu++;
+ 		}
+-		fpu =  &manufacturer_info[psr_impl].fpu_info[0];
++		fpu =  &manuf->fpu_info[0];
+ 		while (fpu->fp_vers != -1)
+ 		{
+ 			if (fpu->fp_vers == fpu_vers) {
+diff --git a/arch/sparc/kernel/sys_sparc_64.c b/arch/sparc/kernel/sys_sparc_64.c
+index 09058fc39e73..e2d102447a43 100644
+--- a/arch/sparc/kernel/sys_sparc_64.c
++++ b/arch/sparc/kernel/sys_sparc_64.c
+@@ -399,7 +399,7 @@ void arch_pick_mmap_layout(struct mm_struct *mm)
+ 	}
+ }
+ 
+-asmlinkage unsigned long sparc_brk(unsigned long brk)
++SYSCALL_DEFINE1(sparc_brk, unsigned long, brk)
+ {
+ 	/* People could try to be nasty and use ta 0x6d in 32bit programs */
+ 	if (test_thread_flag(TIF_32BIT) && brk >= STACK_TOP32)
+@@ -415,7 +415,7 @@ asmlinkage unsigned long sparc_brk(unsigned long brk)
+  * sys_pipe() is the normal C calling standard for creating
+  * a pipe. It's not the way unix traditionally does this, though.
+  */
+-asmlinkage long sparc_pipe(struct pt_regs *regs)
++SYSCALL_DEFINE1(sparc_pipe_real, struct pt_regs *, regs)
+ {
+ 	int fd[2];
+ 	int error;
+@@ -435,8 +435,8 @@ asmlinkage long sparc_pipe(struct pt_regs *regs)
+  * This is really horribly ugly.
+  */
+ 
+-asmlinkage long sys_ipc(unsigned int call, int first, unsigned long second,
+-			unsigned long third, void __user *ptr, long fifth)
++SYSCALL_DEFINE6(ipc, unsigned int, call, int, first, unsigned long, second,
++		unsigned long, third, void __user *, ptr, long, fifth)
+ {
+ 	long err;
+ 
+@@ -519,7 +519,7 @@ asmlinkage long sys_ipc(unsigned int call, int first, unsigned long second,
+ 	return err;
+ }
+ 
+-asmlinkage long sparc64_newuname(struct new_utsname __user *name)
++SYSCALL_DEFINE1(sparc64_newuname, struct new_utsname __user *, name)
+ {
+ 	int ret = sys_newuname(name);
+ 	
+@@ -530,7 +530,7 @@ asmlinkage long sparc64_newuname(struct new_utsname __user *name)
+ 	return ret;
+ }
+ 
+-asmlinkage long sparc64_personality(unsigned long personality)
++SYSCALL_DEFINE1(sparc64_personality, unsigned long, personality)
+ {
+ 	int ret;
+ 
+@@ -564,9 +564,9 @@ int sparc_mmap_check(unsigned long addr, unsigned long len)
+ }
+ 
+ /* Linux version of mmap */
+-asmlinkage unsigned long sys_mmap(unsigned long addr, unsigned long len,
+-	unsigned long prot, unsigned long flags, unsigned long fd,
+-	unsigned long off)
++SYSCALL_DEFINE6(mmap, unsigned long, addr, unsigned long, len,
++		unsigned long, prot, unsigned long, flags, unsigned long, fd,
++		unsigned long, off)
+ {
+ 	struct file * file = NULL;
+ 	unsigned long retval = -EBADF;
+@@ -589,7 +589,7 @@ asmlinkage unsigned long sys_mmap(unsigned long addr, unsigned long len,
+ 	return retval;
+ }
+ 
+-asmlinkage long sys64_munmap(unsigned long addr, size_t len)
++SYSCALL_DEFINE2(64_munmap, unsigned long, addr, size_t, len)
+ {
+ 	long ret;
+ 
+@@ -606,9 +606,9 @@ extern unsigned long do_mremap(unsigned long addr,
+ 	unsigned long old_len, unsigned long new_len,
+ 	unsigned long flags, unsigned long new_addr);
+                 
+-asmlinkage unsigned long sys64_mremap(unsigned long addr,
+-	unsigned long old_len, unsigned long new_len,
+-	unsigned long flags, unsigned long new_addr)
++SYSCALL_DEFINE5(64_mremap, unsigned long, addr,	unsigned long, old_len,
++		unsigned long, new_len, unsigned long, flags,
++		unsigned long, new_addr)
+ {
+ 	unsigned long ret = -EINVAL;
+ 
+@@ -671,7 +671,7 @@ asmlinkage void sparc_breakpoint(struct pt_regs *regs)
+ 
+ extern void check_pending(int signum);
+ 
+-asmlinkage long sys_getdomainname(char __user *name, int len)
++SYSCALL_DEFINE2(getdomainname, char __user *, name, int, len)
+ {
+         int nlen, err;
+ 
+@@ -694,11 +694,10 @@ asmlinkage long sys_getdomainname(char __user *name, int len)
+ 	return err;
+ }
+ 
+-asmlinkage long sys_utrap_install(utrap_entry_t type,
+-				  utrap_handler_t new_p,
+-				  utrap_handler_t new_d,
+-				  utrap_handler_t __user *old_p,
+-				  utrap_handler_t __user *old_d)
++SYSCALL_DEFINE5(utrap_install, utrap_entry_t, type,
++		utrap_handler_t, new_p, utrap_handler_t, new_d,
++		utrap_handler_t __user *, old_p,
++		utrap_handler_t __user *, old_d)
+ {
+ 	if (type < UT_INSTRUCTION_EXCEPTION || type > UT_TRAP_INSTRUCTION_31)
+ 		return -EINVAL;
+@@ -764,11 +763,9 @@ asmlinkage long sparc_memory_ordering(unsigned long model,
+ 	return 0;
+ }
+ 
+-asmlinkage long sys_rt_sigaction(int sig,
+-				 const struct sigaction __user *act,
+-				 struct sigaction __user *oact,
+-				 void __user *restorer,
+-				 size_t sigsetsize)
++SYSCALL_DEFINE5(rt_sigaction, int, sig, const struct sigaction __user *, act,
++		struct sigaction __user *, oact, void __user *, restorer,
++		size_t, sigsetsize)
+ {
+ 	struct k_sigaction new_ka, old_ka;
+ 	int ret;
+@@ -808,7 +805,8 @@ asmlinkage void update_perfctrs(void)
+ 	reset_pic();
+ }
+ 
+-asmlinkage long sys_perfctr(int opcode, unsigned long arg0, unsigned long arg1, unsigned long arg2)
++SYSCALL_DEFINE4(perfctr, int, opcode, unsigned long, arg0,
++		unsigned long, arg1, unsigned long, arg2)
+ {
+ 	int err = 0;
+ 
+diff --git a/arch/sparc/kernel/syscalls.S b/arch/sparc/kernel/syscalls.S
+index 87f5a3b8a253..d150c2aa98d2 100644
+--- a/arch/sparc/kernel/syscalls.S
++++ b/arch/sparc/kernel/syscalls.S
+@@ -21,7 +21,7 @@ execve_merge:
+ 
+ 	.align	32
+ sys_sparc_pipe:
+-	ba,pt	%xcc, sparc_pipe
++	ba,pt	%xcc, sys_sparc_pipe_real
+ 	 add	%sp, PTREGS_OFF, %o0
+ sys_nis_syscall:
+ 	ba,pt	%xcc, c_sys_nis_syscall
+diff --git a/arch/sparc/kernel/systbls.h b/arch/sparc/kernel/systbls.h
+index bc9f5dac4069..15c2d752b2bc 100644
+--- a/arch/sparc/kernel/systbls.h
++++ b/arch/sparc/kernel/systbls.h
+@@ -16,9 +16,6 @@ extern asmlinkage long sys_ipc(unsigned int call, int first,
+ 			       void __user *ptr, long fifth);
+ extern asmlinkage long sparc64_newuname(struct new_utsname __user *name);
+ extern asmlinkage long sparc64_personality(unsigned long personality);
+-extern asmlinkage unsigned long sys_mmap(unsigned long addr, unsigned long len,
+-					 unsigned long prot, unsigned long flags,
+-					 unsigned long fd, unsigned long off);
+ extern asmlinkage long sys64_munmap(unsigned long addr, size_t len);
+ extern asmlinkage unsigned long sys64_mremap(unsigned long addr,
+ 					     unsigned long old_len,
+diff --git a/arch/sparc/kernel/systbls_64.S b/arch/sparc/kernel/systbls_64.S
+index e6007bb37046..f93c42a2b522 100644
+--- a/arch/sparc/kernel/systbls_64.S
++++ b/arch/sparc/kernel/systbls_64.S
+@@ -21,7 +21,7 @@ sys_call_table32:
+ /*0*/	.word sys_restart_syscall, sys32_exit, sys_fork, sys_read, sys_write
+ /*5*/	.word sys32_open, sys_close, sys32_wait4, sys32_creat, sys_link
+ /*10*/  .word sys_unlink, sunos_execv, sys_chdir, sys_chown16, sys32_mknod
+-/*15*/	.word sys_chmod, sys_lchown16, sparc_brk, sys32_perfctr, sys32_lseek
++/*15*/	.word sys_chmod, sys_lchown16, sys_sparc_brk, sys32_perfctr, sys32_lseek
+ /*20*/	.word sys_getpid, sys_capget, sys_capset, sys_setuid16, sys_getuid16
+ /*25*/	.word sys32_vmsplice, compat_sys_ptrace, sys_alarm, sys32_sigaltstack, sys_pause
+ /*30*/	.word compat_sys_utime, sys_lchown, sys_fchown, sys32_access, sys32_nice
+@@ -55,8 +55,8 @@ sys_call_table32:
+ /*170*/	.word sys32_lsetxattr, sys32_fsetxattr, sys_getxattr, sys_lgetxattr, compat_sys_getdents
+ 	.word sys_setsid, sys_fchdir, sys32_fgetxattr, sys_listxattr, sys_llistxattr
+ /*180*/	.word sys32_flistxattr, sys_removexattr, sys_lremovexattr, compat_sys_sigpending, sys_ni_syscall
+-	.word sys32_setpgid, sys32_fremovexattr, sys32_tkill, sys32_exit_group, sparc64_newuname
+-/*190*/	.word sys32_init_module, sparc64_personality, sys_remap_file_pages, sys32_epoll_create, sys32_epoll_ctl
++	.word sys32_setpgid, sys32_fremovexattr, sys32_tkill, sys32_exit_group, sys_sparc64_newuname
++/*190*/	.word sys32_init_module, sys_sparc64_personality, sys_remap_file_pages, sys32_epoll_create, sys32_epoll_ctl
+ 	.word sys32_epoll_wait, sys32_ioprio_set, sys_getppid, sys32_sigaction, sys_sgetmask
+ /*200*/	.word sys32_ssetmask, sys_sigsuspend, compat_sys_newlstat, sys_uselib, compat_sys_old_readdir
+ 	.word sys32_readahead, sys32_socketcall, sys32_syslog, sys32_lookup_dcookie, sys32_fadvise64
+@@ -95,7 +95,7 @@ sys_call_table:
+ /*0*/	.word sys_restart_syscall, sparc_exit, sys_fork, sys_read, sys_write
+ /*5*/	.word sys_open, sys_close, sys_wait4, sys_creat, sys_link
+ /*10*/  .word sys_unlink, sys_nis_syscall, sys_chdir, sys_chown, sys_mknod
+-/*15*/	.word sys_chmod, sys_lchown, sparc_brk, sys_perfctr, sys_lseek
++/*15*/	.word sys_chmod, sys_lchown, sys_sparc_brk, sys_perfctr, sys_lseek
+ /*20*/	.word sys_getpid, sys_capget, sys_capset, sys_setuid, sys_getuid
+ /*25*/	.word sys_vmsplice, sys_ptrace, sys_alarm, sys_sigaltstack, sys_nis_syscall
+ /*30*/	.word sys_utime, sys_nis_syscall, sys_nis_syscall, sys_access, sys_nice
+@@ -106,7 +106,7 @@ sys_call_table:
+ 	.word sys_reboot, sys_nis_syscall, sys_symlink, sys_readlink, sys_execve
+ /*60*/	.word sys_umask, sys_chroot, sys_newfstat, sys_fstat64, sys_getpagesize
+ 	.word sys_msync, sys_vfork, sys_pread64, sys_pwrite64, sys_nis_syscall
+-/*70*/	.word sys_nis_syscall, sys_mmap, sys_nis_syscall, sys64_munmap, sys_mprotect
++/*70*/	.word sys_nis_syscall, sys_mmap, sys_nis_syscall, sys_64_munmap, sys_mprotect
+ 	.word sys_madvise, sys_vhangup, sys_nis_syscall, sys_mincore, sys_getgroups
+ /*80*/	.word sys_setgroups, sys_getpgrp, sys_nis_syscall, sys_setitimer, sys_nis_syscall
+ 	.word sys_swapon, sys_getitimer, sys_nis_syscall, sys_sethostname, sys_nis_syscall
+@@ -129,8 +129,8 @@ sys_call_table:
+ /*170*/	.word sys_lsetxattr, sys_fsetxattr, sys_getxattr, sys_lgetxattr, sys_getdents
+ 	.word sys_setsid, sys_fchdir, sys_fgetxattr, sys_listxattr, sys_llistxattr
+ /*180*/	.word sys_flistxattr, sys_removexattr, sys_lremovexattr, sys_nis_syscall, sys_ni_syscall
+-	.word sys_setpgid, sys_fremovexattr, sys_tkill, sys_exit_group, sparc64_newuname
+-/*190*/	.word sys_init_module, sparc64_personality, sys_remap_file_pages, sys_epoll_create, sys_epoll_ctl
++	.word sys_setpgid, sys_fremovexattr, sys_tkill, sys_exit_group, sys_sparc64_newuname
++/*190*/	.word sys_init_module, sys_sparc64_personality, sys_remap_file_pages, sys_epoll_create, sys_epoll_ctl
+ 	.word sys_epoll_wait, sys_ioprio_set, sys_getppid, sys_nis_syscall, sys_sgetmask
+ /*200*/	.word sys_ssetmask, sys_nis_syscall, sys_newlstat, sys_uselib, sys_nis_syscall
+ 	.word sys_readahead, sys_socketcall, sys_syslog, sys_lookup_dcookie, sys_fadvise64
+@@ -142,7 +142,7 @@ sys_call_table:
+ 	.word sys_fstatfs64, sys_llseek, sys_mlock, sys_munlock, sys_mlockall
+ /*240*/	.word sys_munlockall, sys_sched_setparam, sys_sched_getparam, sys_sched_setscheduler, sys_sched_getscheduler
+ 	.word sys_sched_yield, sys_sched_get_priority_max, sys_sched_get_priority_min, sys_sched_rr_get_interval, sys_nanosleep
+-/*250*/	.word sys64_mremap, sys_sysctl, sys_getsid, sys_fdatasync, sys_nfsservctl
++/*250*/	.word sys_64_mremap, sys_sysctl, sys_getsid, sys_fdatasync, sys_nfsservctl
+ 	.word sys_sync_file_range, sys_clock_settime, sys_clock_gettime, sys_clock_getres, sys_clock_nanosleep
+ /*260*/	.word sys_sched_getaffinity, sys_sched_setaffinity, sys_timer_settime, sys_timer_gettime, sys_timer_getoverrun
+ 	.word sys_timer_delete, sys_timer_create, sys_ni_syscall, sys_io_setup, sys_io_destroy
+diff --git a/arch/sparc/kernel/traps_64.c b/arch/sparc/kernel/traps_64.c
+index c2d153d46586..d809c4ebb48f 100644
+--- a/arch/sparc/kernel/traps_64.c
++++ b/arch/sparc/kernel/traps_64.c
+@@ -1,6 +1,6 @@
+ /* arch/sparc64/kernel/traps.c
+  *
+- * Copyright (C) 1995,1997,2008 David S. Miller (davem@davemloft.net)
++ * Copyright (C) 1995,1997,2008,2009 David S. Miller (davem@davemloft.net)
+  * Copyright (C) 1997,1999,2000 Jakub Jelinek (jakub@redhat.com)
+  */
+ 
+@@ -314,6 +314,21 @@ void sun4v_data_access_exception(struct pt_regs *regs, unsigned long addr, unsig
+ 		return;
+ 
+ 	if (regs->tstate & TSTATE_PRIV) {
++		/* Test if this comes from uaccess places. */
++		const struct exception_table_entry *entry;
++
++		entry = search_exception_tables(regs->tpc);
++		if (entry) {
++			/* Ouch, somebody is trying VM hole tricks on us... */
++#ifdef DEBUG_EXCEPTIONS
++			printk("Exception: PC<%016lx> faddr<UNKNOWN>\n", regs->tpc);
++			printk("EX_TABLE: insn<%016lx> fixup<%016lx>\n",
++			       regs->tpc, entry->fixup);
++#endif
++			regs->tpc = entry->fixup;
++			regs->tnpc = regs->tpc + 4;
++			return;
++		}
+ 		printk("sun4v_data_access_exception: ADDR[%016lx] "
+ 		       "CTX[%04x] TYPE[%04x], going.\n",
+ 		       addr, ctx, type);
+diff --git a/arch/sparc/lib/Makefile b/arch/sparc/lib/Makefile
+index 273fc85269fc..e75faf0e59ae 100644
+--- a/arch/sparc/lib/Makefile
++++ b/arch/sparc/lib/Makefile
+@@ -18,7 +18,7 @@ lib-$(CONFIG_SPARC32) += lshrdi3.o ashldi3.o
+ lib-y                 += rwsem_$(BITS).o
+ lib-$(CONFIG_SPARC32) += muldi3.o bitext.o cmpdi2.o
+ 
+-lib-$(CONFIG_SPARC64) += PeeCeeI.o copy_page.o clear_page.o bzero.o
++lib-$(CONFIG_SPARC64) += copy_page.o clear_page.o bzero.o
+ lib-$(CONFIG_SPARC64) += csum_copy.o csum_copy_from_user.o csum_copy_to_user.o
+ lib-$(CONFIG_SPARC64) += VISsave.o
+ lib-$(CONFIG_SPARC64) += bitops.o
+@@ -43,3 +43,4 @@ lib-$(CONFIG_SPARC64) += mcount.o ipcsum.o xor.o
+ obj-y                 += iomap.o
+ obj-$(CONFIG_SPARC32) += atomic32.o
+ obj-y                 += ksyms.o
++obj-$(CONFIG_SPARC64) += PeeCeeI.o

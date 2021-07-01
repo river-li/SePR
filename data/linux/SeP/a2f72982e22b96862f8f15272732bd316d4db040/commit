@@ -1,0 +1,20 @@
+commit a2f72982e22b96862f8f15272732bd316d4db040
+Author: dann frazier <dannf@hp.com>
+Commit: Linus Torvalds <torvalds@woody.linux-foundation.org>
+
+    old buffer overflow in moxa driver
+    
+    I noticed that the moxa input checking security bug described by
+    CVE-2005-0504 appears to remain unfixed upstream.
+    
+    The issue is described here:
+      http://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2005-0504
+    
+    Debian has been shipping the following patch from Andres Salomon.
+    
+    (akpm: it's a privileged operation)
+    
+    Signed-off-by: dann frazier <dannf@hp.com>
+    Signed-off-by: Andres Salomon <dilinger@debian.org>
+    Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+    Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>

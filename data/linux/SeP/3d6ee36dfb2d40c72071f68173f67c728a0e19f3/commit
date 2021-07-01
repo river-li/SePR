@@ -1,0 +1,31 @@
+commit 3d6ee36dfb2d40c72071f68173f67c728a0e19f3
+Merge: 0b381a286e5d 244acb1ba377
+Author: Linus Torvalds <torvalds@linux-foundation.org>
+Commit: Linus Torvalds <torvalds@linux-foundation.org>
+
+    Merge branch 'late-for-linus' of git://git.linaro.org/people/rmk/linux-arm
+    
+    Pull ARM update from Russell King:
+     "This is the final round of stuff for ARM, left until the end of the
+      merge window to reduce the number of conflicts.  This set contains the
+      ARM part of David Howells UAPI changes, and a fix to the ordering of
+      'select' statements in ARM Kconfig files (see the appropriate commit
+      for why this happened - thanks to Andrew Morton for pointing out the
+      problem.)
+    
+      I've left this as long as I dare for this window to avoid conflicts,
+      and I regenerated the config patch yesterday, posting it to our
+      mailing list for review and testing.  I have several acks which
+      include successful test reports for it.
+    
+      However, today I notice we've got new conflicts with previously unseen
+      code...  though that conflict should be trivial (it's my changes vs a
+      one liner.)"
+    
+    * 'late-for-linus' of git://git.linaro.org/people/rmk/linux-arm:
+      ARM: config: make sure that platforms are ordered by option string
+      ARM: config: sort select statements alphanumerically
+      UAPI: (Scripted) Disintegrate arch/arm/include/asm
+    
+    Fix up fairly conflict in arch/arm/Kconfig (the select re-organization
+    vs recent addition of GENERIC_KERNEL_EXECVE)

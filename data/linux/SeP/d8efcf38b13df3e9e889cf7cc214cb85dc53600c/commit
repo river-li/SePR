@@ -1,0 +1,18 @@
+commit d8efcf38b13df3e9e889cf7cc214cb85dc53600c
+Merge: 78d9e93440dd 1b385cbdd74a
+Author: Linus Torvalds <torvalds@linux-foundation.org>
+Commit: Linus Torvalds <torvalds@linux-foundation.org>
+
+    Merge tag 'for-linus' of git://git.kernel.org/pub/scm/virt/kvm/kvm
+    
+    Pull KVM fixes from Paolo Bonzini:
+     "Three x86 fixes and one for ARM/ARM64.
+    
+      In particular, nested virtualization on Intel is broken in 3.13 and
+      fixed by this pull request"
+    
+    * tag 'for-linus' of git://git.kernel.org/pub/scm/virt/kvm/kvm:
+      kvm, vmx: Really fix lazy FPU on nested guest
+      kvm: x86: fix emulator buffer overflow (CVE-2014-0049)
+      arm/arm64: KVM: detect CPU reset on CPU_PM_EXIT
+      KVM: MMU: drop read-only large sptes when creating lower level sptes

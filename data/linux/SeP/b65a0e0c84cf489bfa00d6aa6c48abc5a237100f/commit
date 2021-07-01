@@ -1,0 +1,9 @@
+commit b65a0e0c84cf489bfa00d6aa6c48abc5a237100f
+Merge: 4438a02fc495 1362fa078dae
+Author: Linus Torvalds <torvalds@linux-foundation.org>
+Commit: Linus Torvalds <torvalds@linux-foundation.org>
+
+    Merge branch 'for-linus' of git://git.kernel.org/pub/scm/linux/kernel/git/jmorris/security-testing-2.6
+    
+    * 'for-linus' of git://git.kernel.org/pub/scm/linux/kernel/git/jmorris/security-testing-2.6:
+      DNS: Fix a NULL pointer deref when trying to read an error key [CVE-2011-1076]

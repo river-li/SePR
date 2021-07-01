@@ -1,0 +1,12 @@
+commit 63ea0a49ae0b145b91ff2b070c01b66fc75854b9
+Author: Nadav Amit <nadav.amit@gmail.com>
+Commit: Paolo Bonzini <pbonzini@redhat.com>
+
+    KVM: x86: Fix of previously incomplete fix for CVE-2014-8480
+    
+    STR and SLDT with rip-relative operand can cause a host kernel oops.
+    Mark them as DstMem as well.
+    
+    Cc: stable@vger.linux.org
+    Signed-off-by: Nadav Amit <namit@cs.technion.ac.il>
+    Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>

@@ -1,0 +1,13 @@
+commit 6c813c3fe9e30fcf3c4d94d2ba24108babd745b0
+Author: Marcel Holtmann <marcel@holtmann.org>
+Commit: David S. Miller <davem@davemloft.net>
+
+    [NETFILTER]: Fix small information leak in SO_ORIGINAL_DST (CVE-2006-1343)
+    
+    It appears that sockaddr_in.sin_zero is not zeroed during
+    getsockopt(...SO_ORIGINAL_DST...) operation. This can lead
+    to an information leak (CVE-2006-1343).
+    
+    Signed-off-by: Marcel Holtmann <marcel@holtmann.org>
+    Signed-off-by: Patrick McHardy <kaber@trash.net>
+    Signed-off-by: David S. Miller <davem@davemloft.net>

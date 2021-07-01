@@ -1,0 +1,24 @@
+commit 3fc689e96c0c90b6fede5946d6c31075e9464f69
+Author: Eric Paris <eparis@redhat.com>
+Commit: James Morris <jmorris@namei.org>
+
+    Any time fcaps or a setuid app under SECURE_NOROOT is used to result in a
+    non-zero pE we will crate a new audit record which contains the entire set
+    of known information about the executable in question, fP, fI, fE, fversion
+    and includes the process's pE, pI, pP.  Before and after the bprm capability
+    are applied.  This record type will only be emitted from execve syscalls.
+    
+    an example of making ping use fcaps instead of setuid:
+    
+    setcap "cat_net_raw+pe" /bin/ping
+    
+    type=SYSCALL msg=audit(1225742021.015:236): arch=c000003e syscall=59 success=yes exit=0 a0=1457f30 a1=14606b0 a2=1463940 a3=321b770a70 items=2 ppid=2929 pid=2963 auid=0 uid=500 gid=500 euid=500 suid=500 fsuid=500 egid=500 sgid=500 fsgid=500 tty=pts0 ses=3 comm="ping" exe="/bin/ping" subj=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c1023 key=(null)
+    type=UNKNOWN[1321] msg=audit(1225742021.015:236): fver=2 fp=0000000000002000 fi=0000000000000000 fe=1 old_pp=0000000000000000 old_pi=0000000000000000 old_pe=0000000000000000 new_pp=0000000000002000 new_pi=0000000000000000 new_pe=0000000000002000
+    type=EXECVE msg=audit(1225742021.015:236): argc=2 a0="ping" a1="127.0.0.1"
+    type=CWD msg=audit(1225742021.015:236):  cwd="/home/test"
+    type=PATH msg=audit(1225742021.015:236): item=0 name="/bin/ping" inode=49256 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 obj=system_u:object_r:ping_exec_t:s0 cap_fp=0000000000002000 cap_fe=1 cap_fver=2
+    type=PATH msg=audit(1225742021.015:236): item=1 name=(null) inode=507915 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 obj=system_u:object_r:ld_so_t:s0
+    
+    Signed-off-by: Eric Paris <eparis@redhat.com>
+    Acked-by: Serge Hallyn <serue@us.ibm.com>
+    Signed-off-by: James Morris <jmorris@namei.org>

@@ -1,0 +1,201 @@
+diff --git a/arch/arm/boot/dts/Makefile b/arch/arm/boot/dts/Makefile
+index 376db94a695f..79b14380cb86 100644
+--- a/arch/arm/boot/dts/Makefile
++++ b/arch/arm/boot/dts/Makefile
+@@ -696,6 +696,7 @@ dtb-$(CONFIG_ARCH_SOCFPGA) += \
+ 	socfpga_cyclone5_de0_sockit.dtb \
+ 	socfpga_cyclone5_sockit.dtb \
+ 	socfpga_cyclone5_socrates.dtb \
++	socfpga_cyclone5_sodia.dtb \
+ 	socfpga_cyclone5_vining_fpga.dtb \
+ 	socfpga_vt.dtb
+ dtb-$(CONFIG_ARCH_SPEAR13XX) += \
+diff --git a/arch/arm/boot/dts/socfpga.dtsi b/arch/arm/boot/dts/socfpga.dtsi
+index 9f48141270b8..dda6b4500b9a 100644
+--- a/arch/arm/boot/dts/socfpga.dtsi
++++ b/arch/arm/boot/dts/socfpga.dtsi
+@@ -686,6 +686,7 @@ L2: l2-cache@fffef000 {
+ 			arm,data-latency = <2 1 1>;
+ 			prefetch-data = <1>;
+ 			prefetch-instr = <1>;
++			arm,shared-override;
+ 		};
+ 
+ 		mmc: dwmmc0@ff704000 {
+@@ -705,6 +706,20 @@ ocram: sram@ffff0000 {
+ 			reg = <0xffff0000 0x10000>;
+ 		};
+ 
++		qspi: spi@ff705000 {
++			compatible = "cdns,qspi-nor";
++                        #address-cells = <1>;
++			#size-cells = <0>;
++			reg = <0xff705000 0x1000>,
++			      <0xffa00000 0x1000>;
++			interrupts = <0 151 4>;
++			cdns,fifo-depth = <128>;
++			cdns,fifo-width = <4>;
++			cdns,trigger-address = <0x00000000>;
++			clocks = <&qspi_clk>;
++			status = "disabled";
++		};
++
+ 		rst: rstmgr@ffd05000 {
+ 			#reset-cells = <1>;
+ 			compatible = "altr,rst-mgr";
+diff --git a/arch/arm/boot/dts/socfpga_arria10.dtsi b/arch/arm/boot/dts/socfpga_arria10.dtsi
+index f520cbff5e1c..1149216c78c5 100644
+--- a/arch/arm/boot/dts/socfpga_arria10.dtsi
++++ b/arch/arm/boot/dts/socfpga_arria10.dtsi
+@@ -562,6 +562,21 @@ i2c4: i2c@ffc02600 {
+ 			status = "disabled";
+ 		};
+ 
++		spi1: spi@ffda5000 {
++			compatible = "snps,dw-apb-ssi";
++			#address-cells = <1>;
++			#size-cells = <0>;
++			reg = <0xffda5000 0x100>;
++			interrupts = <0 102 4>;
++			num-chipselect = <4>;
++			bus-num = <0>;
++			/*32bit_access;*/
++			tx-dma-channel = <&pdma 16>;
++			rx-dma-channel = <&pdma 17>;
++			clocks = <&spi_m_clk>;
++			status = "disabled";
++		};
++
+ 		sdr: sdr@ffc25000 {
+ 			compatible = "syscon";
+ 			reg = <0xffcfb100 0x80>;
+@@ -573,6 +588,9 @@ L2: l2-cache@fffff000 {
+ 			interrupts = <0 18 IRQ_TYPE_LEVEL_HIGH>;
+ 			cache-unified;
+ 			cache-level = <2>;
++			prefetch-data = <1>;
++			prefetch-instr = <1>;
++			arm,shared-override;
+ 		};
+ 
+ 		mmc: dwmmc0@ff808000 {
+diff --git a/arch/arm/boot/dts/socfpga_arria10_socdk.dtsi b/arch/arm/boot/dts/socfpga_arria10_socdk.dtsi
+index 8e3a4adc389f..eb00ae37f316 100644
+--- a/arch/arm/boot/dts/socfpga_arria10_socdk.dtsi
++++ b/arch/arm/boot/dts/socfpga_arria10_socdk.dtsi
+@@ -36,6 +36,30 @@ memory {
+ 		reg = <0x0 0x40000000>; /* 1GB */
+ 	};
+ 
++	a10leds {
++		compatible = "gpio-leds";
++
++		a10sr_led0 {
++			label = "a10sr-led0";
++			gpios = <&a10sr_gpio 0 1>;
++		};
++
++		a10sr_led1 {
++			label = "a10sr-led1";
++			gpios = <&a10sr_gpio 1 1>;
++		};
++
++		a10sr_led2 {
++			label = "a10sr-led2";
++			gpios = <&a10sr_gpio 2 1>;
++		};
++
++		a10sr_led3 {
++			label = "a10sr-led3";
++			gpios = <&a10sr_gpio 3 1>;
++		};
++	};
++
+ 	soc {
+ 		clkmgr@ffd04000 {
+ 			clocks {
+@@ -75,6 +99,31 @@ &gmac0 {
+ 	status = "okay";
+ };
+ 
++&gpio1 {
++	status = "okay";
++};
++
++&spi1 {
++	status = "okay";
++
++	resource-manager@0 {
++		compatible = "altr,a10sr";
++		reg = <0>;
++		spi-max-frequency = <100000>;
++		/* low-level active IRQ at GPIO1_5 */
++		interrupt-parent = <&portb>;
++		interrupts = <5 IRQ_TYPE_LEVEL_LOW>;
++		interrupt-controller;
++		#interrupt-cells = <2>;
++
++		a10sr_gpio: gpio-controller {
++			compatible = "altr,a10sr-gpio";
++			gpio-controller;
++			#gpio-cells = <2>;
++		};
++	};
++};
++
+ &i2c1 {
+ 	speed-mode = <0>;
+ 	status = "okay";
+diff --git a/arch/arm/boot/dts/socfpga_cyclone5_mcv.dtsi b/arch/arm/boot/dts/socfpga_cyclone5_mcv.dtsi
+index f86f9c060d7a..6ad3b1eb9b86 100644
+--- a/arch/arm/boot/dts/socfpga_cyclone5_mcv.dtsi
++++ b/arch/arm/boot/dts/socfpga_cyclone5_mcv.dtsi
+@@ -18,7 +18,7 @@
+ #include "socfpga_cyclone5.dtsi"
+ 
+ / {
+-	model = "DENX MCV";
++	model = "Aries/DENX MCV";
+ 	compatible = "altr,socfpga-cyclone5", "altr,socfpga";
+ 
+ 	memory {
+diff --git a/arch/arm/boot/dts/socfpga_cyclone5_mcvevk.dts b/arch/arm/boot/dts/socfpga_cyclone5_mcvevk.dts
+index 7186a29b8b86..424523b0d381 100644
+--- a/arch/arm/boot/dts/socfpga_cyclone5_mcvevk.dts
++++ b/arch/arm/boot/dts/socfpga_cyclone5_mcvevk.dts
+@@ -18,7 +18,7 @@
+ #include "socfpga_cyclone5_mcv.dtsi"
+ 
+ / {
+-	model = "DENX MCV EVK";
++	model = "Aries/DENX MCV EVK";
+ 	compatible = "altr,socfpga-cyclone5", "altr,socfpga";
+ 
+ 	aliases {
+diff --git a/arch/arm/boot/dts/socfpga_cyclone5_socrates.dts b/arch/arm/boot/dts/socfpga_cyclone5_socrates.dts
+index d79853775061..c3d52f27b21e 100644
+--- a/arch/arm/boot/dts/socfpga_cyclone5_socrates.dts
++++ b/arch/arm/boot/dts/socfpga_cyclone5_socrates.dts
+@@ -80,3 +80,22 @@ led@2 {
+ &mmc {
+ 	status = "okay";
+ };
++
++&qspi {
++	status = "okay";
++
++	flash: flash@0 {
++		#address-cells = <1>;
++		#size-cells = <1>;
++		compatible = "n25q256a";
++		reg = <0>;
++		spi-max-frequency = <100000000>;
++		m25p,fast-read;
++		cdns,read-delay = <4>;
++		cdns,tshsl-ns = <50>;
++		cdns,tsd2d-ns = <50>;
++		cdns,tchsh-ns = <4>;
++		cdns,tslch-ns = <4>;
++		status = "okay";
++	};
++};

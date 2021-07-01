@@ -1,0 +1,18 @@
+commit a6f80fb7b5986fda663d94079d3bba0937a6b6ff
+Author: Andre Osterhues <aosterhues@escrypt.com>
+Commit: Linus Torvalds <torvalds@linux-foundation.org>
+
+    ecryptfs: Bugfix for error related to ecryptfs_hash_buckets
+    
+    The function ecryptfs_uid_hash wrongly assumes that the
+    second parameter to hash_long() is the number of hash
+    buckets instead of the number of hash bits.
+    This patch fixes that and renames the variable
+    ecryptfs_hash_buckets to ecryptfs_hash_bits to make it
+    clearer.
+    
+    Fixes: CVE-2010-2492
+    
+    Signed-off-by: Andre Osterhues <aosterhues@escrypt.com>
+    Signed-off-by: Tyler Hicks <tyhicks@linux.vnet.ibm.com>
+    Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>

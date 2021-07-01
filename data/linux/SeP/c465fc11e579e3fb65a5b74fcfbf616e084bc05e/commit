@@ -1,0 +1,53 @@
+commit c465fc11e579e3fb65a5b74fcfbf616e084bc05e
+Merge: 4ded3bec65a0 b1394e745b94
+Author: Linus Torvalds <torvalds@linux-foundation.org>
+Commit: Linus Torvalds <torvalds@linux-foundation.org>
+
+    Merge tag 'for-linus' of git://git.kernel.org/pub/scm/virt/kvm/kvm
+    
+    Pull KVM fixes from Radim Krčmář:
+     "ARM:
+       - A number of issues in the vgic discovered using SMATCH
+       - A bit one-off calculation in out stage base address mask (32-bit
+         and 64-bit)
+       - Fixes to single-step debugging instructions that trap for other
+         reasons such as MMMIO aborts
+       - Printing unavailable hyp mode as error
+       - Potential spinlock deadlock in the vgic
+       - Avoid calling vgic vcpu free more than once
+       - Broken bit calculation for big endian systems
+    
+     s390:
+       - SPDX tags
+       - Fence storage key accesses from problem state
+       - Make sure that irq_state.flags is not used in the future
+    
+      x86:
+       - Intercept port 0x80 accesses to prevent host instability (CVE)
+       - Use userspace FPU context for guest FPU (mainly an optimization
+         that fixes a double use of kernel FPU)
+       - Do not leak one page per module load
+       - Flush APIC page address cache from MMU invalidation notifiers"
+    
+    * tag 'for-linus' of git://git.kernel.org/pub/scm/virt/kvm/kvm: (28 commits)
+      KVM: x86: fix APIC page invalidation
+      KVM: s390: Fix skey emulation permission check
+      KVM: s390: mark irq_state.flags as non-usable
+      KVM: s390: Remove redundant license text
+      KVM: s390: add SPDX identifiers to the remaining files
+      KVM: VMX: fix page leak in hardware_setup()
+      KVM: VMX: remove I/O port 0x80 bypass on Intel hosts
+      x86,kvm: remove KVM emulator get_fpu / put_fpu
+      x86,kvm: move qemu/guest FPU switching out to vcpu_run
+      KVM: arm/arm64: Fix broken GICH_ELRSR big endian conversion
+      KVM: arm/arm64: kvm_arch_destroy_vm cleanups
+      KVM: arm/arm64: Fix spinlock acquisition in vgic_set_owner
+      kvm: arm: don't treat unavailable HYP mode as an error
+      KVM: arm/arm64: Avoid attempting to load timer vgic state without a vgic
+      kvm: arm64: handle single-step of hyp emulated mmio instructions
+      kvm: arm64: handle single-step during SError exceptions
+      kvm: arm64: handle single-step of userspace mmio instructions
+      kvm: arm64: handle single-stepping trapped instructions
+      KVM: arm/arm64: debug: Introduce helper for single-step
+      arm: KVM: Fix VTTBR_BADDR_MASK BUG_ON off-by-one
+      ...

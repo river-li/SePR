@@ -1,0 +1,3264 @@
+diff --git a/Documentation/hid/uhid.txt b/Documentation/hid/uhid.txt
+index 3c741214dfbb..dc35a2b75eee 100644
+--- a/Documentation/hid/uhid.txt
++++ b/Documentation/hid/uhid.txt
+@@ -149,11 +149,13 @@ needs. Only UHID_OUTPUT and UHID_OUTPUT_EV have payloads.
+   is of type "struct uhid_data_req".
+   This may be received even though you haven't received UHID_OPEN, yet.
+ 
+-  UHID_OUTPUT_EV:
++  UHID_OUTPUT_EV (obsolete):
+   Same as UHID_OUTPUT but this contains a "struct input_event" as payload. This
+   is called for force-feedback, LED or similar events which are received through
+   an input device by the HID subsystem. You should convert this into raw reports
+   and send them to your device similar to events of type UHID_OUTPUT.
++  This is no longer sent by newer kernels. Instead, HID core converts it into a
++  raw output report and sends it via UHID_OUTPUT.
+ 
+   UHID_FEATURE:
+   This event is sent if the kernel driver wants to perform a feature request as
+diff --git a/MAINTAINERS b/MAINTAINERS
+index 9d8ab7c681f9..caa7c3a1fef9 100644
+--- a/MAINTAINERS
++++ b/MAINTAINERS
+@@ -6961,6 +6961,14 @@ M:	Maxim Levitsky <maximlevitsky@gmail.com>
+ S:	Maintained
+ F:	drivers/memstick/host/r592.*
+ 
++ROCCAT DRIVERS
++M:	Stefan Achatz <erazor_de@users.sourceforge.net>
++W:	http://sourceforge.net/projects/roccat/
++S:	Maintained
++F:	drivers/hid/hid-roccat*
++F:	include/linux/hid-roccat*
++F:	Documentation/ABI/*/sysfs-driver-hid-roccat*
++
+ ROCKETPORT DRIVER
+ P:	Comtrol Corp.
+ W:	http://www.comtrol.com
+diff --git a/drivers/hid/Kconfig b/drivers/hid/Kconfig
+index 14ef6ab69790..3d7c9f67b6d7 100644
+--- a/drivers/hid/Kconfig
++++ b/drivers/hid/Kconfig
+@@ -743,6 +743,14 @@ config HID_WIIMOTE
+ 	To compile this driver as a module, choose M here: the
+ 	module will be called hid-wiimote.
+ 
++config HID_XINMO
++	tristate "Xin-Mo non-fully compliant devices"
++	depends on HID
++	---help---
++	Support for Xin-Mo devices that are not fully compliant with the HID
++	standard. Currently only supports the Xin-Mo Dual Arcade. Say Y here
++	if you have a Xin-Mo Dual Arcade controller.
++
+ config HID_ZEROPLUS
+ 	tristate "Zeroplus based game controller support"
+ 	depends on HID
+diff --git a/drivers/hid/Makefile b/drivers/hid/Makefile
+index 6f687287e212..a959f4aecaf5 100644
+--- a/drivers/hid/Makefile
++++ b/drivers/hid/Makefile
+@@ -110,6 +110,7 @@ obj-$(CONFIG_HID_TIVO)		+= hid-tivo.o
+ obj-$(CONFIG_HID_TOPSEED)	+= hid-topseed.o
+ obj-$(CONFIG_HID_TWINHAN)	+= hid-twinhan.o
+ obj-$(CONFIG_HID_UCLOGIC)	+= hid-uclogic.o
++obj-$(CONFIG_HID_XINMO)		+= hid-xinmo.o
+ obj-$(CONFIG_HID_ZEROPLUS)	+= hid-zpff.o
+ obj-$(CONFIG_HID_ZYDACRON)	+= hid-zydacron.o
+ obj-$(CONFIG_HID_WACOM)		+= hid-wacom.o
+diff --git a/drivers/hid/hid-a4tech.c b/drivers/hid/hid-a4tech.c
+index 7c5507e94820..9428ea7cdf8a 100644
+--- a/drivers/hid/hid-a4tech.c
++++ b/drivers/hid/hid-a4tech.c
+@@ -90,11 +90,10 @@ static int a4_probe(struct hid_device *hdev, const struct hid_device_id *id)
+ 	struct a4tech_sc *a4;
+ 	int ret;
+ 
+-	a4 = kzalloc(sizeof(*a4), GFP_KERNEL);
++	a4 = devm_kzalloc(&hdev->dev, sizeof(*a4), GFP_KERNEL);
+ 	if (a4 == NULL) {
+ 		hid_err(hdev, "can't alloc device descriptor\n");
+-		ret = -ENOMEM;
+-		goto err_free;
++		return -ENOMEM;
+ 	}
+ 
+ 	a4->quirks = id->driver_data;
+@@ -104,27 +103,16 @@ static int a4_probe(struct hid_device *hdev, const struct hid_device_id *id)
+ 	ret = hid_parse(hdev);
+ 	if (ret) {
+ 		hid_err(hdev, "parse failed\n");
+-		goto err_free;
++		return ret;
+ 	}
+ 
+ 	ret = hid_hw_start(hdev, HID_CONNECT_DEFAULT);
+ 	if (ret) {
+ 		hid_err(hdev, "hw start failed\n");
+-		goto err_free;
++		return ret;
+ 	}
+ 
+ 	return 0;
+-err_free:
+-	kfree(a4);
+-	return ret;
+-}
+-
+-static void a4_remove(struct hid_device *hdev)
+-{
+-	struct a4tech_sc *a4 = hid_get_drvdata(hdev);
+-
+-	hid_hw_stop(hdev);
+-	kfree(a4);
+ }
+ 
+ static const struct hid_device_id a4_devices[] = {
+@@ -144,7 +132,6 @@ static struct hid_driver a4_driver = {
+ 	.input_mapped = a4_input_mapped,
+ 	.event = a4_event,
+ 	.probe = a4_probe,
+-	.remove = a4_remove,
+ };
+ module_hid_driver(a4_driver);
+ 
+diff --git a/drivers/hid/hid-apple.c b/drivers/hid/hid-apple.c
+index c7710b5c69af..881cf7b4f9a4 100644
+--- a/drivers/hid/hid-apple.c
++++ b/drivers/hid/hid-apple.c
+@@ -349,7 +349,7 @@ static int apple_probe(struct hid_device *hdev,
+ 	unsigned int connect_mask = HID_CONNECT_DEFAULT;
+ 	int ret;
+ 
+-	asc = kzalloc(sizeof(*asc), GFP_KERNEL);
++	asc = devm_kzalloc(&hdev->dev, sizeof(*asc), GFP_KERNEL);
+ 	if (asc == NULL) {
+ 		hid_err(hdev, "can't alloc apple descriptor\n");
+ 		return -ENOMEM;
+@@ -362,7 +362,7 @@ static int apple_probe(struct hid_device *hdev,
+ 	ret = hid_parse(hdev);
+ 	if (ret) {
+ 		hid_err(hdev, "parse failed\n");
+-		goto err_free;
++		return ret;
+ 	}
+ 
+ 	if (quirks & APPLE_HIDDEV)
+@@ -373,19 +373,10 @@ static int apple_probe(struct hid_device *hdev,
+ 	ret = hid_hw_start(hdev, connect_mask);
+ 	if (ret) {
+ 		hid_err(hdev, "hw start failed\n");
+-		goto err_free;
++		return ret;
+ 	}
+ 
+ 	return 0;
+-err_free:
+-	kfree(asc);
+-	return ret;
+-}
+-
+-static void apple_remove(struct hid_device *hdev)
+-{
+-	hid_hw_stop(hdev);
+-	kfree(hid_get_drvdata(hdev));
+ }
+ 
+ static const struct hid_device_id apple_devices[] = {
+@@ -551,7 +542,6 @@ static struct hid_driver apple_driver = {
+ 	.id_table = apple_devices,
+ 	.report_fixup = apple_report_fixup,
+ 	.probe = apple_probe,
+-	.remove = apple_remove,
+ 	.event = apple_event,
+ 	.input_mapping = apple_input_mapping,
+ 	.input_mapped = apple_input_mapped,
+diff --git a/drivers/hid/hid-core.c b/drivers/hid/hid-core.c
+index b8f1c77f2f77..ae88a97f976e 100644
+--- a/drivers/hid/hid-core.c
++++ b/drivers/hid/hid-core.c
+@@ -63,6 +63,8 @@ struct hid_report *hid_register_report(struct hid_device *device, unsigned type,
+ 	struct hid_report_enum *report_enum = device->report_enum + type;
+ 	struct hid_report *report;
+ 
++	if (id >= HID_MAX_IDS)
++		return NULL;
+ 	if (report_enum->report_id_hash[id])
+ 		return report_enum->report_id_hash[id];
+ 
+@@ -404,8 +406,10 @@ static int hid_parser_global(struct hid_parser *parser, struct hid_item *item)
+ 
+ 	case HID_GLOBAL_ITEM_TAG_REPORT_ID:
+ 		parser->global.report_id = item_udata(item);
+-		if (parser->global.report_id == 0) {
+-			hid_err(parser->device, "report_id 0 is invalid\n");
++		if (parser->global.report_id == 0 ||
++		    parser->global.report_id >= HID_MAX_IDS) {
++			hid_err(parser->device, "report_id %u is invalid\n",
++				parser->global.report_id);
+ 			return -1;
+ 		}
+ 		return 0;
+@@ -450,7 +454,7 @@ static int hid_parser_local(struct hid_parser *parser, struct hid_item *item)
+ 			}
+ 			parser->local.delimiter_depth--;
+ 		}
+-		return 1;
++		return 0;
+ 
+ 	case HID_LOCAL_ITEM_TAG_USAGE:
+ 
+@@ -575,7 +579,7 @@ static void hid_close_report(struct hid_device *device)
+ 	for (i = 0; i < HID_REPORT_TYPES; i++) {
+ 		struct hid_report_enum *report_enum = device->report_enum + i;
+ 
+-		for (j = 0; j < 256; j++) {
++		for (j = 0; j < HID_MAX_IDS; j++) {
+ 			struct hid_report *report = report_enum->report_id_hash[j];
+ 			if (report)
+ 				hid_free_report(report);
+@@ -677,12 +681,61 @@ static u8 *fetch_item(__u8 *start, __u8 *end, struct hid_item *item)
+ 	return NULL;
+ }
+ 
+-static void hid_scan_usage(struct hid_device *hid, u32 usage)
++static void hid_scan_input_usage(struct hid_parser *parser, u32 usage)
+ {
++	struct hid_device *hid = parser->device;
++
+ 	if (usage == HID_DG_CONTACTID)
+ 		hid->group = HID_GROUP_MULTITOUCH;
+ }
+ 
++static void hid_scan_feature_usage(struct hid_parser *parser, u32 usage)
++{
++	if (usage == 0xff0000c5 && parser->global.report_count == 256 &&
++	    parser->global.report_size == 8)
++		parser->scan_flags |= HID_SCAN_FLAG_MT_WIN_8;
++}
++
++static void hid_scan_collection(struct hid_parser *parser, unsigned type)
++{
++	struct hid_device *hid = parser->device;
++
++	if (((parser->global.usage_page << 16) == HID_UP_SENSOR) &&
++	    type == HID_COLLECTION_PHYSICAL)
++		hid->group = HID_GROUP_SENSOR_HUB;
++}
++
++static int hid_scan_main(struct hid_parser *parser, struct hid_item *item)
++{
++	__u32 data;
++	int i;
++
++	data = item_udata(item);
++
++	switch (item->tag) {
++	case HID_MAIN_ITEM_TAG_BEGIN_COLLECTION:
++		hid_scan_collection(parser, data & 0xff);
++		break;
++	case HID_MAIN_ITEM_TAG_END_COLLECTION:
++		break;
++	case HID_MAIN_ITEM_TAG_INPUT:
++		for (i = 0; i < parser->local.usage_index; i++)
++			hid_scan_input_usage(parser, parser->local.usage[i]);
++		break;
++	case HID_MAIN_ITEM_TAG_OUTPUT:
++		break;
++	case HID_MAIN_ITEM_TAG_FEATURE:
++		for (i = 0; i < parser->local.usage_index; i++)
++			hid_scan_feature_usage(parser, parser->local.usage[i]);
++		break;
++	}
++
++	/* Reset the local parser environment */
++	memset(&parser->local, 0, sizeof(parser->local));
++
++	return 0;
++}
++
+ /*
+  * Scan a report descriptor before the device is added to the bus.
+  * Sets device groups and other properties that determine what driver
+@@ -690,48 +743,41 @@ static void hid_scan_usage(struct hid_device *hid, u32 usage)
+  */
+ static int hid_scan_report(struct hid_device *hid)
+ {
+-	unsigned int page = 0, delim = 0;
++	struct hid_parser *parser;
++	struct hid_item item;
+ 	__u8 *start = hid->dev_rdesc;
+ 	__u8 *end = start + hid->dev_rsize;
+-	unsigned int u, u_min = 0, u_max = 0;
+-	struct hid_item item;
++	static int (*dispatch_type[])(struct hid_parser *parser,
++				      struct hid_item *item) = {
++		hid_scan_main,
++		hid_parser_global,
++		hid_parser_local,
++		hid_parser_reserved
++	};
++
++	parser = vzalloc(sizeof(struct hid_parser));
++	if (!parser)
++		return -ENOMEM;
+ 
++	parser->device = hid;
+ 	hid->group = HID_GROUP_GENERIC;
+-	while ((start = fetch_item(start, end, &item)) != NULL) {
+-		if (item.format != HID_ITEM_FORMAT_SHORT)
+-			return -EINVAL;
+-		if (item.type == HID_ITEM_TYPE_GLOBAL) {
+-			if (item.tag == HID_GLOBAL_ITEM_TAG_USAGE_PAGE)
+-				page = item_udata(&item) << 16;
+-		} else if (item.type == HID_ITEM_TYPE_LOCAL) {
+-			if (delim > 1)
+-				break;
+-			u = item_udata(&item);
+-			if (item.size <= 2)
+-				u += page;
+-			switch (item.tag) {
+-			case HID_LOCAL_ITEM_TAG_DELIMITER:
+-				delim += !!u;
+-				break;
+-			case HID_LOCAL_ITEM_TAG_USAGE:
+-				hid_scan_usage(hid, u);
+-				break;
+-			case HID_LOCAL_ITEM_TAG_USAGE_MINIMUM:
+-				u_min = u;
+-				break;
+-			case HID_LOCAL_ITEM_TAG_USAGE_MAXIMUM:
+-				u_max = u;
+-				for (u = u_min; u <= u_max; u++)
+-					hid_scan_usage(hid, u);
+-				break;
+-			}
+-		} else if (page == HID_UP_SENSOR &&
+-			item.type == HID_ITEM_TYPE_MAIN &&
+-			item.tag == HID_MAIN_ITEM_TAG_BEGIN_COLLECTION &&
+-			(item_udata(&item) & 0xff) == HID_COLLECTION_PHYSICAL)
+-			hid->group = HID_GROUP_SENSOR_HUB;
+-	}
+ 
++	/*
++	 * The parsing is simpler than the one in hid_open_report() as we should
++	 * be robust against hid errors. Those errors will be raised by
++	 * hid_open_report() anyway.
++	 */
++	while ((start = fetch_item(start, end, &item)) != NULL)
++		dispatch_type[item.type](parser, &item);
++
++	/*
++	 * Handle special flags set during scanning.
++	 */
++	if ((parser->scan_flags & HID_SCAN_FLAG_MT_WIN_8) &&
++	    (hid->group == HID_GROUP_MULTITOUCH))
++		hid->group = HID_GROUP_MULTITOUCH_WIN_8;
++
++	vfree(parser);
+ 	return 0;
+ }
+ 
+@@ -1128,7 +1174,8 @@ static void hid_output_field(const struct hid_device *hid,
+ }
+ 
+ /*
+- * Create a report.
++ * Create a report. 'data' has to be allocated using
++ * hid_alloc_report_buf() so that it has proper size.
+  */
+ 
+ void hid_output_report(struct hid_report *report, __u8 *data)
+@@ -1144,6 +1191,22 @@ void hid_output_report(struct hid_report *report, __u8 *data)
+ }
+ EXPORT_SYMBOL_GPL(hid_output_report);
+ 
++/*
++ * Allocator for buffer that is going to be passed to hid_output_report()
++ */
++u8 *hid_alloc_report_buf(struct hid_report *report, gfp_t flags)
++{
++	/*
++	 * 7 extra bytes are necessary to achieve proper functionality
++	 * of implement() working on 8 byte chunks
++	 */
++
++	int len = ((report->size - 1) >> 3) + 1 + (report->id > 0) + 7;
++
++	return kmalloc(len, flags);
++}
++EXPORT_SYMBOL_GPL(hid_alloc_report_buf);
++
+ /*
+  * Set a field value. The report this field belongs to has to be
+  * created and transferred to the device, to set this value in the
+@@ -1152,7 +1215,12 @@ EXPORT_SYMBOL_GPL(hid_output_report);
+ 
+ int hid_set_field(struct hid_field *field, unsigned offset, __s32 value)
+ {
+-	unsigned size = field->report_size;
++	unsigned size;
++
++	if (!field)
++		return -1;
++
++	size = field->report_size;
+ 
+ 	hid_dump_input(field->report->device, field->usage + offset, value);
+ 
+@@ -1597,6 +1665,7 @@ static const struct hid_device_id hid_have_special_driver[] = {
+ 	{ HID_USB_DEVICE(USB_VENDOR_ID_KENSINGTON, USB_DEVICE_ID_KS_SLIMBLADE) },
+ 	{ HID_USB_DEVICE(USB_VENDOR_ID_KEYTOUCH, USB_DEVICE_ID_KEYTOUCH_IEC) },
+ 	{ HID_USB_DEVICE(USB_VENDOR_ID_KYE, USB_DEVICE_ID_GENIUS_GILA_GAMING_MOUSE) },
++	{ HID_USB_DEVICE(USB_VENDOR_ID_KYE, USB_DEVICE_ID_GENIUS_GX_IMPERATOR) },
+ 	{ HID_USB_DEVICE(USB_VENDOR_ID_KYE, USB_DEVICE_ID_KYE_ERGO_525V) },
+ 	{ HID_USB_DEVICE(USB_VENDOR_ID_KYE, USB_DEVICE_ID_KYE_EASYPEN_I405X) },
+ 	{ HID_USB_DEVICE(USB_VENDOR_ID_KYE, USB_DEVICE_ID_KYE_MOUSEPEN_I608X) },
+@@ -1679,6 +1748,7 @@ static const struct hid_device_id hid_have_special_driver[] = {
+ 	{ HID_USB_DEVICE(USB_VENDOR_ID_ROCCAT, USB_DEVICE_ID_ROCCAT_ISKU) },
+ 	{ HID_USB_DEVICE(USB_VENDOR_ID_ROCCAT, USB_DEVICE_ID_ROCCAT_KONEPLUS) },
+ 	{ HID_USB_DEVICE(USB_VENDOR_ID_ROCCAT, USB_DEVICE_ID_ROCCAT_KONEPURE) },
++	{ HID_USB_DEVICE(USB_VENDOR_ID_ROCCAT, USB_DEVICE_ID_ROCCAT_KONEPURE_OPTICAL) },
+ 	{ HID_USB_DEVICE(USB_VENDOR_ID_ROCCAT, USB_DEVICE_ID_ROCCAT_KOVAPLUS) },
+ 	{ HID_USB_DEVICE(USB_VENDOR_ID_ROCCAT, USB_DEVICE_ID_ROCCAT_LUA) },
+ 	{ HID_USB_DEVICE(USB_VENDOR_ID_ROCCAT, USB_DEVICE_ID_ROCCAT_PYRA_WIRED) },
+@@ -1736,6 +1806,7 @@ static const struct hid_device_id hid_have_special_driver[] = {
+ 	{ HID_USB_DEVICE(USB_VENDOR_ID_WALTOP, USB_DEVICE_ID_WALTOP_MEDIA_TABLET_14_1_INCH) },
+ 	{ HID_USB_DEVICE(USB_VENDOR_ID_WALTOP, USB_DEVICE_ID_WALTOP_SIRIUS_BATTERY_FREE_TABLET) },
+ 	{ HID_USB_DEVICE(USB_VENDOR_ID_X_TENSIONS, USB_DEVICE_ID_SPEEDLINK_VAD_CEZANNE) },
++	{ HID_USB_DEVICE(USB_VENDOR_ID_XIN_MO, USB_DEVICE_ID_XIN_MO_DUAL_ARCADE) },
+ 	{ HID_USB_DEVICE(USB_VENDOR_ID_ZEROPLUS, 0x0005) },
+ 	{ HID_USB_DEVICE(USB_VENDOR_ID_ZEROPLUS, 0x0030) },
+ 	{ HID_USB_DEVICE(USB_VENDOR_ID_ZYDACRON, USB_DEVICE_ID_ZYDACRON_REMOTE_CONTROL) },
+diff --git a/drivers/hid/hid-holtekff.c b/drivers/hid/hid-holtekff.c
+index 9a8f05124525..9325545fc3ae 100644
+--- a/drivers/hid/hid-holtekff.c
++++ b/drivers/hid/hid-holtekff.c
+@@ -98,7 +98,7 @@ static void holtekff_send(struct holtekff_device *holtekff,
+ 		holtekff->field->value[i] = data[i];
+ 	}
+ 
+-	dbg_hid("sending %*ph\n", 7, data);
++	dbg_hid("sending %7ph\n", data);
+ 
+ 	hid_hw_request(hid, holtekff->field->report, HID_REQ_SET_REPORT);
+ }
+diff --git a/drivers/hid/hid-ids.h b/drivers/hid/hid-ids.h
+index ffe4c7ae3340..e60e8d530697 100644
+--- a/drivers/hid/hid-ids.h
++++ b/drivers/hid/hid-ids.h
+@@ -135,9 +135,9 @@
+ #define USB_DEVICE_ID_APPLE_ALU_WIRELESS_2009_JIS   0x023b
+ #define USB_DEVICE_ID_APPLE_ALU_WIRELESS_2011_ANSI  0x0255
+ #define USB_DEVICE_ID_APPLE_ALU_WIRELESS_2011_ISO   0x0256
+-#define USB_DEVICE_ID_APPLE_WELLSPRING8_ANSI	0x0291
+-#define USB_DEVICE_ID_APPLE_WELLSPRING8_ISO	0x0292
+-#define USB_DEVICE_ID_APPLE_WELLSPRING8_JIS	0x0293
++#define USB_DEVICE_ID_APPLE_WELLSPRING8_ANSI	0x0290
++#define USB_DEVICE_ID_APPLE_WELLSPRING8_ISO	0x0291
++#define USB_DEVICE_ID_APPLE_WELLSPRING8_JIS	0x0292
+ #define USB_DEVICE_ID_APPLE_FOUNTAIN_TP_ONLY	0x030a
+ #define USB_DEVICE_ID_APPLE_GEYSER1_TP_ONLY	0x030b
+ #define USB_DEVICE_ID_APPLE_IRCONTROL	0x8240
+@@ -482,6 +482,7 @@
+ #define USB_VENDOR_ID_KYE		0x0458
+ #define USB_DEVICE_ID_KYE_ERGO_525V	0x0087
+ #define USB_DEVICE_ID_GENIUS_GILA_GAMING_MOUSE	0x0138
++#define USB_DEVICE_ID_GENIUS_GX_IMPERATOR	0x4018
+ #define USB_DEVICE_ID_KYE_GPEN_560	0x5003
+ #define USB_DEVICE_ID_KYE_EASYPEN_I405X	0x5010
+ #define USB_DEVICE_ID_KYE_MOUSEPEN_I608X	0x5011
+@@ -658,6 +659,7 @@
+ #define USB_DEVICE_ID_NTRIG_TOUCH_SCREEN_16   0x0012
+ #define USB_DEVICE_ID_NTRIG_TOUCH_SCREEN_17   0x0013
+ #define USB_DEVICE_ID_NTRIG_TOUCH_SCREEN_18   0x0014
++#define USB_DEVICE_ID_NTRIG_DUOSENSE 0x1500
+ 
+ #define USB_VENDOR_ID_ONTRAK		0x0a07
+ #define USB_DEVICE_ID_ONTRAK_ADU100	0x0064
+@@ -716,6 +718,7 @@
+ #define USB_DEVICE_ID_ROCCAT_KONE	0x2ced
+ #define USB_DEVICE_ID_ROCCAT_KONEPLUS	0x2d51
+ #define USB_DEVICE_ID_ROCCAT_KONEPURE	0x2dbe
++#define USB_DEVICE_ID_ROCCAT_KONEPURE_OPTICAL	0x2db4
+ #define USB_DEVICE_ID_ROCCAT_KONEXTD	0x2e22
+ #define USB_DEVICE_ID_ROCCAT_KOVAPLUS	0x2d50
+ #define USB_DEVICE_ID_ROCCAT_LUA	0x2c2e
+@@ -887,6 +890,9 @@
+ #define USB_VENDOR_ID_XAT	0x2505
+ #define USB_DEVICE_ID_XAT_CSR	0x0220
+ 
++#define USB_VENDOR_ID_XIN_MO			0x16c0
++#define USB_DEVICE_ID_XIN_MO_DUAL_ARCADE	0x05e1
++
+ #define USB_VENDOR_ID_XIROKU		0x1477
+ #define USB_DEVICE_ID_XIROKU_SPX	0x1006
+ #define USB_DEVICE_ID_XIROKU_MPX	0x1007
+diff --git a/drivers/hid/hid-input.c b/drivers/hid/hid-input.c
+index 7480799e535c..b420f4a0fd28 100644
+--- a/drivers/hid/hid-input.c
++++ b/drivers/hid/hid-input.c
+@@ -340,7 +340,7 @@ static int hidinput_get_battery_property(struct power_supply *psy,
+ {
+ 	struct hid_device *dev = container_of(psy, struct hid_device, battery);
+ 	int ret = 0;
+-	__u8 buf[2] = {};
++	__u8 *buf;
+ 
+ 	switch (prop) {
+ 	case POWER_SUPPLY_PROP_PRESENT:
+@@ -349,12 +349,19 @@ static int hidinput_get_battery_property(struct power_supply *psy,
+ 		break;
+ 
+ 	case POWER_SUPPLY_PROP_CAPACITY:
++
++		buf = kmalloc(2 * sizeof(__u8), GFP_KERNEL);
++		if (!buf) {
++			ret = -ENOMEM;
++			break;
++		}
+ 		ret = dev->hid_get_raw_report(dev, dev->battery_report_id,
+-					      buf, sizeof(buf),
++					      buf, 2,
+ 					      dev->battery_report_type);
+ 
+ 		if (ret != 2) {
+ 			ret = -ENODATA;
++			kfree(buf);
+ 			break;
+ 		}
+ 		ret = 0;
+@@ -364,6 +371,7 @@ static int hidinput_get_battery_property(struct power_supply *psy,
+ 		    buf[1] <= dev->battery_max)
+ 			val->intval = (100 * (buf[1] - dev->battery_min)) /
+ 				(dev->battery_max - dev->battery_min);
++		kfree(buf);
+ 		break;
+ 
+ 	case POWER_SUPPLY_PROP_MODEL_NAME:
+@@ -1137,6 +1145,74 @@ unsigned int hidinput_count_leds(struct hid_device *hid)
+ }
+ EXPORT_SYMBOL_GPL(hidinput_count_leds);
+ 
++static void hidinput_led_worker(struct work_struct *work)
++{
++	struct hid_device *hid = container_of(work, struct hid_device,
++					      led_work);
++	struct hid_field *field;
++	struct hid_report *report;
++	int len;
++	__u8 *buf;
++
++	field = hidinput_get_led_field(hid);
++	if (!field)
++		return;
++
++	/*
++	 * field->report is accessed unlocked regarding HID core. So there might
++	 * be another incoming SET-LED request from user-space, which changes
++	 * the LED state while we assemble our outgoing buffer. However, this
++	 * doesn't matter as hid_output_report() correctly converts it into a
++	 * boolean value no matter what information is currently set on the LED
++	 * field (even garbage). So the remote device will always get a valid
++	 * request.
++	 * And in case we send a wrong value, a next led worker is spawned
++	 * for every SET-LED request so the following worker will send the
++	 * correct value, guaranteed!
++	 */
++
++	report = field->report;
++
++	/* use custom SET_REPORT request if possible (asynchronous) */
++	if (hid->ll_driver->request)
++		return hid->ll_driver->request(hid, report, HID_REQ_SET_REPORT);
++
++	/* fall back to generic raw-output-report */
++	len = ((report->size - 1) >> 3) + 1 + (report->id > 0);
++	buf = kmalloc(len, GFP_KERNEL);
++	if (!buf)
++		return;
++
++	hid_output_report(report, buf);
++	/* synchronous output report */
++	hid->hid_output_raw_report(hid, buf, len, HID_OUTPUT_REPORT);
++	kfree(buf);
++}
++
++static int hidinput_input_event(struct input_dev *dev, unsigned int type,
++				unsigned int code, int value)
++{
++	struct hid_device *hid = input_get_drvdata(dev);
++	struct hid_field *field;
++	int offset;
++
++	if (type == EV_FF)
++		return input_ff_event(dev, type, code, value);
++
++	if (type != EV_LED)
++		return -1;
++
++	if ((offset = hidinput_find_field(hid, type, code, &field)) == -1) {
++		hid_warn(dev, "event field not found\n");
++		return -1;
++	}
++
++	hid_set_field(field, offset, value);
++
++	schedule_work(&hid->led_work);
++	return 0;
++}
++
+ static int hidinput_open(struct input_dev *dev)
+ {
+ 	struct hid_device *hid = input_get_drvdata(dev);
+@@ -1183,7 +1259,10 @@ static struct hid_input *hidinput_allocate(struct hid_device *hid)
+ 	}
+ 
+ 	input_set_drvdata(input_dev, hid);
+-	input_dev->event = hid->ll_driver->hidinput_input_event;
++	if (hid->ll_driver->hidinput_input_event)
++		input_dev->event = hid->ll_driver->hidinput_input_event;
++	else if (hid->ll_driver->request || hid->hid_output_raw_report)
++		input_dev->event = hidinput_input_event;
+ 	input_dev->open = hidinput_open;
+ 	input_dev->close = hidinput_close;
+ 	input_dev->setkeycode = hidinput_setkeycode;
+@@ -1278,6 +1357,7 @@ int hidinput_connect(struct hid_device *hid, unsigned int force)
+ 	int i, j, k;
+ 
+ 	INIT_LIST_HEAD(&hid->inputs);
++	INIT_WORK(&hid->led_work, hidinput_led_worker);
+ 
+ 	if (!force) {
+ 		for (i = 0; i < hid->maxcollection; i++) {
+@@ -1379,6 +1459,12 @@ void hidinput_disconnect(struct hid_device *hid)
+ 		input_unregister_device(hidinput->input);
+ 		kfree(hidinput);
+ 	}
++
++	/* led_work is spawned by input_dev callbacks, but doesn't access the
++	 * parent input_dev at all. Once all input devices are removed, we
++	 * know that led_work will never get restarted, so we can cancel it
++	 * synchronously and are safe. */
++	cancel_work_sync(&hid->led_work);
+ }
+ EXPORT_SYMBOL_GPL(hidinput_disconnect);
+ 
+diff --git a/drivers/hid/hid-kye.c b/drivers/hid/hid-kye.c
+index 1e2ee2aa84a0..73845120295e 100644
+--- a/drivers/hid/hid-kye.c
++++ b/drivers/hid/hid-kye.c
+@@ -268,6 +268,26 @@ static __u8 easypen_m610x_rdesc_fixed[] = {
+ 	0xC0                          /*  End Collection                  */
+ };
+ 
++static __u8 *kye_consumer_control_fixup(struct hid_device *hdev, __u8 *rdesc,
++		unsigned int *rsize, int offset, const char *device_name) {
++	/*
++	 * the fixup that need to be done:
++	 *   - change Usage Maximum in the Comsumer Control
++	 *     (report ID 3) to a reasonable value
++	 */
++	if (*rsize >= offset + 31 &&
++	    /* Usage Page (Consumer Devices) */
++	    rdesc[offset] == 0x05 && rdesc[offset + 1] == 0x0c &&
++	    /* Usage (Consumer Control) */
++	    rdesc[offset + 2] == 0x09 && rdesc[offset + 3] == 0x01 &&
++	    /*   Usage Maximum > 12287 */
++	    rdesc[offset + 10] == 0x2a && rdesc[offset + 12] > 0x2f) {
++		hid_info(hdev, "fixing up %s report descriptor\n", device_name);
++		rdesc[offset + 12] = 0x2f;
++	}
++	return rdesc;
++}
++
+ static __u8 *kye_report_fixup(struct hid_device *hdev, __u8 *rdesc,
+ 		unsigned int *rsize)
+ {
+@@ -315,23 +335,12 @@ static __u8 *kye_report_fixup(struct hid_device *hdev, __u8 *rdesc,
+ 		}
+ 		break;
+ 	case USB_DEVICE_ID_GENIUS_GILA_GAMING_MOUSE:
+-		/*
+-		 * the fixup that need to be done:
+-		 *   - change Usage Maximum in the Comsumer Control
+-		 *     (report ID 3) to a reasonable value
+-		 */
+-		if (*rsize >= 135 &&
+-			/* Usage Page (Consumer Devices) */
+-			rdesc[104] == 0x05 && rdesc[105] == 0x0c &&
+-			/* Usage (Consumer Control) */
+-			rdesc[106] == 0x09 && rdesc[107] == 0x01 &&
+-			/*   Usage Maximum > 12287 */
+-			rdesc[114] == 0x2a && rdesc[116] > 0x2f) {
+-			hid_info(hdev,
+-				 "fixing up Genius Gila Gaming Mouse "
+-				 "report descriptor\n");
+-			rdesc[116] = 0x2f;
+-		}
++		rdesc = kye_consumer_control_fixup(hdev, rdesc, rsize, 104,
++					"Genius Gila Gaming Mouse");
++		break;
++	case USB_DEVICE_ID_GENIUS_GX_IMPERATOR:
++		rdesc = kye_consumer_control_fixup(hdev, rdesc, rsize, 83,
++					"Genius Gx Imperator Keyboard");
+ 		break;
+ 	}
+ 	return rdesc;
+@@ -428,6 +437,8 @@ static const struct hid_device_id kye_devices[] = {
+ 				USB_DEVICE_ID_KYE_EASYPEN_M610X) },
+ 	{ HID_USB_DEVICE(USB_VENDOR_ID_KYE,
+ 				USB_DEVICE_ID_GENIUS_GILA_GAMING_MOUSE) },
++	{ HID_USB_DEVICE(USB_VENDOR_ID_KYE,
++				USB_DEVICE_ID_GENIUS_GX_IMPERATOR) },
+ 	{ }
+ };
+ MODULE_DEVICE_TABLE(hid, kye_devices);
+diff --git a/drivers/hid/hid-logitech-dj.c b/drivers/hid/hid-logitech-dj.c
+index cd33084c7860..7800b1410562 100644
+--- a/drivers/hid/hid-logitech-dj.c
++++ b/drivers/hid/hid-logitech-dj.c
+@@ -619,7 +619,7 @@ static int logi_dj_ll_input_event(struct input_dev *dev, unsigned int type,
+ 
+ 	struct hid_field *field;
+ 	struct hid_report *report;
+-	unsigned char data[8];
++	unsigned char *data;
+ 	int offset;
+ 
+ 	dbg_hid("%s: %s, type:%d | code:%d | value:%d\n",
+@@ -635,6 +635,13 @@ static int logi_dj_ll_input_event(struct input_dev *dev, unsigned int type,
+ 		return -1;
+ 	}
+ 	hid_set_field(field, offset, value);
++
++	data = hid_alloc_report_buf(field->report, GFP_ATOMIC);
++	if (!data) {
++		dev_warn(&dev->dev, "failed to allocate report buf memory\n");
++		return -1;
++	}
++
+ 	hid_output_report(field->report, &data[0]);
+ 
+ 	output_report_enum = &dj_rcv_hiddev->report_enum[HID_OUTPUT_REPORT];
+@@ -645,8 +652,9 @@ static int logi_dj_ll_input_event(struct input_dev *dev, unsigned int type,
+ 
+ 	hid_hw_request(dj_rcv_hiddev, report, HID_REQ_SET_REPORT);
+ 
+-	return 0;
++	kfree(data);
+ 
++	return 0;
+ }
+ 
+ static int logi_dj_ll_start(struct hid_device *hid)
+@@ -801,10 +809,10 @@ static int logi_dj_probe(struct hid_device *hdev,
+ 	}
+ 
+ 	/* This is enabling the polling urb on the IN endpoint */
+-	retval = hdev->ll_driver->open(hdev);
++	retval = hid_hw_open(hdev);
+ 	if (retval < 0) {
+-		dev_err(&hdev->dev, "%s:hdev->ll_driver->open returned "
+-			"error:%d\n", __func__, retval);
++		dev_err(&hdev->dev, "%s:hid_hw_open returned error:%d\n",
++			__func__, retval);
+ 		goto llopen_failed;
+ 	}
+ 
+@@ -821,7 +829,7 @@ static int logi_dj_probe(struct hid_device *hdev,
+ 	return retval;
+ 
+ logi_dj_recv_query_paired_devices_failed:
+-	hdev->ll_driver->close(hdev);
++	hid_hw_close(hdev);
+ 
+ llopen_failed:
+ switch_to_dj_mode_fail:
+@@ -863,7 +871,7 @@ static void logi_dj_remove(struct hid_device *hdev)
+ 
+ 	cancel_work_sync(&djrcv_dev->work);
+ 
+-	hdev->ll_driver->close(hdev);
++	hid_hw_close(hdev);
+ 	hid_hw_stop(hdev);
+ 
+ 	/* I suppose that at this point the only context that can access
+diff --git a/drivers/hid/hid-magicmouse.c b/drivers/hid/hid-magicmouse.c
+index 5bc37343eb22..3b43d1cfa936 100644
+--- a/drivers/hid/hid-magicmouse.c
++++ b/drivers/hid/hid-magicmouse.c
+@@ -36,7 +36,7 @@ MODULE_PARM_DESC(emulate_scroll_wheel, "Emulate a scroll wheel");
+ static unsigned int scroll_speed = 32;
+ static int param_set_scroll_speed(const char *val, struct kernel_param *kp) {
+ 	unsigned long speed;
+-	if (!val || strict_strtoul(val, 0, &speed) || speed > 63)
++	if (!val || kstrtoul(val, 0, &speed) || speed > 63)
+ 		return -EINVAL;
+ 	scroll_speed = speed;
+ 	return 0;
+@@ -484,7 +484,7 @@ static int magicmouse_probe(struct hid_device *hdev,
+ 	struct hid_report *report;
+ 	int ret;
+ 
+-	msc = kzalloc(sizeof(*msc), GFP_KERNEL);
++	msc = devm_kzalloc(&hdev->dev, sizeof(*msc), GFP_KERNEL);
+ 	if (msc == NULL) {
+ 		hid_err(hdev, "can't alloc magicmouse descriptor\n");
+ 		return -ENOMEM;
+@@ -498,13 +498,13 @@ static int magicmouse_probe(struct hid_device *hdev,
+ 	ret = hid_parse(hdev);
+ 	if (ret) {
+ 		hid_err(hdev, "magicmouse hid parse failed\n");
+-		goto err_free;
++		return ret;
+ 	}
+ 
+ 	ret = hid_hw_start(hdev, HID_CONNECT_DEFAULT);
+ 	if (ret) {
+ 		hid_err(hdev, "magicmouse hw start failed\n");
+-		goto err_free;
++		return ret;
+ 	}
+ 
+ 	if (!msc->input) {
+@@ -548,19 +548,9 @@ static int magicmouse_probe(struct hid_device *hdev,
+ 	return 0;
+ err_stop_hw:
+ 	hid_hw_stop(hdev);
+-err_free:
+-	kfree(msc);
+ 	return ret;
+ }
+ 
+-static void magicmouse_remove(struct hid_device *hdev)
+-{
+-	struct magicmouse_sc *msc = hid_get_drvdata(hdev);
+-
+-	hid_hw_stop(hdev);
+-	kfree(msc);
+-}
+-
+ static const struct hid_device_id magic_mice[] = {
+ 	{ HID_BLUETOOTH_DEVICE(USB_VENDOR_ID_APPLE,
+ 		USB_DEVICE_ID_APPLE_MAGICMOUSE), .driver_data = 0 },
+@@ -574,7 +564,6 @@ static struct hid_driver magicmouse_driver = {
+ 	.name = "magicmouse",
+ 	.id_table = magic_mice,
+ 	.probe = magicmouse_probe,
+-	.remove = magicmouse_remove,
+ 	.raw_event = magicmouse_raw_event,
+ 	.input_mapping = magicmouse_input_mapping,
+ 	.input_configured = magicmouse_input_configured,
+diff --git a/drivers/hid/hid-multitouch.c b/drivers/hid/hid-multitouch.c
+index cb0e361d7a4b..ac28f08c3866 100644
+--- a/drivers/hid/hid-multitouch.c
++++ b/drivers/hid/hid-multitouch.c
+@@ -133,6 +133,7 @@ static void mt_post_parse(struct mt_device *td);
+ #define MT_CLS_NSMU				0x000a
+ #define MT_CLS_DUAL_CONTACT_NUMBER		0x0010
+ #define MT_CLS_DUAL_CONTACT_ID			0x0011
++#define MT_CLS_WIN_8				0x0012
+ 
+ /* vendor specific classes */
+ #define MT_CLS_3M				0x0101
+@@ -205,6 +206,11 @@ static struct mt_class mt_classes[] = {
+ 			MT_QUIRK_CONTACT_CNT_ACCURATE |
+ 			MT_QUIRK_SLOT_IS_CONTACTID,
+ 		.maxcontacts = 2 },
++	{ .name = MT_CLS_WIN_8,
++		.quirks = MT_QUIRK_ALWAYS_VALID |
++			MT_QUIRK_IGNORE_DUPLICATES |
++			MT_QUIRK_HOVERING |
++			MT_QUIRK_CONTACT_CNT_ACCURATE },
+ 
+ 	/*
+ 	 * vendor specific classes
+@@ -261,17 +267,6 @@ static struct mt_class mt_classes[] = {
+ 	{ }
+ };
+ 
+-static void mt_free_input_name(struct hid_input *hi)
+-{
+-	struct hid_device *hdev = hi->report->device;
+-	const char *name = hi->input->name;
+-
+-	if (name != hdev->name) {
+-		hi->input->name = hdev->name;
+-		kfree(name);
+-	}
+-}
+-
+ static ssize_t mt_show_quirks(struct device *dev,
+ 			   struct device_attribute *attr,
+ 			   char *buf)
+@@ -343,19 +338,6 @@ static void mt_feature_mapping(struct hid_device *hdev,
+ 			td->maxcontacts = td->mtclass.maxcontacts;
+ 
+ 		break;
+-	case 0xff0000c5:
+-		if (field->report_count == 256 && field->report_size == 8) {
+-			/* Win 8 devices need special quirks */
+-			__s32 *quirks = &td->mtclass.quirks;
+-			*quirks |= MT_QUIRK_ALWAYS_VALID;
+-			*quirks |= MT_QUIRK_IGNORE_DUPLICATES;
+-			*quirks |= MT_QUIRK_HOVERING;
+-			*quirks |= MT_QUIRK_CONTACT_CNT_ACCURATE;
+-			*quirks &= ~MT_QUIRK_NOT_SEEN_MEANS_UP;
+-			*quirks &= ~MT_QUIRK_VALID_IS_INRANGE;
+-			*quirks &= ~MT_QUIRK_VALID_IS_CONFIDENCE;
+-		}
+-		break;
+ 	}
+ }
+ 
+@@ -415,13 +397,6 @@ static void mt_pen_report(struct hid_device *hid, struct hid_report *report)
+ static void mt_pen_input_configured(struct hid_device *hdev,
+ 					struct hid_input *hi)
+ {
+-	char *name = kzalloc(strlen(hi->input->name) + 5, GFP_KERNEL);
+-	if (name) {
+-		sprintf(name, "%s Pen", hi->input->name);
+-		mt_free_input_name(hi);
+-		hi->input->name = name;
+-	}
+-
+ 	/* force BTN_STYLUS to allow tablet matching in udev */
+ 	__set_bit(BTN_STYLUS, hi->input->keybit);
+ }
+@@ -928,16 +903,26 @@ static void mt_post_parse(struct mt_device *td)
+ static void mt_input_configured(struct hid_device *hdev, struct hid_input *hi)
+ {
+ 	struct mt_device *td = hid_get_drvdata(hdev);
+-	char *name = kstrdup(hdev->name, GFP_KERNEL);
+-
+-	if (name)
+-		hi->input->name = name;
++	char *name;
++	const char *suffix = NULL;
+ 
+ 	if (hi->report->id == td->mt_report_id)
+ 		mt_touch_input_configured(hdev, hi);
+ 
+-	if (hi->report->id == td->pen_report_id)
++	if (hi->report->field[0]->physical == HID_DG_STYLUS) {
++		suffix = "Pen";
+ 		mt_pen_input_configured(hdev, hi);
++	}
++
++	if (suffix) {
++		name = devm_kzalloc(&hi->input->dev,
++				    strlen(hdev->name) + strlen(suffix) + 2,
++				    GFP_KERNEL);
++		if (name) {
++			sprintf(name, "%s %s", hdev->name, suffix);
++			hi->input->name = name;
++		}
++	}
+ }
+ 
+ static int mt_probe(struct hid_device *hdev, const struct hid_device_id *id)
+@@ -945,7 +930,6 @@ static int mt_probe(struct hid_device *hdev, const struct hid_device_id *id)
+ 	int ret, i;
+ 	struct mt_device *td;
+ 	struct mt_class *mtclass = mt_classes; /* MT_CLS_DEFAULT */
+-	struct hid_input *hi;
+ 
+ 	for (i = 0; mt_classes[i].name ; i++) {
+ 		if (id->driver_data == mt_classes[i].name) {
+@@ -967,7 +951,19 @@ static int mt_probe(struct hid_device *hdev, const struct hid_device_id *id)
+ 	hdev->quirks |= HID_QUIRK_MULTI_INPUT;
+ 	hdev->quirks |= HID_QUIRK_NO_EMPTY_INPUT;
+ 
+-	td = kzalloc(sizeof(struct mt_device), GFP_KERNEL);
++	/*
++	 * Handle special quirks for Windows 8 certified devices.
++	 */
++	if (id->group == HID_GROUP_MULTITOUCH_WIN_8)
++		/*
++		 * Some multitouch screens do not like to be polled for input
++		 * reports. Fortunately, the Win8 spec says that all touches
++		 * should be sent during each report, making the initialization
++		 * of input reports unnecessary.
++		 */
++		hdev->quirks |= HID_QUIRK_NO_INIT_INPUT_REPORTS;
++
++	td = devm_kzalloc(&hdev->dev, sizeof(struct mt_device), GFP_KERNEL);
+ 	if (!td) {
+ 		dev_err(&hdev->dev, "cannot allocate multitouch data\n");
+ 		return -ENOMEM;
+@@ -980,11 +976,11 @@ static int mt_probe(struct hid_device *hdev, const struct hid_device_id *id)
+ 	td->pen_report_id = -1;
+ 	hid_set_drvdata(hdev, td);
+ 
+-	td->fields = kzalloc(sizeof(struct mt_fields), GFP_KERNEL);
++	td->fields = devm_kzalloc(&hdev->dev, sizeof(struct mt_fields),
++				  GFP_KERNEL);
+ 	if (!td->fields) {
+ 		dev_err(&hdev->dev, "cannot allocate multitouch fields data\n");
+-		ret = -ENOMEM;
+-		goto fail;
++		return -ENOMEM;
+ 	}
+ 
+ 	if (id->vendor == HID_ANY_ID && id->product == HID_ANY_ID)
+@@ -992,29 +988,22 @@ static int mt_probe(struct hid_device *hdev, const struct hid_device_id *id)
+ 
+ 	ret = hid_parse(hdev);
+ 	if (ret != 0)
+-		goto fail;
++		return ret;
+ 
+ 	ret = hid_hw_start(hdev, HID_CONNECT_DEFAULT);
+ 	if (ret)
+-		goto hid_fail;
++		return ret;
+ 
+ 	ret = sysfs_create_group(&hdev->dev.kobj, &mt_attribute_group);
+ 
+ 	mt_set_maxcontacts(hdev);
+ 	mt_set_input_mode(hdev);
+ 
+-	kfree(td->fields);
++	/* release .fields memory as it is not used anymore */
++	devm_kfree(&hdev->dev, td->fields);
+ 	td->fields = NULL;
+ 
+ 	return 0;
+-
+-hid_fail:
+-	list_for_each_entry(hi, &hdev->inputs, list)
+-		mt_free_input_name(hi);
+-fail:
+-	kfree(td->fields);
+-	kfree(td);
+-	return ret;
+ }
+ 
+ #ifdef CONFIG_PM
+@@ -1039,17 +1028,8 @@ static int mt_resume(struct hid_device *hdev)
+ 
+ static void mt_remove(struct hid_device *hdev)
+ {
+-	struct mt_device *td = hid_get_drvdata(hdev);
+-	struct hid_input *hi;
+-
+ 	sysfs_remove_group(&hdev->dev.kobj, &mt_attribute_group);
+-	list_for_each_entry(hi, &hdev->inputs, list)
+-		mt_free_input_name(hi);
+-
+ 	hid_hw_stop(hdev);
+-
+-	kfree(td);
+-	hid_set_drvdata(hdev, NULL);
+ }
+ 
+ static const struct hid_device_id mt_devices[] = {
+@@ -1371,6 +1351,11 @@ static const struct hid_device_id mt_devices[] = {
+ 
+ 	/* Generic MT device */
+ 	{ HID_DEVICE(HID_BUS_ANY, HID_GROUP_MULTITOUCH, HID_ANY_ID, HID_ANY_ID) },
++
++	/* Generic Win 8 certified MT device */
++	{  .driver_data = MT_CLS_WIN_8,
++		HID_DEVICE(HID_BUS_ANY, HID_GROUP_MULTITOUCH_WIN_8,
++			HID_ANY_ID, HID_ANY_ID) },
+ 	{ }
+ };
+ MODULE_DEVICE_TABLE(hid, mt_devices);
+diff --git a/drivers/hid/hid-ntrig.c b/drivers/hid/hid-ntrig.c
+index ef95102515e4..600f2075512f 100644
+--- a/drivers/hid/hid-ntrig.c
++++ b/drivers/hid/hid-ntrig.c
+@@ -115,7 +115,8 @@ static inline int ntrig_get_mode(struct hid_device *hdev)
+ 	struct hid_report *report = hdev->report_enum[HID_FEATURE_REPORT].
+ 				    report_id_hash[0x0d];
+ 
+-	if (!report)
++	if (!report || report->maxfield < 1 ||
++	    report->field[0]->report_count < 1)
+ 		return -EINVAL;
+ 
+ 	hid_hw_request(hdev, report, HID_REQ_GET_REPORT);
+@@ -237,7 +238,7 @@ static ssize_t set_min_width(struct device *dev,
+ 
+ 	unsigned long val;
+ 
+-	if (strict_strtoul(buf, 0, &val))
++	if (kstrtoul(buf, 0, &val))
+ 		return -EINVAL;
+ 
+ 	if (val > nd->sensor_physical_width)
+@@ -272,7 +273,7 @@ static ssize_t set_min_height(struct device *dev,
+ 
+ 	unsigned long val;
+ 
+-	if (strict_strtoul(buf, 0, &val))
++	if (kstrtoul(buf, 0, &val))
+ 		return -EINVAL;
+ 
+ 	if (val > nd->sensor_physical_height)
+@@ -306,7 +307,7 @@ static ssize_t set_activate_slack(struct device *dev,
+ 
+ 	unsigned long val;
+ 
+-	if (strict_strtoul(buf, 0, &val))
++	if (kstrtoul(buf, 0, &val))
+ 		return -EINVAL;
+ 
+ 	if (val > 0x7f)
+@@ -341,7 +342,7 @@ static ssize_t set_activation_width(struct device *dev,
+ 
+ 	unsigned long val;
+ 
+-	if (strict_strtoul(buf, 0, &val))
++	if (kstrtoul(buf, 0, &val))
+ 		return -EINVAL;
+ 
+ 	if (val > nd->sensor_physical_width)
+@@ -377,7 +378,7 @@ static ssize_t set_activation_height(struct device *dev,
+ 
+ 	unsigned long val;
+ 
+-	if (strict_strtoul(buf, 0, &val))
++	if (kstrtoul(buf, 0, &val))
+ 		return -EINVAL;
+ 
+ 	if (val > nd->sensor_physical_height)
+@@ -411,7 +412,7 @@ static ssize_t set_deactivate_slack(struct device *dev,
+ 
+ 	unsigned long val;
+ 
+-	if (strict_strtoul(buf, 0, &val))
++	if (kstrtoul(buf, 0, &val))
+ 		return -EINVAL;
+ 
+ 	/*
+diff --git a/drivers/hid/hid-picolcd_cir.c b/drivers/hid/hid-picolcd_cir.c
+index e346038f0f11..59d5eb1e742c 100644
+--- a/drivers/hid/hid-picolcd_cir.c
++++ b/drivers/hid/hid-picolcd_cir.c
+@@ -145,6 +145,7 @@ void picolcd_exit_cir(struct picolcd_data *data)
+ 	struct rc_dev *rdev = data->rc_dev;
+ 
+ 	data->rc_dev = NULL;
+-	rc_unregister_device(rdev);
++	if (rdev)
++		rc_unregister_device(rdev);
+ }
+ 
+diff --git a/drivers/hid/hid-picolcd_core.c b/drivers/hid/hid-picolcd_core.c
+index b48092d0e139..acbb021065ec 100644
+--- a/drivers/hid/hid-picolcd_core.c
++++ b/drivers/hid/hid-picolcd_core.c
+@@ -290,7 +290,7 @@ static ssize_t picolcd_operation_mode_store(struct device *dev,
+ 		buf += 10;
+ 		cnt -= 10;
+ 	}
+-	if (!report)
++	if (!report || report->maxfield != 1)
+ 		return -EINVAL;
+ 
+ 	while (cnt > 0 && (buf[cnt-1] == '\n' || buf[cnt-1] == '\r'))
+diff --git a/drivers/hid/hid-picolcd_debugfs.c b/drivers/hid/hid-picolcd_debugfs.c
+index 59ab8e157e6b..024cdf3c2297 100644
+--- a/drivers/hid/hid-picolcd_debugfs.c
++++ b/drivers/hid/hid-picolcd_debugfs.c
+@@ -394,7 +394,7 @@ static void dump_buff_as_hex(char *dst, size_t dst_sz, const u8 *data,
+ void picolcd_debug_out_report(struct picolcd_data *data,
+ 		struct hid_device *hdev, struct hid_report *report)
+ {
+-	u8 raw_data[70];
++	u8 *raw_data;
+ 	int raw_size = (report->size >> 3) + 1;
+ 	char *buff;
+ #define BUFF_SZ 256
+@@ -407,20 +407,20 @@ void picolcd_debug_out_report(struct picolcd_data *data,
+ 	if (!buff)
+ 		return;
+ 
+-	snprintf(buff, BUFF_SZ, "\nout report %d (size %d) =  ",
+-			report->id, raw_size);
+-	hid_debug_event(hdev, buff);
+-	if (raw_size + 5 > sizeof(raw_data)) {
++	raw_data = hid_alloc_report_buf(report, GFP_ATOMIC);
++	if (!raw_data) {
+ 		kfree(buff);
+-		hid_debug_event(hdev, " TOO BIG\n");
+ 		return;
+-	} else {
+-		raw_data[0] = report->id;
+-		hid_output_report(report, raw_data);
+-		dump_buff_as_hex(buff, BUFF_SZ, raw_data, raw_size);
+-		hid_debug_event(hdev, buff);
+ 	}
+ 
++	snprintf(buff, BUFF_SZ, "\nout report %d (size %d) =  ",
++			report->id, raw_size);
++	hid_debug_event(hdev, buff);
++	raw_data[0] = report->id;
++	hid_output_report(report, raw_data);
++	dump_buff_as_hex(buff, BUFF_SZ, raw_data, raw_size);
++	hid_debug_event(hdev, buff);
++
+ 	switch (report->id) {
+ 	case REPORT_LED_STATE:
+ 		/* 1 data byte with GPO state */
+@@ -644,6 +644,7 @@ void picolcd_debug_out_report(struct picolcd_data *data,
+ 		break;
+ 	}
+ 	wake_up_interruptible(&hdev->debug_wait);
++	kfree(raw_data);
+ 	kfree(buff);
+ }
+ 
+diff --git a/drivers/hid/hid-picolcd_fb.c b/drivers/hid/hid-picolcd_fb.c
+index 591f6b22aa94..c930ab8554ea 100644
+--- a/drivers/hid/hid-picolcd_fb.c
++++ b/drivers/hid/hid-picolcd_fb.c
+@@ -593,10 +593,14 @@ int picolcd_init_framebuffer(struct picolcd_data *data)
+ void picolcd_exit_framebuffer(struct picolcd_data *data)
+ {
+ 	struct fb_info *info = data->fb_info;
+-	struct picolcd_fb_data *fbdata = info->par;
++	struct picolcd_fb_data *fbdata;
+ 	unsigned long flags;
+ 
++	if (!info)
++		return;
++
+ 	device_remove_file(&data->hdev->dev, &dev_attr_fb_update_rate);
++	fbdata = info->par;
+ 
+ 	/* disconnect framebuffer from HID dev */
+ 	spin_lock_irqsave(&fbdata->lock, flags);
+diff --git a/drivers/hid/hid-pl.c b/drivers/hid/hid-pl.c
+index d29112fa5cd5..2dcd7d98dbd6 100644
+--- a/drivers/hid/hid-pl.c
++++ b/drivers/hid/hid-pl.c
+@@ -132,8 +132,14 @@ static int plff_init(struct hid_device *hid)
+ 			strong = &report->field[0]->value[2];
+ 			weak = &report->field[0]->value[3];
+ 			debug("detected single-field device");
+-		} else if (report->maxfield >= 4 && report->field[0]->maxusage == 1 &&
+-				report->field[0]->usage[0].hid == (HID_UP_LED | 0x43)) {
++		} else if (report->field[0]->maxusage == 1 &&
++			   report->field[0]->usage[0].hid ==
++				(HID_UP_LED | 0x43) &&
++			   report->maxfield >= 4 &&
++			   report->field[0]->report_count >= 1 &&
++			   report->field[1]->report_count >= 1 &&
++			   report->field[2]->report_count >= 1 &&
++			   report->field[3]->report_count >= 1) {
+ 			report->field[0]->value[0] = 0x00;
+ 			report->field[1]->value[0] = 0x00;
+ 			strong = &report->field[2]->value[0];
+diff --git a/drivers/hid/hid-roccat-arvo.c b/drivers/hid/hid-roccat-arvo.c
+index eed7f52084c5..1948208fe038 100644
+--- a/drivers/hid/hid-roccat-arvo.c
++++ b/drivers/hid/hid-roccat-arvo.c
+@@ -59,7 +59,7 @@ static ssize_t arvo_sysfs_set_mode_key(struct device *dev,
+ 	unsigned long state;
+ 	int retval;
+ 
+-	retval = strict_strtoul(buf, 10, &state);
++	retval = kstrtoul(buf, 10, &state);
+ 	if (retval)
+ 		return retval;
+ 
+@@ -109,7 +109,7 @@ static ssize_t arvo_sysfs_set_key_mask(struct device *dev,
+ 	unsigned long key_mask;
+ 	int retval;
+ 
+-	retval = strict_strtoul(buf, 10, &key_mask);
++	retval = kstrtoul(buf, 10, &key_mask);
+ 	if (retval)
+ 		return retval;
+ 
+@@ -163,7 +163,7 @@ static ssize_t arvo_sysfs_set_actual_profile(struct device *dev,
+ 	unsigned long profile;
+ 	int retval;
+ 
+-	retval = strict_strtoul(buf, 10, &profile);
++	retval = kstrtoul(buf, 10, &profile);
+ 	if (retval)
+ 		return retval;
+ 
+diff --git a/drivers/hid/hid-roccat-isku.c b/drivers/hid/hid-roccat-isku.c
+index b7a4e10e112e..bc62ed91e451 100644
+--- a/drivers/hid/hid-roccat-isku.c
++++ b/drivers/hid/hid-roccat-isku.c
+@@ -82,7 +82,7 @@ static ssize_t isku_sysfs_set_actual_profile(struct device *dev,
+ 	isku = hid_get_drvdata(dev_get_drvdata(dev));
+ 	usb_dev = interface_to_usbdev(to_usb_interface(dev));
+ 
+-	retval = strict_strtoul(buf, 10, &profile);
++	retval = kstrtoul(buf, 10, &profile);
+ 	if (retval)
+ 		return retval;
+ 
+diff --git a/drivers/hid/hid-roccat-kone.c b/drivers/hid/hid-roccat-kone.c
+index 6e614a85f175..602c188e9d86 100644
+--- a/drivers/hid/hid-roccat-kone.c
++++ b/drivers/hid/hid-roccat-kone.c
+@@ -476,7 +476,7 @@ static ssize_t kone_sysfs_set_tcu(struct device *dev,
+ 	kone = hid_get_drvdata(dev_get_drvdata(dev));
+ 	usb_dev = interface_to_usbdev(to_usb_interface(dev));
+ 
+-	retval = strict_strtoul(buf, 10, &state);
++	retval = kstrtoul(buf, 10, &state);
+ 	if (retval)
+ 		return retval;
+ 
+@@ -566,7 +566,7 @@ static ssize_t kone_sysfs_set_startup_profile(struct device *dev,
+ 	kone = hid_get_drvdata(dev_get_drvdata(dev));
+ 	usb_dev = interface_to_usbdev(to_usb_interface(dev));
+ 
+-	retval = strict_strtoul(buf, 10, &new_startup_profile);
++	retval = kstrtoul(buf, 10, &new_startup_profile);
+ 	if (retval)
+ 		return retval;
+ 
+diff --git a/drivers/hid/hid-roccat-koneplus.c b/drivers/hid/hid-roccat-koneplus.c
+index db4d8b6a2542..5ddf605b6b89 100644
+--- a/drivers/hid/hid-roccat-koneplus.c
++++ b/drivers/hid/hid-roccat-koneplus.c
+@@ -267,7 +267,7 @@ static ssize_t koneplus_sysfs_set_actual_profile(struct device *dev,
+ 	koneplus = hid_get_drvdata(dev_get_drvdata(dev));
+ 	usb_dev = interface_to_usbdev(to_usb_interface(dev));
+ 
+-	retval = strict_strtoul(buf, 10, &profile);
++	retval = kstrtoul(buf, 10, &profile);
+ 	if (retval)
+ 		return retval;
+ 
+diff --git a/drivers/hid/hid-roccat-konepure.c b/drivers/hid/hid-roccat-konepure.c
+index fa02b1f44979..99a605ebb665 100644
+--- a/drivers/hid/hid-roccat-konepure.c
++++ b/drivers/hid/hid-roccat-konepure.c
+@@ -275,6 +275,7 @@ static int konepure_raw_event(struct hid_device *hdev,
+ 
+ static const struct hid_device_id konepure_devices[] = {
+ 	{ HID_USB_DEVICE(USB_VENDOR_ID_ROCCAT, USB_DEVICE_ID_ROCCAT_KONEPURE) },
++	{ HID_USB_DEVICE(USB_VENDOR_ID_ROCCAT, USB_DEVICE_ID_ROCCAT_KONEPURE_OPTICAL) },
+ 	{ }
+ };
+ 
+@@ -313,5 +314,5 @@ module_init(konepure_init);
+ module_exit(konepure_exit);
+ 
+ MODULE_AUTHOR("Stefan Achatz");
+-MODULE_DESCRIPTION("USB Roccat KonePure driver");
++MODULE_DESCRIPTION("USB Roccat KonePure/Optical driver");
+ MODULE_LICENSE("GPL v2");
+diff --git a/drivers/hid/hid-roccat-kovaplus.c b/drivers/hid/hid-roccat-kovaplus.c
+index 8a0f2993411f..515bc03136c0 100644
+--- a/drivers/hid/hid-roccat-kovaplus.c
++++ b/drivers/hid/hid-roccat-kovaplus.c
+@@ -295,7 +295,7 @@ static ssize_t kovaplus_sysfs_set_actual_profile(struct device *dev,
+ 	kovaplus = hid_get_drvdata(dev_get_drvdata(dev));
+ 	usb_dev = interface_to_usbdev(to_usb_interface(dev));
+ 
+-	retval = strict_strtoul(buf, 10, &profile);
++	retval = kstrtoul(buf, 10, &profile);
+ 	if (retval)
+ 		return retval;
+ 
+diff --git a/drivers/hid/hid-sensor-hub.c b/drivers/hid/hid-sensor-hub.c
+index ca7498107327..10e1581022cf 100644
+--- a/drivers/hid/hid-sensor-hub.c
++++ b/drivers/hid/hid-sensor-hub.c
+@@ -103,8 +103,7 @@ static int sensor_hub_get_physical_device_count(
+ 
+ 	list_for_each_entry(report, &report_enum->report_list, list) {
+ 		field = report->field[0];
+-		if (report->maxfield && field &&
+-					field->physical)
++		if (report->maxfield && field && field->physical)
+ 			cnt++;
+ 	}
+ 
+@@ -192,12 +191,12 @@ int sensor_hub_set_feature(struct hid_sensor_hub_device *hsdev, u32 report_id,
+ 				u32 field_index, s32 value)
+ {
+ 	struct hid_report *report;
+-	struct sensor_hub_data *data =  hid_get_drvdata(hsdev->hdev);
++	struct sensor_hub_data *data = hid_get_drvdata(hsdev->hdev);
+ 	int ret = 0;
+ 
+ 	mutex_lock(&data->mutex);
+ 	report = sensor_hub_report(report_id, hsdev->hdev, HID_FEATURE_REPORT);
+-	if (!report || (field_index >=  report->maxfield)) {
++	if (!report || (field_index >= report->maxfield)) {
+ 		ret = -EINVAL;
+ 		goto done_proc;
+ 	}
+@@ -216,12 +215,13 @@ int sensor_hub_get_feature(struct hid_sensor_hub_device *hsdev, u32 report_id,
+ 				u32 field_index, s32 *value)
+ {
+ 	struct hid_report *report;
+-	struct sensor_hub_data *data =  hid_get_drvdata(hsdev->hdev);
++	struct sensor_hub_data *data = hid_get_drvdata(hsdev->hdev);
+ 	int ret = 0;
+ 
+ 	mutex_lock(&data->mutex);
+ 	report = sensor_hub_report(report_id, hsdev->hdev, HID_FEATURE_REPORT);
+-	if (!report || (field_index >=  report->maxfield)) {
++	if (!report || (field_index >= report->maxfield) ||
++	    report->field[field_index]->report_count < 1) {
+ 		ret = -EINVAL;
+ 		goto done_proc;
+ 	}
+@@ -241,7 +241,7 @@ int sensor_hub_input_attr_get_raw_value(struct hid_sensor_hub_device *hsdev,
+ 					u32 usage_id,
+ 					u32 attr_usage_id, u32 report_id)
+ {
+-	struct sensor_hub_data *data =  hid_get_drvdata(hsdev->hdev);
++	struct sensor_hub_data *data = hid_get_drvdata(hsdev->hdev);
+ 	unsigned long flags;
+ 	struct hid_report *report;
+ 	int ret_val = 0;
+@@ -302,7 +302,7 @@ int sensor_hub_input_get_attribute_info(struct hid_sensor_hub_device *hsdev,
+ 
+ 	/* Initialize with defaults */
+ 	info->usage_id = usage_id;
+-	info->attrib_id =  attr_usage_id;
++	info->attrib_id = attr_usage_id;
+ 	info->report_id = -1;
+ 	info->index = -1;
+ 	info->units = -1;
+@@ -333,7 +333,7 @@ int sensor_hub_input_get_attribute_info(struct hid_sensor_hub_device *hsdev,
+ 					if (field->usage[j].hid ==
+ 					attr_usage_id &&
+ 					field->usage[j].collection_index ==
+-					collection_index)  {
++					collection_index) {
+ 						sensor_hub_fill_attr_info(info,
+ 							i, report->id,
+ 							field->unit,
+@@ -357,7 +357,7 @@ EXPORT_SYMBOL_GPL(sensor_hub_input_get_attribute_info);
+ #ifdef CONFIG_PM
+ static int sensor_hub_suspend(struct hid_device *hdev, pm_message_t message)
+ {
+-	struct sensor_hub_data *pdata =  hid_get_drvdata(hdev);
++	struct sensor_hub_data *pdata = hid_get_drvdata(hdev);
+ 	struct hid_sensor_hub_callbacks_list *callback;
+ 
+ 	hid_dbg(hdev, " sensor_hub_suspend\n");
+@@ -374,7 +374,7 @@ static int sensor_hub_suspend(struct hid_device *hdev, pm_message_t message)
+ 
+ static int sensor_hub_resume(struct hid_device *hdev)
+ {
+-	struct sensor_hub_data *pdata =  hid_get_drvdata(hdev);
++	struct sensor_hub_data *pdata = hid_get_drvdata(hdev);
+ 	struct hid_sensor_hub_callbacks_list *callback;
+ 
+ 	hid_dbg(hdev, " sensor_hub_resume\n");
+@@ -394,6 +394,7 @@ static int sensor_hub_reset_resume(struct hid_device *hdev)
+ 	return 0;
+ }
+ #endif
++
+ /*
+  * Handle raw report as sent by device
+  */
+@@ -416,12 +417,11 @@ static int sensor_hub_raw_event(struct hid_device *hdev,
+ 		return 1;
+ 
+ 	ptr = raw_data;
+-	ptr++; /*Skip report id*/
++	ptr++; /* Skip report id */
+ 
+ 	spin_lock_irqsave(&pdata->lock, flags);
+ 
+ 	for (i = 0; i < report->maxfield; ++i) {
+-
+ 		hid_dbg(hdev, "%d collection_index:%x hid:%x sz:%x\n",
+ 				i, report->field[i]->usage->collection_index,
+ 				report->field[i]->usage->hid,
+@@ -431,11 +431,10 @@ static int sensor_hub_raw_event(struct hid_device *hdev,
+ 		if (pdata->pending.status && pdata->pending.attr_usage_id ==
+ 				report->field[i]->usage->hid) {
+ 			hid_dbg(hdev, "data was pending ...\n");
+-			pdata->pending.raw_data = kmalloc(sz, GFP_ATOMIC);
+-			if (pdata->pending.raw_data) {
+-				memcpy(pdata->pending.raw_data, ptr, sz);
+-				pdata->pending.raw_size  = sz;
+-			} else
++			pdata->pending.raw_data = kmemdup(ptr, sz, GFP_ATOMIC);
++			if (pdata->pending.raw_data)
++				pdata->pending.raw_size = sz;
++			else
+ 				pdata->pending.raw_size = 0;
+ 			complete(&pdata->pending.ready);
+ 		}
+@@ -478,16 +477,15 @@ static int sensor_hub_probe(struct hid_device *hdev,
+ 	struct hid_field *field;
+ 	int dev_cnt;
+ 
+-	sd = kzalloc(sizeof(struct sensor_hub_data), GFP_KERNEL);
++	sd = devm_kzalloc(&hdev->dev, sizeof(*sd), GFP_KERNEL);
+ 	if (!sd) {
+ 		hid_err(hdev, "cannot allocate Sensor data\n");
+ 		return -ENOMEM;
+ 	}
+-	sd->hsdev = kzalloc(sizeof(struct hid_sensor_hub_device), GFP_KERNEL);
++	sd->hsdev = devm_kzalloc(&hdev->dev, sizeof(*sd->hsdev), GFP_KERNEL);
+ 	if (!sd->hsdev) {
+ 		hid_err(hdev, "cannot allocate hid_sensor_hub_device\n");
+-		ret = -ENOMEM;
+-		goto err_free_hub;
++		return -ENOMEM;
+ 	}
+ 	hid_set_drvdata(hdev, sd);
+ 	sd->hsdev->hdev = hdev;
+@@ -499,14 +497,14 @@ static int sensor_hub_probe(struct hid_device *hdev,
+ 	ret = hid_parse(hdev);
+ 	if (ret) {
+ 		hid_err(hdev, "parse failed\n");
+-		goto err_free;
++		return ret;
+ 	}
+ 	INIT_LIST_HEAD(&hdev->inputs);
+ 
+ 	ret = hid_hw_start(hdev, 0);
+ 	if (ret) {
+ 		hid_err(hdev, "hw start failed\n");
+-		goto err_free;
++		return ret;
+ 	}
+ 	ret = hid_hw_open(hdev);
+ 	if (ret) {
+@@ -539,7 +537,7 @@ static int sensor_hub_probe(struct hid_device *hdev,
+ 					field->physical) {
+ 			name = kasprintf(GFP_KERNEL, "HID-SENSOR-%x",
+ 						field->physical);
+-			if (name  == NULL) {
++			if (name == NULL) {
+ 				hid_err(hdev, "Failed MFD device name\n");
+ 					ret = -ENOMEM;
+ 					goto err_free_names;
+@@ -571,10 +569,6 @@ static int sensor_hub_probe(struct hid_device *hdev,
+ 	hid_hw_close(hdev);
+ err_stop_hw:
+ 	hid_hw_stop(hdev);
+-err_free:
+-	kfree(sd->hsdev);
+-err_free_hub:
+-	kfree(sd);
+ 
+ 	return ret;
+ }
+@@ -598,8 +592,6 @@ static void sensor_hub_remove(struct hid_device *hdev)
+ 	kfree(data->hid_sensor_hub_client_devs);
+ 	hid_set_drvdata(hdev, NULL);
+ 	mutex_destroy(&data->mutex);
+-	kfree(data->hsdev);
+-	kfree(data);
+ }
+ 
+ static const struct hid_device_id sensor_hub_devices[] = {
+@@ -617,8 +609,8 @@ static struct hid_driver sensor_hub_driver = {
+ 	.raw_event = sensor_hub_raw_event,
+ #ifdef CONFIG_PM
+ 	.suspend = sensor_hub_suspend,
+-	.resume =  sensor_hub_resume,
+-	.reset_resume =  sensor_hub_reset_resume,
++	.resume = sensor_hub_resume,
++	.reset_resume = sensor_hub_reset_resume,
+ #endif
+ };
+ module_hid_driver(sensor_hub_driver);
+diff --git a/drivers/hid/hid-sony.c b/drivers/hid/hid-sony.c
+index 87fbe2924cfa..30dbb6b40bbf 100644
+--- a/drivers/hid/hid-sony.c
++++ b/drivers/hid/hid-sony.c
+@@ -624,7 +624,7 @@ static int sony_probe(struct hid_device *hdev, const struct hid_device_id *id)
+ 	struct sony_sc *sc;
+ 	unsigned int connect_mask = HID_CONNECT_DEFAULT;
+ 
+-	sc = kzalloc(sizeof(*sc), GFP_KERNEL);
++	sc = devm_kzalloc(&hdev->dev, sizeof(*sc), GFP_KERNEL);
+ 	if (sc == NULL) {
+ 		hid_err(hdev, "can't alloc sony descriptor\n");
+ 		return -ENOMEM;
+@@ -636,7 +636,7 @@ static int sony_probe(struct hid_device *hdev, const struct hid_device_id *id)
+ 	ret = hid_parse(hdev);
+ 	if (ret) {
+ 		hid_err(hdev, "parse failed\n");
+-		goto err_free;
++		return ret;
+ 	}
+ 
+ 	if (sc->quirks & VAIO_RDESC_CONSTANT)
+@@ -649,7 +649,7 @@ static int sony_probe(struct hid_device *hdev, const struct hid_device_id *id)
+ 	ret = hid_hw_start(hdev, connect_mask);
+ 	if (ret) {
+ 		hid_err(hdev, "hw start failed\n");
+-		goto err_free;
++		return ret;
+ 	}
+ 
+ 	if (sc->quirks & SIXAXIS_CONTROLLER_USB) {
+@@ -669,8 +669,6 @@ static int sony_probe(struct hid_device *hdev, const struct hid_device_id *id)
+ 	return 0;
+ err_stop:
+ 	hid_hw_stop(hdev);
+-err_free:
+-	kfree(sc);
+ 	return ret;
+ }
+ 
+@@ -682,7 +680,6 @@ static void sony_remove(struct hid_device *hdev)
+ 		buzz_remove(hdev);
+ 
+ 	hid_hw_stop(hdev);
+-	kfree(sc);
+ }
+ 
+ static const struct hid_device_id sony_devices[] = {
+diff --git a/drivers/hid/hid-speedlink.c b/drivers/hid/hid-speedlink.c
+index a2f587d004e1..7112f3e832ee 100644
+--- a/drivers/hid/hid-speedlink.c
++++ b/drivers/hid/hid-speedlink.c
+@@ -3,7 +3,7 @@
+  *  Fixes "jumpy" cursor and removes nonexistent keyboard LEDS from
+  *  the HID descriptor.
+  *
+- *  Copyright (c) 2011 Stefan Kriwanek <mail@stefankriwanek.de>
++ *  Copyright (c) 2011, 2013 Stefan Kriwanek <dev@stefankriwanek.de>
+  */
+ 
+ /*
+@@ -46,8 +46,13 @@ static int speedlink_event(struct hid_device *hdev, struct hid_field *field,
+ 		struct hid_usage *usage, __s32 value)
+ {
+ 	/* No other conditions due to usage_table. */
+-	/* Fix "jumpy" cursor (invalid events sent by device). */
+-	if (value == 256)
++
++	/* This fixes the "jumpy" cursor occuring due to invalid events sent
++	 * by the device. Some devices only send them with value==+256, others
++	 * don't. However, catching abs(value)>=256 is restrictive enough not
++	 * to interfere with devices that were bug-free (has been tested).
++	 */
++	if (abs(value) >= 256)
+ 		return 1;
+ 	/* Drop useless distance 0 events (on button clicks etc.) as well */
+ 	if (value == 0)
+diff --git a/drivers/hid/hid-wiimote-core.c b/drivers/hid/hid-wiimote-core.c
+index 0c06054cab8f..bd2bc4a1f378 100644
+--- a/drivers/hid/hid-wiimote-core.c
++++ b/drivers/hid/hid-wiimote-core.c
+@@ -212,10 +212,12 @@ static __u8 select_drm(struct wiimote_data *wdata)
+ 
+ 	if (ir == WIIPROTO_FLAG_IR_BASIC) {
+ 		if (wdata->state.flags & WIIPROTO_FLAG_ACCEL) {
+-			if (ext)
+-				return WIIPROTO_REQ_DRM_KAIE;
+-			else
+-				return WIIPROTO_REQ_DRM_KAI;
++			/* GEN10 and ealier devices bind IR formats to DRMs.
++			 * Hence, we cannot use DRM_KAI here as it might be
++			 * bound to IR_EXT. Use DRM_KAIE unconditionally so we
++			 * work with all devices and our parsers can use the
++			 * fixed formats, too. */
++			return WIIPROTO_REQ_DRM_KAIE;
+ 		} else {
+ 			return WIIPROTO_REQ_DRM_KIE;
+ 		}
+@@ -439,8 +441,7 @@ static __u8 wiimote_cmd_read_ext(struct wiimote_data *wdata, __u8 *rmem)
+ 	if (ret != 6)
+ 		return WIIMOTE_EXT_NONE;
+ 
+-	hid_dbg(wdata->hdev, "extension ID: %02x:%02x %02x:%02x %02x:%02x\n",
+-		rmem[0], rmem[1], rmem[2], rmem[3], rmem[4], rmem[5]);
++	hid_dbg(wdata->hdev, "extension ID: %6phC\n", rmem);
+ 
+ 	if (rmem[0] == 0xff && rmem[1] == 0xff && rmem[2] == 0xff &&
+ 	    rmem[3] == 0xff && rmem[4] == 0xff && rmem[5] == 0xff)
+@@ -454,6 +455,12 @@ static __u8 wiimote_cmd_read_ext(struct wiimote_data *wdata, __u8 *rmem)
+ 		return WIIMOTE_EXT_BALANCE_BOARD;
+ 	if (rmem[4] == 0x01 && rmem[5] == 0x20)
+ 		return WIIMOTE_EXT_PRO_CONTROLLER;
++	if (rmem[0] == 0x01 && rmem[1] == 0x00 &&
++	    rmem[4] == 0x01 && rmem[5] == 0x03)
++		return WIIMOTE_EXT_GUITAR_HERO_DRUMS;
++	if (rmem[0] == 0x00 && rmem[1] == 0x00 &&
++	    rmem[4] == 0x01 && rmem[5] == 0x03)
++		return WIIMOTE_EXT_GUITAR_HERO_GUITAR;
+ 
+ 	return WIIMOTE_EXT_UNKNOWN;
+ }
+@@ -487,6 +494,8 @@ static bool wiimote_cmd_map_mp(struct wiimote_data *wdata, __u8 exttype)
+ 	/* map MP with correct pass-through mode */
+ 	switch (exttype) {
+ 	case WIIMOTE_EXT_CLASSIC_CONTROLLER:
++	case WIIMOTE_EXT_GUITAR_HERO_DRUMS:
++	case WIIMOTE_EXT_GUITAR_HERO_GUITAR:
+ 		wmem = 0x07;
+ 		break;
+ 	case WIIMOTE_EXT_NUNCHUK:
+@@ -510,14 +519,12 @@ static bool wiimote_cmd_read_mp(struct wiimote_data *wdata, __u8 *rmem)
+ 	if (ret != 6)
+ 		return false;
+ 
+-	hid_dbg(wdata->hdev, "motion plus ID: %02x:%02x %02x:%02x %02x:%02x\n",
+-		rmem[0], rmem[1], rmem[2], rmem[3], rmem[4], rmem[5]);
++	hid_dbg(wdata->hdev, "motion plus ID: %6phC\n", rmem);
+ 
+ 	if (rmem[5] == 0x05)
+ 		return true;
+ 
+-	hid_info(wdata->hdev, "unknown motion plus ID: %02x:%02x %02x:%02x %02x:%02x\n",
+-		 rmem[0], rmem[1], rmem[2], rmem[3], rmem[4], rmem[5]);
++	hid_info(wdata->hdev, "unknown motion plus ID: %6phC\n", rmem);
+ 
+ 	return false;
+ }
+@@ -533,8 +540,7 @@ static __u8 wiimote_cmd_read_mp_mapped(struct wiimote_data *wdata)
+ 	if (ret != 6)
+ 		return WIIMOTE_MP_NONE;
+ 
+-	hid_dbg(wdata->hdev, "mapped motion plus ID: %02x:%02x %02x:%02x %02x:%02x\n",
+-		rmem[0], rmem[1], rmem[2], rmem[3], rmem[4], rmem[5]);
++	hid_dbg(wdata->hdev, "mapped motion plus ID: %6phC\n", rmem);
+ 
+ 	if (rmem[0] == 0xff && rmem[1] == 0xff && rmem[2] == 0xff &&
+ 	    rmem[3] == 0xff && rmem[4] == 0xff && rmem[5] == 0xff)
+@@ -1077,6 +1083,8 @@ static const char *wiimote_exttype_names[WIIMOTE_EXT_NUM] = {
+ 	[WIIMOTE_EXT_CLASSIC_CONTROLLER] = "Nintendo Wii Classic Controller",
+ 	[WIIMOTE_EXT_BALANCE_BOARD] = "Nintendo Wii Balance Board",
+ 	[WIIMOTE_EXT_PRO_CONTROLLER] = "Nintendo Wii U Pro Controller",
++	[WIIMOTE_EXT_GUITAR_HERO_DRUMS] = "Nintendo Wii Guitar Hero Drums",
++	[WIIMOTE_EXT_GUITAR_HERO_GUITAR] = "Nintendo Wii Guitar Hero Guitar",
+ };
+ 
+ /*
+@@ -1126,9 +1134,8 @@ static void wiimote_init_hotplug(struct wiimote_data *wdata)
+ 		wiimote_ext_unload(wdata);
+ 
+ 		if (exttype == WIIMOTE_EXT_UNKNOWN) {
+-			hid_info(wdata->hdev, "cannot detect extension; %02x:%02x %02x:%02x %02x:%02x\n",
+-				 extdata[0], extdata[1], extdata[2],
+-				 extdata[3], extdata[4], extdata[5]);
++			hid_info(wdata->hdev, "cannot detect extension; %6phC\n",
++				 extdata);
+ 		} else if (exttype == WIIMOTE_EXT_NONE) {
+ 			spin_lock_irq(&wdata->state.lock);
+ 			wdata->state.exttype = WIIMOTE_EXT_NONE;
+@@ -1663,6 +1670,10 @@ static ssize_t wiimote_ext_show(struct device *dev,
+ 		return sprintf(buf, "balanceboard\n");
+ 	case WIIMOTE_EXT_PRO_CONTROLLER:
+ 		return sprintf(buf, "procontroller\n");
++	case WIIMOTE_EXT_GUITAR_HERO_DRUMS:
++		return sprintf(buf, "drums\n");
++	case WIIMOTE_EXT_GUITAR_HERO_GUITAR:
++		return sprintf(buf, "guitar\n");
+ 	case WIIMOTE_EXT_UNKNOWN:
+ 		/* fallthrough */
+ 	default:
+diff --git a/drivers/hid/hid-wiimote-modules.c b/drivers/hid/hid-wiimote-modules.c
+index 2e7d644dba18..7e124c351e67 100644
+--- a/drivers/hid/hid-wiimote-modules.c
++++ b/drivers/hid/hid-wiimote-modules.c
+@@ -1833,6 +1833,396 @@ static const struct wiimod_ops wiimod_pro = {
+ 	.in_ext = wiimod_pro_in_ext,
+ };
+ 
++/*
++ * Drums
++ * Guitar-Hero, Rock-Band and other games came bundled with drums which can
++ * be plugged as extension to a Wiimote. Drum-reports are still not entirely
++ * figured out, but the most important information is known.
++ * We create a separate device for drums and report all information via this
++ * input device.
++ */
++
++static inline void wiimod_drums_report_pressure(struct wiimote_data *wdata,
++						__u8 none, __u8 which,
++						__u8 pressure, __u8 onoff,
++						__u8 *store, __u16 code,
++						__u8 which_code)
++{
++	static const __u8 default_pressure = 3;
++
++	if (!none && which == which_code) {
++		*store = pressure;
++		input_report_abs(wdata->extension.input, code, *store);
++	} else if (onoff != !!*store) {
++		*store = onoff ? default_pressure : 0;
++		input_report_abs(wdata->extension.input, code, *store);
++	}
++}
++
++static void wiimod_drums_in_ext(struct wiimote_data *wdata, const __u8 *ext)
++{
++	__u8 pressure, which, none, hhp, sx, sy;
++	__u8 o, r, y, g, b, bass, bm, bp;
++
++	/*   Byte |  8  |  7  |  6  |  5  |  4  |  3  |  2  |  1  |
++	 *   -----+-----+-----+-----+-----+-----+-----+-----+-----+
++	 *    1   |  0  |  0  |              SX <5:0>             |
++	 *    2   |  0  |  0  |              SY <5:0>             |
++	 *   -----+-----+-----+-----------------------------+-----+
++	 *    3   | HPP | NON |         WHICH <5:1>         |  ?  |
++	 *   -----+-----+-----+-----+-----+-----+-----+-----+-----+
++	 *    4   |   SOFT <7:5>    |  0  |  1  |  1  |  0  |  ?  |
++	 *   -----+-----+-----+-----+-----+-----+-----+-----+-----+
++	 *    5   |  ?  |  1  |  1  | B-  |  1  | B+  |  1  |  ?  |
++	 *   -----+-----+-----+-----+-----+-----+-----+-----+-----+
++	 *    6   |  O  |  R  |  Y  |  G  |  B  | BSS |  1  |  1  |
++	 *   -----+-----+-----+-----+-----+-----+-----+-----+-----+
++	 * All buttons are 0 if pressed
++	 *
++	 * With Motion+ enabled, the following bits will get invalid:
++	 *   Byte |  8  |  7  |  6  |  5  |  4  |  3  |  2  |  1  |
++	 *   -----+-----+-----+-----+-----+-----+-----+-----+-----+
++	 *    1   |  0  |  0  |              SX <5:1>       |XXXXX|
++	 *    2   |  0  |  0  |              SY <5:1>       |XXXXX|
++	 *   -----+-----+-----+-----------------------------+-----+
++	 *    3   | HPP | NON |         WHICH <5:1>         |  ?  |
++	 *   -----+-----+-----+-----+-----+-----+-----+-----+-----+
++	 *    4   |   SOFT <7:5>    |  0  |  1  |  1  |  0  |  ?  |
++	 *   -----+-----+-----+-----+-----+-----+-----+-----+-----+
++	 *    5   |  ?  |  1  |  1  | B-  |  1  | B+  |  1  |XXXXX|
++	 *   -----+-----+-----+-----+-----+-----+-----+-----+-----+
++	 *    6   |  O  |  R  |  Y  |  G  |  B  | BSS |XXXXX|XXXXX|
++	 *   -----+-----+-----+-----+-----+-----+-----+-----+-----+
++	 */
++
++	pressure = 7 - (ext[3] >> 5);
++	which = (ext[2] >> 1) & 0x1f;
++	none = !!(ext[2] & 0x40);
++	hhp = !(ext[2] & 0x80);
++	sx = ext[0] & 0x3f;
++	sy = ext[1] & 0x3f;
++	o = !(ext[5] & 0x80);
++	r = !(ext[5] & 0x40);
++	y = !(ext[5] & 0x20);
++	g = !(ext[5] & 0x10);
++	b = !(ext[5] & 0x08);
++	bass = !(ext[5] & 0x04);
++	bm = !(ext[4] & 0x10);
++	bp = !(ext[4] & 0x04);
++
++	wiimod_drums_report_pressure(wdata, none, which, pressure,
++				     o, &wdata->state.pressure_drums[0],
++				     ABS_CYMBAL_RIGHT, 0x0e);
++	wiimod_drums_report_pressure(wdata, none, which, pressure,
++				     r, &wdata->state.pressure_drums[1],
++				     ABS_TOM_LEFT, 0x19);
++	wiimod_drums_report_pressure(wdata, none, which, pressure,
++				     y, &wdata->state.pressure_drums[2],
++				     ABS_CYMBAL_LEFT, 0x11);
++	wiimod_drums_report_pressure(wdata, none, which, pressure,
++				     g, &wdata->state.pressure_drums[3],
++				     ABS_TOM_FAR_RIGHT, 0x12);
++	wiimod_drums_report_pressure(wdata, none, which, pressure,
++				     b, &wdata->state.pressure_drums[4],
++				     ABS_TOM_RIGHT, 0x0f);
++
++	/* Bass shares pressure with hi-hat (set via hhp) */
++	wiimod_drums_report_pressure(wdata, none, hhp ? 0xff : which, pressure,
++				     bass, &wdata->state.pressure_drums[5],
++				     ABS_BASS, 0x1b);
++	/* Hi-hat has no on/off values, just pressure. Force to off/0. */
++	wiimod_drums_report_pressure(wdata, none, hhp ? which : 0xff, pressure,
++				     0, &wdata->state.pressure_drums[6],
++				     ABS_HI_HAT, 0x0e);
++
++	input_report_abs(wdata->extension.input, ABS_X, sx - 0x20);
++	input_report_abs(wdata->extension.input, ABS_Y, sy - 0x20);
++
++	input_report_key(wdata->extension.input, BTN_START, bp);
++	input_report_key(wdata->extension.input, BTN_SELECT, bm);
++
++	input_sync(wdata->extension.input);
++}
++
++static int wiimod_drums_open(struct input_dev *dev)
++{
++	struct wiimote_data *wdata = input_get_drvdata(dev);
++	unsigned long flags;
++
++	spin_lock_irqsave(&wdata->state.lock, flags);
++	wdata->state.flags |= WIIPROTO_FLAG_EXT_USED;
++	wiiproto_req_drm(wdata, WIIPROTO_REQ_NULL);
++	spin_unlock_irqrestore(&wdata->state.lock, flags);
++
++	return 0;
++}
++
++static void wiimod_drums_close(struct input_dev *dev)
++{
++	struct wiimote_data *wdata = input_get_drvdata(dev);
++	unsigned long flags;
++
++	spin_lock_irqsave(&wdata->state.lock, flags);
++	wdata->state.flags &= ~WIIPROTO_FLAG_EXT_USED;
++	wiiproto_req_drm(wdata, WIIPROTO_REQ_NULL);
++	spin_unlock_irqrestore(&wdata->state.lock, flags);
++}
++
++static int wiimod_drums_probe(const struct wiimod_ops *ops,
++			      struct wiimote_data *wdata)
++{
++	int ret;
++
++	wdata->extension.input = input_allocate_device();
++	if (!wdata->extension.input)
++		return -ENOMEM;
++
++	input_set_drvdata(wdata->extension.input, wdata);
++	wdata->extension.input->open = wiimod_drums_open;
++	wdata->extension.input->close = wiimod_drums_close;
++	wdata->extension.input->dev.parent = &wdata->hdev->dev;
++	wdata->extension.input->id.bustype = wdata->hdev->bus;
++	wdata->extension.input->id.vendor = wdata->hdev->vendor;
++	wdata->extension.input->id.product = wdata->hdev->product;
++	wdata->extension.input->id.version = wdata->hdev->version;
++	wdata->extension.input->name = WIIMOTE_NAME " Drums";
++
++	set_bit(EV_KEY, wdata->extension.input->evbit);
++	set_bit(BTN_START, wdata->extension.input->keybit);
++	set_bit(BTN_SELECT, wdata->extension.input->keybit);
++
++	set_bit(EV_ABS, wdata->extension.input->evbit);
++	set_bit(ABS_X, wdata->extension.input->absbit);
++	set_bit(ABS_Y, wdata->extension.input->absbit);
++	set_bit(ABS_TOM_LEFT, wdata->extension.input->absbit);
++	set_bit(ABS_TOM_RIGHT, wdata->extension.input->absbit);
++	set_bit(ABS_TOM_FAR_RIGHT, wdata->extension.input->absbit);
++	set_bit(ABS_CYMBAL_LEFT, wdata->extension.input->absbit);
++	set_bit(ABS_CYMBAL_RIGHT, wdata->extension.input->absbit);
++	set_bit(ABS_BASS, wdata->extension.input->absbit);
++	set_bit(ABS_HI_HAT, wdata->extension.input->absbit);
++	input_set_abs_params(wdata->extension.input,
++			     ABS_X, -32, 31, 1, 1);
++	input_set_abs_params(wdata->extension.input,
++			     ABS_Y, -32, 31, 1, 1);
++	input_set_abs_params(wdata->extension.input,
++			     ABS_TOM_LEFT, 0, 7, 0, 0);
++	input_set_abs_params(wdata->extension.input,
++			     ABS_TOM_RIGHT, 0, 7, 0, 0);
++	input_set_abs_params(wdata->extension.input,
++			     ABS_TOM_FAR_RIGHT, 0, 7, 0, 0);
++	input_set_abs_params(wdata->extension.input,
++			     ABS_CYMBAL_LEFT, 0, 7, 0, 0);
++	input_set_abs_params(wdata->extension.input,
++			     ABS_CYMBAL_RIGHT, 0, 7, 0, 0);
++	input_set_abs_params(wdata->extension.input,
++			     ABS_BASS, 0, 7, 0, 0);
++	input_set_abs_params(wdata->extension.input,
++			     ABS_HI_HAT, 0, 7, 0, 0);
++
++	ret = input_register_device(wdata->extension.input);
++	if (ret)
++		goto err_free;
++
++	return 0;
++
++err_free:
++	input_free_device(wdata->extension.input);
++	wdata->extension.input = NULL;
++	return ret;
++}
++
++static void wiimod_drums_remove(const struct wiimod_ops *ops,
++				struct wiimote_data *wdata)
++{
++	if (!wdata->extension.input)
++		return;
++
++	input_unregister_device(wdata->extension.input);
++	wdata->extension.input = NULL;
++}
++
++static const struct wiimod_ops wiimod_drums = {
++	.flags = 0,
++	.arg = 0,
++	.probe = wiimod_drums_probe,
++	.remove = wiimod_drums_remove,
++	.in_ext = wiimod_drums_in_ext,
++};
++
++/*
++ * Guitar
++ * Guitar-Hero, Rock-Band and other games came bundled with guitars which can
++ * be plugged as extension to a Wiimote.
++ * We create a separate device for guitars and report all information via this
++ * input device.
++ */
++
++static void wiimod_guitar_in_ext(struct wiimote_data *wdata, const __u8 *ext)
++{
++	__u8 sx, sy, tb, wb, bd, bm, bp, bo, br, bb, bg, by, bu;
++
++	/*   Byte |  8  |  7  |  6  |  5  |  4  |  3  |  2  |  1  |
++	 *   -----+-----+-----+-----+-----+-----+-----+-----+-----+
++	 *    1   |  0  |  0  |              SX <5:0>             |
++	 *    2   |  0  |  0  |              SY <5:0>             |
++	 *   -----+-----+-----+-----+-----------------------------+
++	 *    3   |  0  |  0  |  0  |      TB <4:0>               |
++	 *   -----+-----+-----+-----+-----------------------------+
++	 *    4   |  0  |  0  |  0  |      WB <4:0>               |
++	 *   -----+-----+-----+-----+-----+-----+-----+-----+-----+
++	 *    5   |  1  | BD  |  1  | B-  |  1  | B+  |  1  |  1  |
++	 *   -----+-----+-----+-----+-----+-----+-----+-----+-----+
++	 *    6   | BO  | BR  | BB  | BG  | BY  |  1  |  1  | BU  |
++	 *   -----+-----+-----+-----+-----+-----+-----+-----+-----+
++	 * All buttons are 0 if pressed
++	 *
++	 * With Motion+ enabled, the following bits will get invalid:
++	 *   Byte |  8  |  7  |  6  |  5  |  4  |  3  |  2  |  1  |
++	 *   -----+-----+-----+-----+-----+-----+-----+-----+-----+
++	 *    1   |  0  |  0  |              SX <5:1>       |XXXXX|
++	 *    2   |  0  |  0  |              SY <5:1>       |XXXXX|
++	 *   -----+-----+-----+-----+-----------------------+-----+
++	 *    3   |  0  |  0  |  0  |      TB <4:0>               |
++	 *   -----+-----+-----+-----+-----------------------------+
++	 *    4   |  0  |  0  |  0  |      WB <4:0>               |
++	 *   -----+-----+-----+-----+-----+-----+-----+-----+-----+
++	 *    5   |  1  | BD  |  1  | B-  |  1  | B+  |  1  |XXXXX|
++	 *   -----+-----+-----+-----+-----+-----+-----+-----+-----+
++	 *    6   | BO  | BR  | BB  | BG  | BY  |  1  |XXXXX|XXXXX|
++	 *   -----+-----+-----+-----+-----+-----+-----+-----+-----+
++	 */
++
++	sx = ext[0] & 0x3f;
++	sy = ext[1] & 0x3f;
++	tb = ext[2] & 0x1f;
++	wb = ext[3] & 0x1f;
++	bd = !(ext[4] & 0x40);
++	bm = !(ext[4] & 0x10);
++	bp = !(ext[4] & 0x04);
++	bo = !(ext[5] & 0x80);
++	br = !(ext[5] & 0x40);
++	bb = !(ext[5] & 0x20);
++	bg = !(ext[5] & 0x10);
++	by = !(ext[5] & 0x08);
++	bu = !(ext[5] & 0x01);
++
++	input_report_abs(wdata->extension.input, ABS_X, sx - 0x20);
++	input_report_abs(wdata->extension.input, ABS_Y, sy - 0x20);
++	input_report_abs(wdata->extension.input, ABS_FRET_BOARD, tb);
++	input_report_abs(wdata->extension.input, ABS_WHAMMY_BAR, wb - 0x10);
++
++	input_report_key(wdata->extension.input, BTN_MODE, bm);
++	input_report_key(wdata->extension.input, BTN_START, bp);
++	input_report_key(wdata->extension.input, BTN_STRUM_BAR_UP, bu);
++	input_report_key(wdata->extension.input, BTN_STRUM_BAR_DOWN, bd);
++	input_report_key(wdata->extension.input, BTN_FRET_FAR_UP, bg);
++	input_report_key(wdata->extension.input, BTN_FRET_UP, br);
++	input_report_key(wdata->extension.input, BTN_FRET_MID, by);
++	input_report_key(wdata->extension.input, BTN_FRET_LOW, bb);
++	input_report_key(wdata->extension.input, BTN_FRET_FAR_LOW, bo);
++
++	input_sync(wdata->extension.input);
++}
++
++static int wiimod_guitar_open(struct input_dev *dev)
++{
++	struct wiimote_data *wdata = input_get_drvdata(dev);
++	unsigned long flags;
++
++	spin_lock_irqsave(&wdata->state.lock, flags);
++	wdata->state.flags |= WIIPROTO_FLAG_EXT_USED;
++	wiiproto_req_drm(wdata, WIIPROTO_REQ_NULL);
++	spin_unlock_irqrestore(&wdata->state.lock, flags);
++
++	return 0;
++}
++
++static void wiimod_guitar_close(struct input_dev *dev)
++{
++	struct wiimote_data *wdata = input_get_drvdata(dev);
++	unsigned long flags;
++
++	spin_lock_irqsave(&wdata->state.lock, flags);
++	wdata->state.flags &= ~WIIPROTO_FLAG_EXT_USED;
++	wiiproto_req_drm(wdata, WIIPROTO_REQ_NULL);
++	spin_unlock_irqrestore(&wdata->state.lock, flags);
++}
++
++static int wiimod_guitar_probe(const struct wiimod_ops *ops,
++			       struct wiimote_data *wdata)
++{
++	int ret;
++
++	wdata->extension.input = input_allocate_device();
++	if (!wdata->extension.input)
++		return -ENOMEM;
++
++	input_set_drvdata(wdata->extension.input, wdata);
++	wdata->extension.input->open = wiimod_guitar_open;
++	wdata->extension.input->close = wiimod_guitar_close;
++	wdata->extension.input->dev.parent = &wdata->hdev->dev;
++	wdata->extension.input->id.bustype = wdata->hdev->bus;
++	wdata->extension.input->id.vendor = wdata->hdev->vendor;
++	wdata->extension.input->id.product = wdata->hdev->product;
++	wdata->extension.input->id.version = wdata->hdev->version;
++	wdata->extension.input->name = WIIMOTE_NAME " Guitar";
++
++	set_bit(EV_KEY, wdata->extension.input->evbit);
++	set_bit(BTN_MODE, wdata->extension.input->keybit);
++	set_bit(BTN_START, wdata->extension.input->keybit);
++	set_bit(BTN_FRET_FAR_UP, wdata->extension.input->keybit);
++	set_bit(BTN_FRET_UP, wdata->extension.input->keybit);
++	set_bit(BTN_FRET_MID, wdata->extension.input->keybit);
++	set_bit(BTN_FRET_LOW, wdata->extension.input->keybit);
++	set_bit(BTN_FRET_FAR_LOW, wdata->extension.input->keybit);
++	set_bit(BTN_STRUM_BAR_UP, wdata->extension.input->keybit);
++	set_bit(BTN_STRUM_BAR_DOWN, wdata->extension.input->keybit);
++
++	set_bit(EV_ABS, wdata->extension.input->evbit);
++	set_bit(ABS_X, wdata->extension.input->absbit);
++	set_bit(ABS_Y, wdata->extension.input->absbit);
++	set_bit(ABS_FRET_BOARD, wdata->extension.input->absbit);
++	set_bit(ABS_WHAMMY_BAR, wdata->extension.input->absbit);
++	input_set_abs_params(wdata->extension.input,
++			     ABS_X, -32, 31, 1, 1);
++	input_set_abs_params(wdata->extension.input,
++			     ABS_Y, -32, 31, 1, 1);
++	input_set_abs_params(wdata->extension.input,
++			     ABS_FRET_BOARD, 0, 0x1f, 1, 1);
++	input_set_abs_params(wdata->extension.input,
++			     ABS_WHAMMY_BAR, 0, 0x0f, 1, 1);
++
++	ret = input_register_device(wdata->extension.input);
++	if (ret)
++		goto err_free;
++
++	return 0;
++
++err_free:
++	input_free_device(wdata->extension.input);
++	wdata->extension.input = NULL;
++	return ret;
++}
++
++static void wiimod_guitar_remove(const struct wiimod_ops *ops,
++				 struct wiimote_data *wdata)
++{
++	if (!wdata->extension.input)
++		return;
++
++	input_unregister_device(wdata->extension.input);
++	wdata->extension.input = NULL;
++}
++
++static const struct wiimod_ops wiimod_guitar = {
++	.flags = 0,
++	.arg = 0,
++	.probe = wiimod_guitar_probe,
++	.remove = wiimod_guitar_remove,
++	.in_ext = wiimod_guitar_in_ext,
++};
++
+ /*
+  * Builtin Motion Plus
+  * This module simply sets the WIIPROTO_FLAG_BUILTIN_MP protocol flag which
+@@ -2083,4 +2473,6 @@ const struct wiimod_ops *wiimod_ext_table[WIIMOTE_EXT_NUM] = {
+ 	[WIIMOTE_EXT_CLASSIC_CONTROLLER] = &wiimod_classic,
+ 	[WIIMOTE_EXT_BALANCE_BOARD] = &wiimod_bboard,
+ 	[WIIMOTE_EXT_PRO_CONTROLLER] = &wiimod_pro,
++	[WIIMOTE_EXT_GUITAR_HERO_DRUMS] = &wiimod_drums,
++	[WIIMOTE_EXT_GUITAR_HERO_GUITAR] = &wiimod_guitar,
+ };
+diff --git a/drivers/hid/hid-wiimote.h b/drivers/hid/hid-wiimote.h
+index f1474f372c0b..379cdfb6bd25 100644
+--- a/drivers/hid/hid-wiimote.h
++++ b/drivers/hid/hid-wiimote.h
+@@ -88,6 +88,8 @@ enum wiimote_exttype {
+ 	WIIMOTE_EXT_CLASSIC_CONTROLLER,
+ 	WIIMOTE_EXT_BALANCE_BOARD,
+ 	WIIMOTE_EXT_PRO_CONTROLLER,
++	WIIMOTE_EXT_GUITAR_HERO_DRUMS,
++	WIIMOTE_EXT_GUITAR_HERO_GUITAR,
+ 	WIIMOTE_EXT_NUM,
+ };
+ 
+@@ -135,6 +137,7 @@ struct wiimote_state {
+ 
+ 	/* calibration data */
+ 	__u16 calib_bboard[4][3];
++	__u8 pressure_drums[7];
+ };
+ 
+ struct wiimote_data {
+diff --git a/drivers/hid/hid-zydacron.c b/drivers/hid/hid-zydacron.c
+index e4cddeccd6b5..1a660bd97ab2 100644
+--- a/drivers/hid/hid-zydacron.c
++++ b/drivers/hid/hid-zydacron.c
+@@ -169,7 +169,7 @@ static int zc_probe(struct hid_device *hdev, const struct hid_device_id *id)
+ 	int ret;
+ 	struct zc_device *zc;
+ 
+-	zc = kzalloc(sizeof(*zc), GFP_KERNEL);
++	zc = devm_kzalloc(&hdev->dev, sizeof(*zc), GFP_KERNEL);
+ 	if (zc == NULL) {
+ 		hid_err(hdev, "can't alloc descriptor\n");
+ 		return -ENOMEM;
+@@ -180,28 +180,16 @@ static int zc_probe(struct hid_device *hdev, const struct hid_device_id *id)
+ 	ret = hid_parse(hdev);
+ 	if (ret) {
+ 		hid_err(hdev, "parse failed\n");
+-		goto err_free;
++		return ret;
+ 	}
+ 
+ 	ret = hid_hw_start(hdev, HID_CONNECT_DEFAULT);
+ 	if (ret) {
+ 		hid_err(hdev, "hw start failed\n");
+-		goto err_free;
++		return ret;
+ 	}
+ 
+ 	return 0;
+-err_free:
+-	kfree(zc);
+-
+-	return ret;
+-}
+-
+-static void zc_remove(struct hid_device *hdev)
+-{
+-	struct zc_device *zc = hid_get_drvdata(hdev);
+-
+-	hid_hw_stop(hdev);
+-	kfree(zc);
+ }
+ 
+ static const struct hid_device_id zc_devices[] = {
+@@ -217,7 +205,6 @@ static struct hid_driver zc_driver = {
+ 	.input_mapping = zc_input_mapping,
+ 	.raw_event = zc_raw_event,
+ 	.probe = zc_probe,
+-	.remove = zc_remove,
+ };
+ module_hid_driver(zc_driver);
+ 
+diff --git a/drivers/hid/hidraw.c b/drivers/hid/hidraw.c
+index 6f1feb2c2e97..8918dd12bb69 100644
+--- a/drivers/hid/hidraw.c
++++ b/drivers/hid/hidraw.c
+@@ -113,7 +113,7 @@ static ssize_t hidraw_send_report(struct file *file, const char __user *buffer,
+ 	__u8 *buf;
+ 	int ret = 0;
+ 
+-	if (!hidraw_table[minor]) {
++	if (!hidraw_table[minor] || !hidraw_table[minor]->exist) {
+ 		ret = -ENODEV;
+ 		goto out;
+ 	}
+@@ -253,6 +253,7 @@ static int hidraw_open(struct inode *inode, struct file *file)
+ 	unsigned int minor = iminor(inode);
+ 	struct hidraw *dev;
+ 	struct hidraw_list *list;
++	unsigned long flags;
+ 	int err = 0;
+ 
+ 	if (!(list = kzalloc(sizeof(struct hidraw_list), GFP_KERNEL))) {
+@@ -261,16 +262,11 @@ static int hidraw_open(struct inode *inode, struct file *file)
+ 	}
+ 
+ 	mutex_lock(&minors_lock);
+-	if (!hidraw_table[minor]) {
++	if (!hidraw_table[minor] || !hidraw_table[minor]->exist) {
+ 		err = -ENODEV;
+ 		goto out_unlock;
+ 	}
+ 
+-	list->hidraw = hidraw_table[minor];
+-	mutex_init(&list->read_mutex);
+-	list_add_tail(&list->node, &hidraw_table[minor]->list);
+-	file->private_data = list;
+-
+ 	dev = hidraw_table[minor];
+ 	if (!dev->open++) {
+ 		err = hid_hw_power(dev->hid, PM_HINT_FULLON);
+@@ -283,9 +279,16 @@ static int hidraw_open(struct inode *inode, struct file *file)
+ 		if (err < 0) {
+ 			hid_hw_power(dev->hid, PM_HINT_NORMAL);
+ 			dev->open--;
++			goto out_unlock;
+ 		}
+ 	}
+ 
++	list->hidraw = hidraw_table[minor];
++	mutex_init(&list->read_mutex);
++	spin_lock_irqsave(&hidraw_table[minor]->list_lock, flags);
++	list_add_tail(&list->node, &hidraw_table[minor]->list);
++	spin_unlock_irqrestore(&hidraw_table[minor]->list_lock, flags);
++	file->private_data = list;
+ out_unlock:
+ 	mutex_unlock(&minors_lock);
+ out:
+@@ -302,39 +305,41 @@ static int hidraw_fasync(int fd, struct file *file, int on)
+ 	return fasync_helper(fd, file, on, &list->fasync);
+ }
+ 
++static void drop_ref(struct hidraw *hidraw, int exists_bit)
++{
++	if (exists_bit) {
++		hid_hw_close(hidraw->hid);
++		hidraw->exist = 0;
++		if (hidraw->open)
++			wake_up_interruptible(&hidraw->wait);
++	} else {
++		--hidraw->open;
++	}
++
++	if (!hidraw->open && !hidraw->exist) {
++		device_destroy(hidraw_class, MKDEV(hidraw_major, hidraw->minor));
++		hidraw_table[hidraw->minor] = NULL;
++		kfree(hidraw);
++	}
++}
++
+ static int hidraw_release(struct inode * inode, struct file * file)
+ {
+ 	unsigned int minor = iminor(inode);
+-	struct hidraw *dev;
+ 	struct hidraw_list *list = file->private_data;
+-	int ret;
+-	int i;
++	unsigned long flags;
+ 
+ 	mutex_lock(&minors_lock);
+-	if (!hidraw_table[minor]) {
+-		ret = -ENODEV;
+-		goto unlock;
+-	}
+ 
++	spin_lock_irqsave(&hidraw_table[minor]->list_lock, flags);
+ 	list_del(&list->node);
+-	dev = hidraw_table[minor];
+-	if (!--dev->open) {
+-		if (list->hidraw->exist) {
+-			hid_hw_power(dev->hid, PM_HINT_NORMAL);
+-			hid_hw_close(dev->hid);
+-		} else {
+-			kfree(list->hidraw);
+-		}
+-	}
+-
+-	for (i = 0; i < HIDRAW_BUFFER_SIZE; ++i)
+-		kfree(list->buffer[i].value);
++	spin_unlock_irqrestore(&hidraw_table[minor]->list_lock, flags);
+ 	kfree(list);
+-	ret = 0;
+-unlock:
+-	mutex_unlock(&minors_lock);
+ 
+-	return ret;
++	drop_ref(hidraw_table[minor], 0);
++
++	mutex_unlock(&minors_lock);
++	return 0;
+ }
+ 
+ static long hidraw_ioctl(struct file *file, unsigned int cmd,
+@@ -457,7 +462,9 @@ int hidraw_report_event(struct hid_device *hid, u8 *data, int len)
+ 	struct hidraw *dev = hid->hidraw;
+ 	struct hidraw_list *list;
+ 	int ret = 0;
++	unsigned long flags;
+ 
++	spin_lock_irqsave(&dev->list_lock, flags);
+ 	list_for_each_entry(list, &dev->list, node) {
+ 		int new_head = (list->head + 1) & (HIDRAW_BUFFER_SIZE - 1);
+ 
+@@ -472,6 +479,7 @@ int hidraw_report_event(struct hid_device *hid, u8 *data, int len)
+ 		list->head = new_head;
+ 		kill_fasync(&list->fasync, SIGIO, POLL_IN);
+ 	}
++	spin_unlock_irqrestore(&dev->list_lock, flags);
+ 
+ 	wake_up_interruptible(&dev->wait);
+ 	return ret;
+@@ -519,6 +527,7 @@ int hidraw_connect(struct hid_device *hid)
+ 	}
+ 
+ 	init_waitqueue_head(&dev->wait);
++	spin_lock_init(&dev->list_lock);
+ 	INIT_LIST_HEAD(&dev->list);
+ 
+ 	dev->hid = hid;
+@@ -539,18 +548,9 @@ void hidraw_disconnect(struct hid_device *hid)
+ 	struct hidraw *hidraw = hid->hidraw;
+ 
+ 	mutex_lock(&minors_lock);
+-	hidraw->exist = 0;
+ 
+-	device_destroy(hidraw_class, MKDEV(hidraw_major, hidraw->minor));
++	drop_ref(hidraw, 1);
+ 
+-	hidraw_table[hidraw->minor] = NULL;
+-
+-	if (hidraw->open) {
+-		hid_hw_close(hid);
+-		wake_up_interruptible(&hidraw->wait);
+-	} else {
+-		kfree(hidraw);
+-	}
+ 	mutex_unlock(&minors_lock);
+ }
+ EXPORT_SYMBOL_GPL(hidraw_disconnect);
+diff --git a/drivers/hid/i2c-hid/i2c-hid.c b/drivers/hid/i2c-hid/i2c-hid.c
+index 879b0ed701a3..c1336193b04b 100644
+--- a/drivers/hid/i2c-hid/i2c-hid.c
++++ b/drivers/hid/i2c-hid/i2c-hid.c
+@@ -35,6 +35,7 @@
+ #include <linux/hid.h>
+ #include <linux/mutex.h>
+ #include <linux/acpi.h>
++#include <linux/of.h>
+ 
+ #include <linux/i2c/i2c-hid.h>
+ 
+@@ -756,29 +757,6 @@ static int i2c_hid_power(struct hid_device *hid, int lvl)
+ 	return ret;
+ }
+ 
+-static int i2c_hid_hidinput_input_event(struct input_dev *dev,
+-		unsigned int type, unsigned int code, int value)
+-{
+-	struct hid_device *hid = input_get_drvdata(dev);
+-	struct hid_field *field;
+-	int offset;
+-
+-	if (type == EV_FF)
+-		return input_ff_event(dev, type, code, value);
+-
+-	if (type != EV_LED)
+-		return -1;
+-
+-	offset = hidinput_find_field(hid, type, code, &field);
+-
+-	if (offset == -1) {
+-		hid_warn(dev, "event field not found\n");
+-		return -1;
+-	}
+-
+-	return hid_set_field(field, offset, value);
+-}
+-
+ static struct hid_ll_driver i2c_hid_ll_driver = {
+ 	.parse = i2c_hid_parse,
+ 	.start = i2c_hid_start,
+@@ -787,7 +765,6 @@ static struct hid_ll_driver i2c_hid_ll_driver = {
+ 	.close = i2c_hid_close,
+ 	.power = i2c_hid_power,
+ 	.request = i2c_hid_request,
+-	.hidinput_input_event = i2c_hid_hidinput_input_event,
+ };
+ 
+ static int i2c_hid_init_irq(struct i2c_client *client)
+@@ -824,8 +801,8 @@ static int i2c_hid_fetch_hid_descriptor(struct i2c_hid *ihid)
+ 	 * bytes 2-3 -> bcdVersion (has to be 1.00) */
+ 	ret = i2c_hid_command(client, &hid_descr_cmd, ihid->hdesc_buffer, 4);
+ 
+-	i2c_hid_dbg(ihid, "%s, ihid->hdesc_buffer: %*ph\n",
+-			__func__, 4, ihid->hdesc_buffer);
++	i2c_hid_dbg(ihid, "%s, ihid->hdesc_buffer: %4ph\n", __func__,
++			ihid->hdesc_buffer);
+ 
+ 	if (ret) {
+ 		dev_err(&client->dev,
+@@ -897,8 +874,9 @@ static int i2c_hid_acpi_pdata(struct i2c_client *client,
+ 	params[1].integer.value = 1;
+ 	params[2].type = ACPI_TYPE_INTEGER;
+ 	params[2].integer.value = 1; /* HID function */
+-	params[3].type = ACPI_TYPE_INTEGER;
+-	params[3].integer.value = 0;
++	params[3].type = ACPI_TYPE_PACKAGE;
++	params[3].package.count = 0;
++	params[3].package.elements = NULL;
+ 
+ 	if (ACPI_FAILURE(acpi_evaluate_object(handle, "_DSM", &input, &buf))) {
+ 		dev_err(&client->dev, "device _DSM execution failed\n");
+@@ -933,6 +911,42 @@ static inline int i2c_hid_acpi_pdata(struct i2c_client *client,
+ }
+ #endif
+ 
++#ifdef CONFIG_OF
++static int i2c_hid_of_probe(struct i2c_client *client,
++		struct i2c_hid_platform_data *pdata)
++{
++	struct device *dev = &client->dev;
++	u32 val;
++	int ret;
++
++	ret = of_property_read_u32(dev->of_node, "hid-descr-addr", &val);
++	if (ret) {
++		dev_err(&client->dev, "HID register address not provided\n");
++		return -ENODEV;
++	}
++	if (val >> 16) {
++		dev_err(&client->dev, "Bad HID register address: 0x%08x\n",
++			val);
++		return -EINVAL;
++	}
++	pdata->hid_descriptor_address = val;
++
++	return 0;
++}
++
++static const struct of_device_id i2c_hid_of_match[] = {
++	{ .compatible = "hid-over-i2c" },
++	{},
++};
++MODULE_DEVICE_TABLE(of, i2c_hid_of_match);
++#else
++static inline int i2c_hid_of_probe(struct i2c_client *client,
++		struct i2c_hid_platform_data *pdata)
++{
++	return -ENODEV;
++}
++#endif
++
+ static int i2c_hid_probe(struct i2c_client *client,
+ 			 const struct i2c_device_id *dev_id)
+ {
+@@ -954,7 +968,11 @@ static int i2c_hid_probe(struct i2c_client *client,
+ 	if (!ihid)
+ 		return -ENOMEM;
+ 
+-	if (!platform_data) {
++	if (client->dev.of_node) {
++		ret = i2c_hid_of_probe(client, &ihid->pdata);
++		if (ret)
++			goto err;
++	} else if (!platform_data) {
+ 		ret = i2c_hid_acpi_pdata(client, &ihid->pdata);
+ 		if (ret) {
+ 			dev_err(&client->dev,
+@@ -1095,6 +1113,7 @@ static struct i2c_driver i2c_hid_driver = {
+ 		.owner	= THIS_MODULE,
+ 		.pm	= &i2c_hid_pm,
+ 		.acpi_match_table = ACPI_PTR(i2c_hid_acpi_match),
++		.of_match_table = of_match_ptr(i2c_hid_of_match),
+ 	},
+ 
+ 	.probe		= i2c_hid_probe,
+diff --git a/drivers/hid/uhid.c b/drivers/hid/uhid.c
+index fc307e0422af..5bf2fb785844 100644
+--- a/drivers/hid/uhid.c
++++ b/drivers/hid/uhid.c
+@@ -116,30 +116,6 @@ static void uhid_hid_close(struct hid_device *hid)
+ 	uhid_queue_event(uhid, UHID_CLOSE);
+ }
+ 
+-static int uhid_hid_input(struct input_dev *input, unsigned int type,
+-			  unsigned int code, int value)
+-{
+-	struct hid_device *hid = input_get_drvdata(input);
+-	struct uhid_device *uhid = hid->driver_data;
+-	unsigned long flags;
+-	struct uhid_event *ev;
+-
+-	ev = kzalloc(sizeof(*ev), GFP_ATOMIC);
+-	if (!ev)
+-		return -ENOMEM;
+-
+-	ev->type = UHID_OUTPUT_EV;
+-	ev->u.output_ev.type = type;
+-	ev->u.output_ev.code = code;
+-	ev->u.output_ev.value = value;
+-
+-	spin_lock_irqsave(&uhid->qlock, flags);
+-	uhid_queue(uhid, ev);
+-	spin_unlock_irqrestore(&uhid->qlock, flags);
+-
+-	return 0;
+-}
+-
+ static int uhid_hid_parse(struct hid_device *hid)
+ {
+ 	struct uhid_device *uhid = hid->driver_data;
+@@ -273,7 +249,6 @@ static struct hid_ll_driver uhid_hid_driver = {
+ 	.stop = uhid_hid_stop,
+ 	.open = uhid_hid_open,
+ 	.close = uhid_hid_close,
+-	.hidinput_input_event = uhid_hid_input,
+ 	.parse = uhid_hid_parse,
+ };
+ 
+@@ -659,3 +634,4 @@ module_exit(uhid_exit);
+ MODULE_LICENSE("GPL");
+ MODULE_AUTHOR("David Herrmann <dh.herrmann@gmail.com>");
+ MODULE_DESCRIPTION("User-space I/O driver support for HID subsystem");
++MODULE_ALIAS("devname:" UHID_NAME);
+diff --git a/drivers/hid/usbhid/hid-core.c b/drivers/hid/usbhid/hid-core.c
+index 99418285222c..44df131d390a 100644
+--- a/drivers/hid/usbhid/hid-core.c
++++ b/drivers/hid/usbhid/hid-core.c
+@@ -535,7 +535,6 @@ static void __usbhid_submit_report(struct hid_device *hid, struct hid_report *re
+ {
+ 	int head;
+ 	struct usbhid_device *usbhid = hid->driver_data;
+-	int len = ((report->size - 1) >> 3) + 1 + (report->id > 0);
+ 
+ 	if ((hid->quirks & HID_QUIRK_NOGET) && dir == USB_DIR_IN)
+ 		return;
+@@ -546,7 +545,7 @@ static void __usbhid_submit_report(struct hid_device *hid, struct hid_report *re
+ 			return;
+ 		}
+ 
+-		usbhid->out[usbhid->outhead].raw_report = kmalloc(len, GFP_ATOMIC);
++		usbhid->out[usbhid->outhead].raw_report = hid_alloc_report_buf(report, GFP_ATOMIC);
+ 		if (!usbhid->out[usbhid->outhead].raw_report) {
+ 			hid_warn(hid, "output queueing failed\n");
+ 			return;
+@@ -595,7 +594,7 @@ static void __usbhid_submit_report(struct hid_device *hid, struct hid_report *re
+ 	}
+ 
+ 	if (dir == USB_DIR_OUT) {
+-		usbhid->ctrl[usbhid->ctrlhead].raw_report = kmalloc(len, GFP_ATOMIC);
++		usbhid->ctrl[usbhid->ctrlhead].raw_report = hid_alloc_report_buf(report, GFP_ATOMIC);
+ 		if (!usbhid->ctrl[usbhid->ctrlhead].raw_report) {
+ 			hid_warn(hid, "control queueing failed\n");
+ 			return;
+@@ -649,62 +648,6 @@ static void usbhid_submit_report(struct hid_device *hid, struct hid_report *repo
+ 	spin_unlock_irqrestore(&usbhid->lock, flags);
+ }
+ 
+-/* Workqueue routine to send requests to change LEDs */
+-static void hid_led(struct work_struct *work)
+-{
+-	struct usbhid_device *usbhid =
+-		container_of(work, struct usbhid_device, led_work);
+-	struct hid_device *hid = usbhid->hid;
+-	struct hid_field *field;
+-	unsigned long flags;
+-
+-	field = hidinput_get_led_field(hid);
+-	if (!field) {
+-		hid_warn(hid, "LED event field not found\n");
+-		return;
+-	}
+-
+-	spin_lock_irqsave(&usbhid->lock, flags);
+-	if (!test_bit(HID_DISCONNECTED, &usbhid->iofl)) {
+-		usbhid->ledcount = hidinput_count_leds(hid);
+-		hid_dbg(usbhid->hid, "New ledcount = %u\n", usbhid->ledcount);
+-		__usbhid_submit_report(hid, field->report, USB_DIR_OUT);
+-	}
+-	spin_unlock_irqrestore(&usbhid->lock, flags);
+-}
+-
+-static int usb_hidinput_input_event(struct input_dev *dev, unsigned int type, unsigned int code, int value)
+-{
+-	struct hid_device *hid = input_get_drvdata(dev);
+-	struct usbhid_device *usbhid = hid->driver_data;
+-	struct hid_field *field;
+-	unsigned long flags;
+-	int offset;
+-
+-	if (type == EV_FF)
+-		return input_ff_event(dev, type, code, value);
+-
+-	if (type != EV_LED)
+-		return -1;
+-
+-	if ((offset = hidinput_find_field(hid, type, code, &field)) == -1) {
+-		hid_warn(dev, "event field not found\n");
+-		return -1;
+-	}
+-
+-	spin_lock_irqsave(&usbhid->lock, flags);
+-	hid_set_field(field, offset, value);
+-	spin_unlock_irqrestore(&usbhid->lock, flags);
+-
+-	/*
+-	 * Defer performing requested LED action.
+-	 * This is more likely gather all LED changes into a single URB.
+-	 */
+-	schedule_work(&usbhid->led_work);
+-
+-	return 0;
+-}
+-
+ static int usbhid_wait_io(struct hid_device *hid)
+ {
+ 	struct usbhid_device *usbhid = hid->driver_data;
+@@ -807,12 +750,17 @@ void usbhid_init_reports(struct hid_device *hid)
+ {
+ 	struct hid_report *report;
+ 	struct usbhid_device *usbhid = hid->driver_data;
++	struct hid_report_enum *report_enum;
+ 	int err, ret;
+ 
+-	list_for_each_entry(report, &hid->report_enum[HID_INPUT_REPORT].report_list, list)
+-		usbhid_submit_report(hid, report, USB_DIR_IN);
++	if (!(hid->quirks & HID_QUIRK_NO_INIT_INPUT_REPORTS)) {
++		report_enum = &hid->report_enum[HID_INPUT_REPORT];
++		list_for_each_entry(report, &report_enum->report_list, list)
++			usbhid_submit_report(hid, report, USB_DIR_IN);
++	}
+ 
+-	list_for_each_entry(report, &hid->report_enum[HID_FEATURE_REPORT].report_list, list)
++	report_enum = &hid->report_enum[HID_FEATURE_REPORT];
++	list_for_each_entry(report, &report_enum->report_list, list)
+ 		usbhid_submit_report(hid, report, USB_DIR_IN);
+ 
+ 	err = 0;
+@@ -857,7 +805,7 @@ static int hid_find_field_early(struct hid_device *hid, unsigned int page,
+ 	return -1;
+ }
+ 
+-void usbhid_set_leds(struct hid_device *hid)
++static void usbhid_set_leds(struct hid_device *hid)
+ {
+ 	struct hid_field *field;
+ 	int offset;
+@@ -867,7 +815,6 @@ void usbhid_set_leds(struct hid_device *hid)
+ 		usbhid_submit_report(hid, field->report, USB_DIR_OUT);
+ 	}
+ }
+-EXPORT_SYMBOL_GPL(usbhid_set_leds);
+ 
+ /*
+  * Traverse the supplied list of reports and find the longest
+@@ -1274,7 +1221,6 @@ static struct hid_ll_driver usb_hid_driver = {
+ 	.open = usbhid_open,
+ 	.close = usbhid_close,
+ 	.power = usbhid_power,
+-	.hidinput_input_event = usb_hidinput_input_event,
+ 	.request = usbhid_request,
+ 	.wait = usbhid_wait_io,
+ 	.idle = usbhid_idle,
+@@ -1368,8 +1314,6 @@ static int usbhid_probe(struct usb_interface *intf, const struct usb_device_id *
+ 	setup_timer(&usbhid->io_retry, hid_retry_timeout, (unsigned long) hid);
+ 	spin_lock_init(&usbhid->lock);
+ 
+-	INIT_WORK(&usbhid->led_work, hid_led);
+-
+ 	ret = hid_add_device(hid);
+ 	if (ret) {
+ 		if (ret != -ENODEV)
+@@ -1402,7 +1346,6 @@ static void hid_cancel_delayed_stuff(struct usbhid_device *usbhid)
+ {
+ 	del_timer_sync(&usbhid->io_retry);
+ 	cancel_work_sync(&usbhid->reset_work);
+-	cancel_work_sync(&usbhid->led_work);
+ }
+ 
+ static void hid_cease_io(struct usbhid_device *usbhid)
+@@ -1522,15 +1465,17 @@ static int hid_suspend(struct usb_interface *intf, pm_message_t message)
+ 	struct usbhid_device *usbhid = hid->driver_data;
+ 	int status = 0;
+ 	bool driver_suspended = false;
++	unsigned int ledcount;
+ 
+ 	if (PMSG_IS_AUTO(message)) {
++		ledcount = hidinput_count_leds(hid);
+ 		spin_lock_irq(&usbhid->lock);	/* Sync with error handler */
+ 		if (!test_bit(HID_RESET_PENDING, &usbhid->iofl)
+ 		    && !test_bit(HID_CLEAR_HALT, &usbhid->iofl)
+ 		    && !test_bit(HID_OUT_RUNNING, &usbhid->iofl)
+ 		    && !test_bit(HID_CTRL_RUNNING, &usbhid->iofl)
+ 		    && !test_bit(HID_KEYS_PRESSED, &usbhid->iofl)
+-		    && (!usbhid->ledcount || ignoreled))
++		    && (!ledcount || ignoreled))
+ 		{
+ 			set_bit(HID_SUSPENDED, &usbhid->iofl);
+ 			spin_unlock_irq(&usbhid->lock);
+diff --git a/drivers/hid/usbhid/hid-quirks.c b/drivers/hid/usbhid/hid-quirks.c
+index 19b8360f2330..07345521f421 100644
+--- a/drivers/hid/usbhid/hid-quirks.c
++++ b/drivers/hid/usbhid/hid-quirks.c
+@@ -109,6 +109,8 @@ static const struct hid_blacklist {
+ 	{ USB_VENDOR_ID_SIGMA_MICRO, USB_DEVICE_ID_SIGMA_MICRO_KEYBOARD, HID_QUIRK_NO_INIT_REPORTS },
+ 	{ USB_VENDOR_ID_KYE, USB_DEVICE_ID_KYE_MOUSEPEN_I608X, HID_QUIRK_MULTI_INPUT },
+ 	{ USB_VENDOR_ID_KYE, USB_DEVICE_ID_KYE_EASYPEN_M610X, HID_QUIRK_MULTI_INPUT },
++	{ USB_VENDOR_ID_NTRIG, USB_DEVICE_ID_NTRIG_DUOSENSE, HID_QUIRK_NO_INIT_REPORTS },
++
+ 	{ 0, 0 }
+ };
+ 
+diff --git a/drivers/hid/usbhid/usbhid.h b/drivers/hid/usbhid/usbhid.h
+index dbb6af699135..f633c24ce28b 100644
+--- a/drivers/hid/usbhid/usbhid.h
++++ b/drivers/hid/usbhid/usbhid.h
+@@ -92,9 +92,6 @@ struct usbhid_device {
+ 	unsigned int retry_delay;                                       /* Delay length in ms */
+ 	struct work_struct reset_work;                                  /* Task context for resets */
+ 	wait_queue_head_t wait;						/* For sleeping */
+-	int ledcount;							/* counting the number of active leds */
+-
+-	struct work_struct led_work;					/* Task context for setting LEDs */
+ };
+ 
+ #define	hid_to_usb_dev(hid_dev) \
+diff --git a/drivers/input/mouse/bcm5974.c b/drivers/input/mouse/bcm5974.c
+index 4ef4d5e198ae..a73f9618b0ad 100644
+--- a/drivers/input/mouse/bcm5974.c
++++ b/drivers/input/mouse/bcm5974.c
+@@ -89,9 +89,9 @@
+ #define USB_DEVICE_ID_APPLE_WELLSPRING7A_ISO	0x025a
+ #define USB_DEVICE_ID_APPLE_WELLSPRING7A_JIS	0x025b
+ /* MacbookAir6,2 (unibody, June 2013) */
+-#define USB_DEVICE_ID_APPLE_WELLSPRING8_ANSI	0x0291
+-#define USB_DEVICE_ID_APPLE_WELLSPRING8_ISO	0x0292
+-#define USB_DEVICE_ID_APPLE_WELLSPRING8_JIS	0x0293
++#define USB_DEVICE_ID_APPLE_WELLSPRING8_ANSI	0x0290
++#define USB_DEVICE_ID_APPLE_WELLSPRING8_ISO	0x0291
++#define USB_DEVICE_ID_APPLE_WELLSPRING8_JIS	0x0292
+ 
+ #define BCM5974_DEVICE(prod) {					\
+ 	.match_flags = (USB_DEVICE_ID_MATCH_DEVICE |		\
+diff --git a/include/linux/hid-sensor-hub.h b/include/linux/hid-sensor-hub.h
+index ecefb7311dd6..32ba45158d39 100644
+--- a/include/linux/hid-sensor-hub.h
++++ b/include/linux/hid-sensor-hub.h
+@@ -172,7 +172,7 @@ struct hid_sensor_common {
+ 	struct hid_sensor_hub_attribute_info sensitivity;
+ };
+ 
+-/*Convert from hid unit expo to regular exponent*/
++/* Convert from hid unit expo to regular exponent */
+ static inline int hid_sensor_convert_exponent(int unit_expo)
+ {
+ 	if (unit_expo < 0x08)
+diff --git a/include/linux/hid-sensor-ids.h b/include/linux/hid-sensor-ids.h
+index 6f24446e7669..4f945d3ed49f 100644
+--- a/include/linux/hid-sensor-ids.h
++++ b/include/linux/hid-sensor-ids.h
+@@ -37,7 +37,7 @@
+ #define HID_USAGE_SENSOR_ANGL_VELOCITY_Y_AXIS			0x200458
+ #define HID_USAGE_SENSOR_ANGL_VELOCITY_Z_AXIS			0x200459
+ 
+-/*ORIENTATION: Compass 3D: (200083) */
++/* ORIENTATION: Compass 3D: (200083) */
+ #define HID_USAGE_SENSOR_COMPASS_3D				0x200083
+ #define HID_USAGE_SENSOR_ORIENT_MAGN_HEADING			0x200471
+ #define HID_USAGE_SENSOR_ORIENT_MAGN_HEADING_X			0x200472
+diff --git a/include/linux/hid.h b/include/linux/hid.h
+index 0c48991b0402..ee1ffc5e19c9 100644
+--- a/include/linux/hid.h
++++ b/include/linux/hid.h
+@@ -252,6 +252,8 @@ struct hid_item {
+ #define HID_OUTPUT_REPORT	1
+ #define HID_FEATURE_REPORT	2
+ 
++#define HID_REPORT_TYPES	3
++
+ /*
+  * HID connect requests
+  */
+@@ -283,6 +285,7 @@ struct hid_item {
+ #define HID_QUIRK_MULTI_INPUT			0x00000040
+ #define HID_QUIRK_HIDINPUT_FORCE		0x00000080
+ #define HID_QUIRK_NO_EMPTY_INPUT		0x00000100
++#define HID_QUIRK_NO_INIT_INPUT_REPORTS		0x00000200
+ #define HID_QUIRK_SKIP_OUTPUT_REPORTS		0x00010000
+ #define HID_QUIRK_FULLSPEED_INTERVAL		0x10000000
+ #define HID_QUIRK_NO_INIT_REPORTS		0x20000000
+@@ -295,6 +298,7 @@ struct hid_item {
+ #define HID_GROUP_GENERIC			0x0001
+ #define HID_GROUP_MULTITOUCH			0x0002
+ #define HID_GROUP_SENSOR_HUB			0x0003
++#define HID_GROUP_MULTITOUCH_WIN_8		0x0004
+ 
+ /*
+  * This is the global environment of the parser. This information is
+@@ -393,14 +397,14 @@ struct hid_report {
+ 	struct hid_device *device;			/* associated device */
+ };
+ 
++#define HID_MAX_IDS 256
++
+ struct hid_report_enum {
+ 	unsigned numbered;
+ 	struct list_head report_list;
+-	struct hid_report *report_id_hash[256];
++	struct hid_report *report_id_hash[HID_MAX_IDS];
+ };
+ 
+-#define HID_REPORT_TYPES 3
+-
+ #define HID_MIN_BUFFER_SIZE	64		/* make sure there is at least a packet size of space */
+ #define HID_MAX_BUFFER_SIZE	4096		/* 4kb */
+ #define HID_CONTROL_FIFO_SIZE	256		/* to init devices with >100 reports */
+@@ -456,6 +460,7 @@ struct hid_device {							/* device report descriptor */
+ 	enum hid_type type;						/* device type (mouse, kbd, ...) */
+ 	unsigned country;						/* HID country */
+ 	struct hid_report_enum report_enum[HID_REPORT_TYPES];
++	struct work_struct led_work;					/* delayed LED worker */
+ 
+ 	struct semaphore driver_lock;					/* protects the current driver, except during input */
+ 	struct semaphore driver_input_lock;				/* protects the current driver */
+@@ -532,6 +537,8 @@ static inline void hid_set_drvdata(struct hid_device *hdev, void *data)
+ #define HID_GLOBAL_STACK_SIZE 4
+ #define HID_COLLECTION_STACK_SIZE 4
+ 
++#define HID_SCAN_FLAG_MT_WIN_8			0x00000001
++
+ struct hid_parser {
+ 	struct hid_global     global;
+ 	struct hid_global     global_stack[HID_GLOBAL_STACK_SIZE];
+@@ -540,6 +547,7 @@ struct hid_parser {
+ 	unsigned              collection_stack[HID_COLLECTION_STACK_SIZE];
+ 	unsigned              collection_stack_ptr;
+ 	struct hid_device    *device;
++	unsigned              scan_flags;
+ };
+ 
+ struct hid_class_descriptor {
+@@ -744,6 +752,7 @@ struct hid_field *hidinput_get_led_field(struct hid_device *hid);
+ unsigned int hidinput_count_leds(struct hid_device *hid);
+ __s32 hidinput_calc_abs_res(const struct hid_field *field, __u16 code);
+ void hid_output_report(struct hid_report *report, __u8 *data);
++u8 *hid_alloc_report_buf(struct hid_report *report, gfp_t flags);
+ struct hid_device *hid_allocate_device(void);
+ struct hid_report *hid_register_report(struct hid_device *device, unsigned type, unsigned id);
+ int hid_parse_report(struct hid_device *hid, __u8 *start, unsigned size);
+@@ -989,7 +998,6 @@ int hid_report_raw_event(struct hid_device *hid, int type, u8 *data, int size,
+ u32 usbhid_lookup_quirk(const u16 idVendor, const u16 idProduct);
+ int usbhid_quirks_init(char **quirks_param);
+ void usbhid_quirks_exit(void);
+-void usbhid_set_leds(struct hid_device *hid);
+ 
+ #ifdef CONFIG_HID_PID
+ int hid_pidff_init(struct hid_device *hid);
+diff --git a/include/linux/hidraw.h b/include/linux/hidraw.h
+index 2451662c728a..ddf52612eed8 100644
+--- a/include/linux/hidraw.h
++++ b/include/linux/hidraw.h
+@@ -23,6 +23,7 @@ struct hidraw {
+ 	wait_queue_head_t wait;
+ 	struct hid_device *hid;
+ 	struct device *dev;
++	spinlock_t list_lock;
+ 	struct list_head list;
+ };
+ 
+diff --git a/include/linux/i2c/i2c-hid.h b/include/linux/i2c/i2c-hid.h
+index 60e411d764d4..7aa901d92058 100644
+--- a/include/linux/i2c/i2c-hid.h
++++ b/include/linux/i2c/i2c-hid.h
+@@ -19,7 +19,8 @@
+  * @hid_descriptor_address: i2c register where the HID descriptor is stored.
+  *
+  * Note that it is the responsibility of the platform driver (or the acpi 5.0
+- * driver) to setup the irq related to the gpio in the struct i2c_board_info.
++ * driver, or the flattened device tree) to setup the irq related to the gpio in
++ * the struct i2c_board_info.
+  * The platform driver should also setup the gpio according to the device:
+  *
+  * A typical example is the following:
+diff --git a/include/linux/mod_devicetable.h b/include/linux/mod_devicetable.h
+index 45e921401b06..329aa307cb77 100644
+--- a/include/linux/mod_devicetable.h
++++ b/include/linux/mod_devicetable.h
+@@ -277,7 +277,7 @@ struct pcmcia_device_id {
+ #define INPUT_DEVICE_ID_KEY_MIN_INTERESTING	0x71
+ #define INPUT_DEVICE_ID_KEY_MAX		0x2ff
+ #define INPUT_DEVICE_ID_REL_MAX		0x0f
+-#define INPUT_DEVICE_ID_ABS_MAX		0x3f
++#define INPUT_DEVICE_ID_ABS_MAX		0x4f
+ #define INPUT_DEVICE_ID_MSC_MAX		0x07
+ #define INPUT_DEVICE_ID_LED_MAX		0x0f
+ #define INPUT_DEVICE_ID_SND_MAX		0x07
+diff --git a/include/uapi/linux/input.h b/include/uapi/linux/input.h
+index d584047b072b..76457eef172a 100644
+--- a/include/uapi/linux/input.h
++++ b/include/uapi/linux/input.h
+@@ -716,6 +716,14 @@ struct input_keymap_entry {
+ #define BTN_DPAD_LEFT		0x222
+ #define BTN_DPAD_RIGHT		0x223
+ 
++#define BTN_FRET_FAR_UP		0x224
++#define BTN_FRET_UP		0x225
++#define BTN_FRET_MID		0x226
++#define BTN_FRET_LOW		0x227
++#define BTN_FRET_FAR_LOW	0x228
++#define BTN_STRUM_BAR_UP	0x229
++#define BTN_STRUM_BAR_DOWN	0x22a
++
+ #define BTN_TRIGGER_HAPPY		0x2c0
+ #define BTN_TRIGGER_HAPPY1		0x2c0
+ #define BTN_TRIGGER_HAPPY2		0x2c1
+@@ -829,8 +837,21 @@ struct input_keymap_entry {
+ #define ABS_MT_TOOL_X		0x3c	/* Center X tool position */
+ #define ABS_MT_TOOL_Y		0x3d	/* Center Y tool position */
+ 
+-
+-#define ABS_MAX			0x3f
++/* Drums and guitars (mostly toys) */
++#define ABS_TOM_FAR_LEFT	0x40
++#define ABS_TOM_LEFT		0x41
++#define ABS_TOM_RIGHT		0x42
++#define ABS_TOM_FAR_RIGHT	0x43
++#define ABS_CYMBAL_FAR_LEFT	0x44
++#define ABS_CYMBAL_LEFT		0x45
++#define ABS_CYMBAL_RIGHT	0x46
++#define ABS_CYMBAL_FAR_RIGHT	0x47
++#define ABS_BASS		0x48
++#define ABS_HI_HAT		0x49
++#define ABS_FRET_BOARD		0x4a	/* Guitar fret board, vertical pos */
++#define ABS_WHAMMY_BAR		0x4b	/* Guitar whammy bar (or vibrato) */
++
++#define ABS_MAX			0x4f
+ #define ABS_CNT			(ABS_MAX+1)
+ 
+ /*
+diff --git a/include/uapi/linux/uhid.h b/include/uapi/linux/uhid.h
+index e9ed951e2b09..414b74be4da1 100644
+--- a/include/uapi/linux/uhid.h
++++ b/include/uapi/linux/uhid.h
+@@ -30,7 +30,7 @@ enum uhid_event_type {
+ 	UHID_OPEN,
+ 	UHID_CLOSE,
+ 	UHID_OUTPUT,
+-	UHID_OUTPUT_EV,
++	UHID_OUTPUT_EV,			/* obsolete! */
+ 	UHID_INPUT,
+ 	UHID_FEATURE,
+ 	UHID_FEATURE_ANSWER,
+@@ -69,6 +69,8 @@ struct uhid_output_req {
+ 	__u8 rtype;
+ } __attribute__((__packed__));
+ 
++/* Obsolete! Newer kernels will no longer send these events but instead convert
++ * it into raw output reports via UHID_OUTPUT. */
+ struct uhid_output_ev_req {
+ 	__u16 type;
+ 	__u16 code;
+diff --git a/net/bluetooth/hidp/core.c b/net/bluetooth/hidp/core.c
+index 13863de433a4..bdc35a7a7fee 100644
+--- a/net/bluetooth/hidp/core.c
++++ b/net/bluetooth/hidp/core.c
+@@ -225,17 +225,22 @@ static void hidp_input_report(struct hidp_session *session, struct sk_buff *skb)
+ 
+ static int hidp_send_report(struct hidp_session *session, struct hid_report *report)
+ {
+-	unsigned char buf[32], hdr;
+-	int rsize;
++	unsigned char hdr;
++	u8 *buf;
++	int rsize, ret;
+ 
+-	rsize = ((report->size - 1) >> 3) + 1 + (report->id > 0);
+-	if (rsize > sizeof(buf))
++	buf = hid_alloc_report_buf(report, GFP_ATOMIC);
++	if (!buf)
+ 		return -EIO;
+ 
+ 	hid_output_report(report, buf);
+ 	hdr = HIDP_TRANS_DATA | HIDP_DATA_RTYPE_OUPUT;
+ 
+-	return hidp_send_intr_message(session, hdr, buf, rsize);
++	rsize = ((report->size - 1) >> 3) + 1 + (report->id > 0);
++	ret = hidp_send_intr_message(session, hdr, buf, rsize);
++
++	kfree(buf);
++	return ret;
+ }
+ 
+ static int hidp_hidinput_event(struct input_dev *dev, unsigned int type,
+diff --git a/samples/uhid/uhid-example.c b/samples/uhid/uhid-example.c
+index 03ce3c059a5e..7d58a4b8d324 100644
+--- a/samples/uhid/uhid-example.c
++++ b/samples/uhid/uhid-example.c
+@@ -1,14 +1,15 @@
+ /*
+  * UHID Example
+  *
+- * Copyright (c) 2012 David Herrmann <dh.herrmann@googlemail.com>
++ * Copyright (c) 2012-2013 David Herrmann <dh.herrmann@gmail.com>
+  *
+  * The code may be used by anyone for any purpose,
+  * and can serve as a starting point for developing
+  * applications using uhid.
+  */
+ 
+-/* UHID Example
++/*
++ * UHID Example
+  * This example emulates a basic 3 buttons mouse with wheel over UHID. Run this
+  * program as root and then use the following keys to control the mouse:
+  *   q: Quit the application
+@@ -22,6 +23,11 @@
+  *   r: Move wheel up
+  *   f: Move wheel down
+  *
++ * Additionally to 3 button mouse, 3 keyboard LEDs are also supported (LED_NUML,
++ * LED_CAPSL and LED_SCROLLL). The device doesn't generate any related keyboard
++ * events, though. You need to manually write the EV_LED/LED_XY/1 activation
++ * input event to the evdev device to see it being sent to this device.
++ *
+  * If uhid is not available as /dev/uhid, then you can pass a different path as
+  * first argument.
+  * If <linux/uhid.h> is not installed in /usr, then compile this with:
+@@ -41,11 +47,12 @@
+ #include <unistd.h>
+ #include <linux/uhid.h>
+ 
+-/* HID Report Desciptor
+- * We emulate a basic 3 button mouse with wheel. This is the report-descriptor
+- * as the kernel will parse it:
++/*
++ * HID Report Desciptor
++ * We emulate a basic 3 button mouse with wheel and 3 keyboard LEDs. This is
++ * the report-descriptor as the kernel will parse it:
+  *
+- * INPUT[INPUT]
++ * INPUT(1)[INPUT]
+  *   Field(0)
+  *     Physical(GenericDesktop.Pointer)
+  *     Application(GenericDesktop.Mouse)
+@@ -72,6 +79,19 @@
+  *     Report Count(3)
+  *     Report Offset(8)
+  *     Flags( Variable Relative )
++ * OUTPUT(2)[OUTPUT]
++ *   Field(0)
++ *     Application(GenericDesktop.Keyboard)
++ *     Usage(3)
++ *       LED.NumLock
++ *       LED.CapsLock
++ *       LED.ScrollLock
++ *     Logical Minimum(0)
++ *     Logical Maximum(1)
++ *     Report Size(1)
++ *     Report Count(3)
++ *     Report Offset(0)
++ *     Flags( Variable Absolute )
+  *
+  * This is the mapping that we expect:
+  *   Button.0001 ---> Key.LeftBtn
+@@ -80,19 +100,59 @@
+  *   GenericDesktop.X ---> Relative.X
+  *   GenericDesktop.Y ---> Relative.Y
+  *   GenericDesktop.Wheel ---> Relative.Wheel
++ *   LED.NumLock ---> LED.NumLock
++ *   LED.CapsLock ---> LED.CapsLock
++ *   LED.ScrollLock ---> LED.ScrollLock
+  *
+  * This information can be verified by reading /sys/kernel/debug/hid/<dev>/rdesc
+  * This file should print the same information as showed above.
+  */
+ 
+ static unsigned char rdesc[] = {
+-	0x05, 0x01, 0x09, 0x02, 0xa1, 0x01, 0x09, 0x01,
+-	0xa1, 0x00, 0x05, 0x09, 0x19, 0x01, 0x29, 0x03,
+-	0x15, 0x00, 0x25, 0x01, 0x95, 0x03, 0x75, 0x01,
+-	0x81, 0x02, 0x95, 0x01, 0x75, 0x05, 0x81, 0x01,
+-	0x05, 0x01, 0x09, 0x30, 0x09, 0x31, 0x09, 0x38,
+-	0x15, 0x80, 0x25, 0x7f, 0x75, 0x08, 0x95, 0x03,
+-	0x81, 0x06, 0xc0, 0xc0,
++	0x05, 0x01,	/* USAGE_PAGE (Generic Desktop) */
++	0x09, 0x02,	/* USAGE (Mouse) */
++	0xa1, 0x01,	/* COLLECTION (Application) */
++	0x09, 0x01,		/* USAGE (Pointer) */
++	0xa1, 0x00,		/* COLLECTION (Physical) */
++	0x85, 0x01,			/* REPORT_ID (1) */
++	0x05, 0x09,			/* USAGE_PAGE (Button) */
++	0x19, 0x01,			/* USAGE_MINIMUM (Button 1) */
++	0x29, 0x03,			/* USAGE_MAXIMUM (Button 3) */
++	0x15, 0x00,			/* LOGICAL_MINIMUM (0) */
++	0x25, 0x01,			/* LOGICAL_MAXIMUM (1) */
++	0x95, 0x03,			/* REPORT_COUNT (3) */
++	0x75, 0x01,			/* REPORT_SIZE (1) */
++	0x81, 0x02,			/* INPUT (Data,Var,Abs) */
++	0x95, 0x01,			/* REPORT_COUNT (1) */
++	0x75, 0x05,			/* REPORT_SIZE (5) */
++	0x81, 0x01,			/* INPUT (Cnst,Var,Abs) */
++	0x05, 0x01,			/* USAGE_PAGE (Generic Desktop) */
++	0x09, 0x30,			/* USAGE (X) */
++	0x09, 0x31,			/* USAGE (Y) */
++	0x09, 0x38,			/* USAGE (WHEEL) */
++	0x15, 0x81,			/* LOGICAL_MINIMUM (-127) */
++	0x25, 0x7f,			/* LOGICAL_MAXIMUM (127) */
++	0x75, 0x08,			/* REPORT_SIZE (8) */
++	0x95, 0x03,			/* REPORT_COUNT (3) */
++	0x81, 0x06,			/* INPUT (Data,Var,Rel) */
++	0xc0,			/* END_COLLECTION */
++	0xc0,		/* END_COLLECTION */
++	0x05, 0x01,	/* USAGE_PAGE (Generic Desktop) */
++	0x09, 0x06,	/* USAGE (Keyboard) */
++	0xa1, 0x01,	/* COLLECTION (Application) */
++	0x85, 0x02,		/* REPORT_ID (2) */
++	0x05, 0x08,		/* USAGE_PAGE (Led) */
++	0x19, 0x01,		/* USAGE_MINIMUM (1) */
++	0x29, 0x03,		/* USAGE_MAXIMUM (3) */
++	0x15, 0x00,		/* LOGICAL_MINIMUM (0) */
++	0x25, 0x01,		/* LOGICAL_MAXIMUM (1) */
++	0x95, 0x03,		/* REPORT_COUNT (3) */
++	0x75, 0x01,		/* REPORT_SIZE (1) */
++	0x91, 0x02,		/* Output (Data,Var,Abs) */
++	0x95, 0x01,		/* REPORT_COUNT (1) */
++	0x75, 0x05,		/* REPORT_SIZE (5) */
++	0x91, 0x01,		/* Output (Cnst,Var,Abs) */
++	0xc0,		/* END_COLLECTION */
+ };
+ 
+ static int uhid_write(int fd, const struct uhid_event *ev)
+@@ -140,6 +200,27 @@ static void destroy(int fd)
+ 	uhid_write(fd, &ev);
+ }
+ 
++/* This parses raw output reports sent by the kernel to the device. A normal
++ * uhid program shouldn't do this but instead just forward the raw report.
++ * However, for ducomentational purposes, we try to detect LED events here and
++ * print debug messages for it. */
++static void handle_output(struct uhid_event *ev)
++{
++	/* LED messages are adverised via OUTPUT reports; ignore the rest */
++	if (ev->u.output.rtype != UHID_OUTPUT_REPORT)
++		return;
++	/* LED reports have length 2 bytes */
++	if (ev->u.output.size != 2)
++		return;
++	/* first byte is report-id which is 0x02 for LEDs in our rdesc */
++	if (ev->u.output.data[0] != 0x2)
++		return;
++
++	/* print flags payload */
++	fprintf(stderr, "LED output report received with flags %x\n",
++		ev->u.output.data[1]);
++}
++
+ static int event(int fd)
+ {
+ 	struct uhid_event ev;
+@@ -174,6 +255,7 @@ static int event(int fd)
+ 		break;
+ 	case UHID_OUTPUT:
+ 		fprintf(stderr, "UHID_OUTPUT from uhid-dev\n");
++		handle_output(&ev);
+ 		break;
+ 	case UHID_OUTPUT_EV:
+ 		fprintf(stderr, "UHID_OUTPUT_EV from uhid-dev\n");
+@@ -198,18 +280,19 @@ static int send_event(int fd)
+ 
+ 	memset(&ev, 0, sizeof(ev));
+ 	ev.type = UHID_INPUT;
+-	ev.u.input.size = 4;
++	ev.u.input.size = 5;
+ 
++	ev.u.input.data[0] = 0x1;
+ 	if (btn1_down)
+-		ev.u.input.data[0] |= 0x1;
++		ev.u.input.data[1] |= 0x1;
+ 	if (btn2_down)
+-		ev.u.input.data[0] |= 0x2;
++		ev.u.input.data[1] |= 0x2;
+ 	if (btn3_down)
+-		ev.u.input.data[0] |= 0x4;
++		ev.u.input.data[1] |= 0x4;
+ 
+-	ev.u.input.data[1] = abs_hor;
+-	ev.u.input.data[2] = abs_ver;
+-	ev.u.input.data[3] = wheel;
++	ev.u.input.data[2] = abs_hor;
++	ev.u.input.data[3] = abs_ver;
++	ev.u.input.data[4] = wheel;
+ 
+ 	return uhid_write(fd, &ev);
+ }

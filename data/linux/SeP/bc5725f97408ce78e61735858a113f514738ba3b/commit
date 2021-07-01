@@ -1,0 +1,15 @@
+commit bc5725f97408ce78e61735858a113f514738ba3b
+Merge: 2f9e10acfa12 c73f4c998e1f
+Author: Linus Torvalds <torvalds@linux-foundation.org>
+Commit: Linus Torvalds <torvalds@linux-foundation.org>
+
+    Merge tag 'for-linus' of git://git.kernel.org/pub/scm/virt/kvm/kvm
+    
+    Pull kvm fixes from Paolo Bonzini:
+     "x86 fixes for overflows and other nastiness"
+    
+    * tag 'for-linus' of git://git.kernel.org/pub/scm/virt/kvm/kvm:
+      KVM: x86: nVMX: fix x2APIC VTPR read intercept
+      KVM: x86: nVMX: close leak of L0's x2APIC MSRs (CVE-2019-3887)
+      KVM: SVM: prevent DBG_DECRYPT and DBG_ENCRYPT overflow
+      kvm: svm: fix potential get_num_contig_pages overflow

@@ -1,0 +1,23 @@
+diff --git a/arch/x86/kvm/vmx.c b/arch/x86/kvm/vmx.c
+index c1791759f1e6..7b1d71665bc2 100644
+--- a/arch/x86/kvm/vmx.c
++++ b/arch/x86/kvm/vmx.c
+@@ -893,8 +893,16 @@ static inline short vmcs_field_to_offset(unsigned long field)
+ {
+ 	BUILD_BUG_ON(ARRAY_SIZE(vmcs_field_to_offset_table) > SHRT_MAX);
+ 
+-	if (field >= ARRAY_SIZE(vmcs_field_to_offset_table) ||
+-	    vmcs_field_to_offset_table[field] == 0)
++	if (field >= ARRAY_SIZE(vmcs_field_to_offset_table))
++		return -ENOENT;
++
++	/*
++	 * FIXME: Mitigation for CVE-2017-5753.  To be replaced with a
++	 * generic mechanism.
++	 */
++	asm("lfence");
++
++	if (vmcs_field_to_offset_table[field] == 0)
+ 		return -ENOENT;
+ 
+ 	return vmcs_field_to_offset_table[field];

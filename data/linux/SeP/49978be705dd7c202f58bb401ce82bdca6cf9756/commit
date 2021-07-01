@@ -1,0 +1,14 @@
+commit 49978be705dd7c202f58bb401ce82bdca6cf9756
+Author: Kees Cook <keescook@chromium.org>
+Commit: Jonathan Corbet <corbet@lwn.net>
+
+    docs: Clarify details for reporting security bugs
+    
+    The kernel security team is regularly asked to provide CVE identifiers,
+    which we don't normally do. This updates the documentation to mention
+    this and adds some more details about coordination and patch handling
+    that come up regularly. Based on an earlier draft by Willy Tarreau.
+    
+    Signed-off-by: Kees Cook <keescook@chromium.org>
+    Acked-by: Willy Tarreau <w@1wt.eu>
+    Signed-off-by: Jonathan Corbet <corbet@lwn.net>

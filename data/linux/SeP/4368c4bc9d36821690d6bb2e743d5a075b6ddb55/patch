@@ -1,0 +1,529 @@
+diff --git a/Documentation/admin-guide/hw-vuln/spectre.rst b/Documentation/admin-guide/hw-vuln/spectre.rst
+index 25f3b2532198..e05e581af5cf 100644
+--- a/Documentation/admin-guide/hw-vuln/spectre.rst
++++ b/Documentation/admin-guide/hw-vuln/spectre.rst
+@@ -41,10 +41,11 @@ Related CVEs
+ 
+ The following CVE entries describe Spectre variants:
+ 
+-   =============   =======================  =================
++   =============   =======================  ==========================
+    CVE-2017-5753   Bounds check bypass      Spectre variant 1
+    CVE-2017-5715   Branch target injection  Spectre variant 2
+-   =============   =======================  =================
++   CVE-2019-1125   Spectre v1 swapgs        Spectre variant 1 (swapgs)
++   =============   =======================  ==========================
+ 
+ Problem
+ -------
+@@ -78,6 +79,13 @@ There are some extensions of Spectre variant 1 attacks for reading data
+ over the network, see :ref:`[12] <spec_ref12>`. However such attacks
+ are difficult, low bandwidth, fragile, and are considered low risk.
+ 
++Note that, despite "Bounds Check Bypass" name, Spectre variant 1 is not
++only about user-controlled array bounds checks.  It can affect any
++conditional checks.  The kernel entry code interrupt, exception, and NMI
++handlers all have conditional swapgs checks.  Those may be problematic
++in the context of Spectre v1, as kernel code can speculatively run with
++a user GS.
++
+ Spectre variant 2 (Branch Target Injection)
+ -------------------------------------------
+ 
+@@ -132,6 +140,9 @@ not cover all possible attack vectors.
+ 1. A user process attacking the kernel
+ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 
++Spectre variant 1
++~~~~~~~~~~~~~~~~~
++
+    The attacker passes a parameter to the kernel via a register or
+    via a known address in memory during a syscall. Such parameter may
+    be used later by the kernel as an index to an array or to derive
+@@ -144,7 +155,40 @@ not cover all possible attack vectors.
+    potentially be influenced for Spectre attacks, new "nospec" accessor
+    macros are used to prevent speculative loading of data.
+ 
+-   Spectre variant 2 attacker can :ref:`poison <poison_btb>` the branch
++Spectre variant 1 (swapgs)
++~~~~~~~~~~~~~~~~~~~~~~~~~~
++
++   An attacker can train the branch predictor to speculatively skip the
++   swapgs path for an interrupt or exception.  If they initialize
++   the GS register to a user-space value, if the swapgs is speculatively
++   skipped, subsequent GS-related percpu accesses in the speculation
++   window will be done with the attacker-controlled GS value.  This
++   could cause privileged memory to be accessed and leaked.
++
++   For example:
++
++   ::
++
++     if (coming from user space)
++         swapgs
++     mov %gs:<percpu_offset>, %reg
++     mov (%reg), %reg1
++
++   When coming from user space, the CPU can speculatively skip the
++   swapgs, and then do a speculative percpu load using the user GS
++   value.  So the user can speculatively force a read of any kernel
++   value.  If a gadget exists which uses the percpu value as an address
++   in another load/store, then the contents of the kernel value may
++   become visible via an L1 side channel attack.
++
++   A similar attack exists when coming from kernel space.  The CPU can
++   speculatively do the swapgs, causing the user GS to get used for the
++   rest of the speculative window.
++
++Spectre variant 2
++~~~~~~~~~~~~~~~~~
++
++   A spectre variant 2 attacker can :ref:`poison <poison_btb>` the branch
+    target buffer (BTB) before issuing syscall to launch an attack.
+    After entering the kernel, the kernel could use the poisoned branch
+    target buffer on indirect jump and jump to gadget code in speculative
+@@ -280,11 +324,18 @@ The sysfs file showing Spectre variant 1 mitigation status is:
+ 
+ The possible values in this file are:
+ 
+-  =======================================  =================================
+-  'Mitigation: __user pointer sanitation'  Protection in kernel on a case by
+-                                           case base with explicit pointer
+-                                           sanitation.
+-  =======================================  =================================
++  .. list-table::
++
++     * - 'Not affected'
++       - The processor is not vulnerable.
++     * - 'Vulnerable: __user pointer sanitization and usercopy barriers only; no swapgs barriers'
++       - The swapgs protections are disabled; otherwise it has
++         protection in the kernel on a case by case base with explicit
++         pointer sanitation and usercopy LFENCE barriers.
++     * - 'Mitigation: usercopy/swapgs barriers and __user pointer sanitization'
++       - Protection in the kernel on a case by case base with explicit
++         pointer sanitation, usercopy LFENCE barriers, and swapgs LFENCE
++         barriers.
+ 
+ However, the protections are put in place on a case by case basis,
+ and there is no guarantee that all possible attack vectors for Spectre
+@@ -366,12 +417,27 @@ Turning on mitigation for Spectre variant 1 and Spectre variant 2
+ 1. Kernel mitigation
+ ^^^^^^^^^^^^^^^^^^^^
+ 
++Spectre variant 1
++~~~~~~~~~~~~~~~~~
++
+    For the Spectre variant 1, vulnerable kernel code (as determined
+    by code audit or scanning tools) is annotated on a case by case
+    basis to use nospec accessor macros for bounds clipping :ref:`[2]
+    <spec_ref2>` to avoid any usable disclosure gadgets. However, it may
+    not cover all attack vectors for Spectre variant 1.
+ 
++   Copy-from-user code has an LFENCE barrier to prevent the access_ok()
++   check from being mis-speculated.  The barrier is done by the
++   barrier_nospec() macro.
++
++   For the swapgs variant of Spectre variant 1, LFENCE barriers are
++   added to interrupt, exception and NMI entry where needed.  These
++   barriers are done by the FENCE_SWAPGS_KERNEL_ENTRY and
++   FENCE_SWAPGS_USER_ENTRY macros.
++
++Spectre variant 2
++~~~~~~~~~~~~~~~~~
++
+    For Spectre variant 2 mitigation, the compiler turns indirect calls or
+    jumps in the kernel into equivalent return trampolines (retpolines)
+    :ref:`[3] <spec_ref3>` :ref:`[9] <spec_ref9>` to go to the target
+@@ -473,6 +539,12 @@ Mitigation control on the kernel command line
+ Spectre variant 2 mitigation can be disabled or force enabled at the
+ kernel command line.
+ 
++	nospectre_v1
++
++		[X86,PPC] Disable mitigations for Spectre Variant 1
++		(bounds check bypass). With this option data leaks are
++		possible in the system.
++
+ 	nospectre_v2
+ 
+ 		[X86] Disable all mitigations for the Spectre variant 2
+diff --git a/Documentation/admin-guide/kernel-parameters.txt b/Documentation/admin-guide/kernel-parameters.txt
+index 7ccd158b3894..47d981a86e2f 100644
+--- a/Documentation/admin-guide/kernel-parameters.txt
++++ b/Documentation/admin-guide/kernel-parameters.txt
+@@ -2604,7 +2604,7 @@
+ 				expose users to several CPU vulnerabilities.
+ 				Equivalent to: nopti [X86,PPC]
+ 					       kpti=0 [ARM64]
+-					       nospectre_v1 [PPC]
++					       nospectre_v1 [X86,PPC]
+ 					       nobp=0 [S390]
+ 					       nospectre_v2 [X86,PPC,S390,ARM64]
+ 					       spectre_v2_user=off [X86]
+@@ -2965,9 +2965,9 @@
+ 			nosmt=force: Force disable SMT, cannot be undone
+ 				     via the sysfs control file.
+ 
+-	nospectre_v1	[PPC] Disable mitigations for Spectre Variant 1 (bounds
+-			check bypass). With this option data leaks are possible
+-			in the system.
++	nospectre_v1	[X86,PPC] Disable mitigations for Spectre Variant 1
++			(bounds check bypass). With this option data leaks are
++			possible in the system.
+ 
+ 	nospectre_v2	[X86,PPC_FSL_BOOK3E,ARM64] Disable all mitigations for
+ 			the Spectre variant 2 (indirect branch prediction)
+diff --git a/arch/x86/entry/calling.h b/arch/x86/entry/calling.h
+index 830bd984182b..515c0ceeb4a3 100644
+--- a/arch/x86/entry/calling.h
++++ b/arch/x86/entry/calling.h
+@@ -314,6 +314,23 @@ For 32-bit we have the following conventions - kernel is built with
+ 
+ #endif
+ 
++/*
++ * Mitigate Spectre v1 for conditional swapgs code paths.
++ *
++ * FENCE_SWAPGS_USER_ENTRY is used in the user entry swapgs code path, to
++ * prevent a speculative swapgs when coming from kernel space.
++ *
++ * FENCE_SWAPGS_KERNEL_ENTRY is used in the kernel entry non-swapgs code path,
++ * to prevent the swapgs from getting speculatively skipped when coming from
++ * user space.
++ */
++.macro FENCE_SWAPGS_USER_ENTRY
++	ALTERNATIVE "", "lfence", X86_FEATURE_FENCE_SWAPGS_USER
++.endm
++.macro FENCE_SWAPGS_KERNEL_ENTRY
++	ALTERNATIVE "", "lfence", X86_FEATURE_FENCE_SWAPGS_KERNEL
++.endm
++
+ .macro STACKLEAK_ERASE_NOCLOBBER
+ #ifdef CONFIG_GCC_PLUGIN_STACKLEAK
+ 	PUSH_AND_CLEAR_REGS
+diff --git a/arch/x86/entry/entry_64.S b/arch/x86/entry/entry_64.S
+index 3f5a978a02a7..be9ca198c581 100644
+--- a/arch/x86/entry/entry_64.S
++++ b/arch/x86/entry/entry_64.S
+@@ -519,7 +519,7 @@ ENTRY(interrupt_entry)
+ 	testb	$3, CS-ORIG_RAX+8(%rsp)
+ 	jz	1f
+ 	SWAPGS
+-
++	FENCE_SWAPGS_USER_ENTRY
+ 	/*
+ 	 * Switch to the thread stack. The IRET frame and orig_ax are
+ 	 * on the stack, as well as the return address. RDI..R12 are
+@@ -549,8 +549,10 @@ ENTRY(interrupt_entry)
+ 	UNWIND_HINT_FUNC
+ 
+ 	movq	(%rdi), %rdi
++	jmp	2f
+ 1:
+-
++	FENCE_SWAPGS_KERNEL_ENTRY
++2:
+ 	PUSH_AND_CLEAR_REGS save_ret=1
+ 	ENCODE_FRAME_POINTER 8
+ 
+@@ -1238,6 +1240,13 @@ ENTRY(paranoid_entry)
+ 	 */
+ 	SAVE_AND_SWITCH_TO_KERNEL_CR3 scratch_reg=%rax save_reg=%r14
+ 
++	/*
++	 * The above SAVE_AND_SWITCH_TO_KERNEL_CR3 macro doesn't do an
++	 * unconditional CR3 write, even in the PTI case.  So do an lfence
++	 * to prevent GS speculation, regardless of whether PTI is enabled.
++	 */
++	FENCE_SWAPGS_KERNEL_ENTRY
++
+ 	ret
+ END(paranoid_entry)
+ 
+@@ -1288,6 +1297,7 @@ ENTRY(error_entry)
+ 	 * from user mode due to an IRET fault.
+ 	 */
+ 	SWAPGS
++	FENCE_SWAPGS_USER_ENTRY
+ 	/* We have user CR3.  Change to kernel CR3. */
+ 	SWITCH_TO_KERNEL_CR3 scratch_reg=%rax
+ 
+@@ -1301,6 +1311,8 @@ ENTRY(error_entry)
+ 	pushq	%r12
+ 	ret
+ 
++.Lerror_entry_done_lfence:
++	FENCE_SWAPGS_KERNEL_ENTRY
+ .Lerror_entry_done:
+ 	ret
+ 
+@@ -1318,7 +1330,7 @@ ENTRY(error_entry)
+ 	cmpq	%rax, RIP+8(%rsp)
+ 	je	.Lbstep_iret
+ 	cmpq	$.Lgs_change, RIP+8(%rsp)
+-	jne	.Lerror_entry_done
++	jne	.Lerror_entry_done_lfence
+ 
+ 	/*
+ 	 * hack: .Lgs_change can fail with user gsbase.  If this happens, fix up
+@@ -1326,6 +1338,7 @@ ENTRY(error_entry)
+ 	 * .Lgs_change's error handler with kernel gsbase.
+ 	 */
+ 	SWAPGS
++	FENCE_SWAPGS_USER_ENTRY
+ 	SWITCH_TO_KERNEL_CR3 scratch_reg=%rax
+ 	jmp .Lerror_entry_done
+ 
+@@ -1340,6 +1353,7 @@ ENTRY(error_entry)
+ 	 * gsbase and CR3.  Switch to kernel gsbase and CR3:
+ 	 */
+ 	SWAPGS
++	FENCE_SWAPGS_USER_ENTRY
+ 	SWITCH_TO_KERNEL_CR3 scratch_reg=%rax
+ 
+ 	/*
+@@ -1431,6 +1445,7 @@ ENTRY(nmi)
+ 
+ 	swapgs
+ 	cld
++	FENCE_SWAPGS_USER_ENTRY
+ 	SWITCH_TO_KERNEL_CR3 scratch_reg=%rdx
+ 	movq	%rsp, %rdx
+ 	movq	PER_CPU_VAR(cpu_current_top_of_stack), %rsp
+diff --git a/arch/x86/include/asm/cpufeatures.h b/arch/x86/include/asm/cpufeatures.h
+index 998c2cc08363..e880f2408e29 100644
+--- a/arch/x86/include/asm/cpufeatures.h
++++ b/arch/x86/include/asm/cpufeatures.h
+@@ -281,6 +281,8 @@
+ #define X86_FEATURE_CQM_OCCUP_LLC	(11*32+ 1) /* LLC occupancy monitoring */
+ #define X86_FEATURE_CQM_MBM_TOTAL	(11*32+ 2) /* LLC Total MBM monitoring */
+ #define X86_FEATURE_CQM_MBM_LOCAL	(11*32+ 3) /* LLC Local MBM monitoring */
++#define X86_FEATURE_FENCE_SWAPGS_USER	(11*32+ 4) /* "" LFENCE in user entry SWAPGS path */
++#define X86_FEATURE_FENCE_SWAPGS_KERNEL	(11*32+ 5) /* "" LFENCE in kernel entry SWAPGS path */
+ 
+ /* Intel-defined CPU features, CPUID level 0x00000007:1 (EAX), word 12 */
+ #define X86_FEATURE_AVX512_BF16		(12*32+ 5) /* AVX512 BFLOAT16 instructions */
+@@ -394,5 +396,6 @@
+ #define X86_BUG_L1TF			X86_BUG(18) /* CPU is affected by L1 Terminal Fault */
+ #define X86_BUG_MDS			X86_BUG(19) /* CPU is affected by Microarchitectural data sampling */
+ #define X86_BUG_MSBDS_ONLY		X86_BUG(20) /* CPU is only affected by the  MSDBS variant of BUG_MDS */
++#define X86_BUG_SWAPGS			X86_BUG(21) /* CPU is affected by speculation through SWAPGS */
+ 
+ #endif /* _ASM_X86_CPUFEATURES_H */
+diff --git a/arch/x86/kernel/cpu/bugs.c b/arch/x86/kernel/cpu/bugs.c
+index 801ecd1c3fd5..c6fa3ef10b4e 100644
+--- a/arch/x86/kernel/cpu/bugs.c
++++ b/arch/x86/kernel/cpu/bugs.c
+@@ -34,6 +34,7 @@
+ 
+ #include "cpu.h"
+ 
++static void __init spectre_v1_select_mitigation(void);
+ static void __init spectre_v2_select_mitigation(void);
+ static void __init ssb_select_mitigation(void);
+ static void __init l1tf_select_mitigation(void);
+@@ -98,17 +99,11 @@ void __init check_bugs(void)
+ 	if (boot_cpu_has(X86_FEATURE_STIBP))
+ 		x86_spec_ctrl_mask |= SPEC_CTRL_STIBP;
+ 
+-	/* Select the proper spectre mitigation before patching alternatives */
++	/* Select the proper CPU mitigations before patching alternatives: */
++	spectre_v1_select_mitigation();
+ 	spectre_v2_select_mitigation();
+-
+-	/*
+-	 * Select proper mitigation for any exposure to the Speculative Store
+-	 * Bypass vulnerability.
+-	 */
+ 	ssb_select_mitigation();
+-
+ 	l1tf_select_mitigation();
+-
+ 	mds_select_mitigation();
+ 
+ 	arch_smt_update();
+@@ -273,6 +268,98 @@ static int __init mds_cmdline(char *str)
+ }
+ early_param("mds", mds_cmdline);
+ 
++#undef pr_fmt
++#define pr_fmt(fmt)     "Spectre V1 : " fmt
++
++enum spectre_v1_mitigation {
++	SPECTRE_V1_MITIGATION_NONE,
++	SPECTRE_V1_MITIGATION_AUTO,
++};
++
++static enum spectre_v1_mitigation spectre_v1_mitigation __ro_after_init =
++	SPECTRE_V1_MITIGATION_AUTO;
++
++static const char * const spectre_v1_strings[] = {
++	[SPECTRE_V1_MITIGATION_NONE] = "Vulnerable: __user pointer sanitization and usercopy barriers only; no swapgs barriers",
++	[SPECTRE_V1_MITIGATION_AUTO] = "Mitigation: usercopy/swapgs barriers and __user pointer sanitization",
++};
++
++/*
++ * Does SMAP provide full mitigation against speculative kernel access to
++ * userspace?
++ */
++static bool smap_works_speculatively(void)
++{
++	if (!boot_cpu_has(X86_FEATURE_SMAP))
++		return false;
++
++	/*
++	 * On CPUs which are vulnerable to Meltdown, SMAP does not
++	 * prevent speculative access to user data in the L1 cache.
++	 * Consider SMAP to be non-functional as a mitigation on these
++	 * CPUs.
++	 */
++	if (boot_cpu_has(X86_BUG_CPU_MELTDOWN))
++		return false;
++
++	return true;
++}
++
++static void __init spectre_v1_select_mitigation(void)
++{
++	if (!boot_cpu_has_bug(X86_BUG_SPECTRE_V1) || cpu_mitigations_off()) {
++		spectre_v1_mitigation = SPECTRE_V1_MITIGATION_NONE;
++		return;
++	}
++
++	if (spectre_v1_mitigation == SPECTRE_V1_MITIGATION_AUTO) {
++		/*
++		 * With Spectre v1, a user can speculatively control either
++		 * path of a conditional swapgs with a user-controlled GS
++		 * value.  The mitigation is to add lfences to both code paths.
++		 *
++		 * If FSGSBASE is enabled, the user can put a kernel address in
++		 * GS, in which case SMAP provides no protection.
++		 *
++		 * [ NOTE: Don't check for X86_FEATURE_FSGSBASE until the
++		 *	   FSGSBASE enablement patches have been merged. ]
++		 *
++		 * If FSGSBASE is disabled, the user can only put a user space
++		 * address in GS.  That makes an attack harder, but still
++		 * possible if there's no SMAP protection.
++		 */
++		if (!smap_works_speculatively()) {
++			/*
++			 * Mitigation can be provided from SWAPGS itself or
++			 * PTI as the CR3 write in the Meltdown mitigation
++			 * is serializing.
++			 *
++			 * If neither is there, mitigate with an LFENCE to
++			 * stop speculation through swapgs.
++			 */
++			if (boot_cpu_has_bug(X86_BUG_SWAPGS) &&
++			    !boot_cpu_has(X86_FEATURE_PTI))
++				setup_force_cpu_cap(X86_FEATURE_FENCE_SWAPGS_USER);
++
++			/*
++			 * Enable lfences in the kernel entry (non-swapgs)
++			 * paths, to prevent user entry from speculatively
++			 * skipping swapgs.
++			 */
++			setup_force_cpu_cap(X86_FEATURE_FENCE_SWAPGS_KERNEL);
++		}
++	}
++
++	pr_info("%s\n", spectre_v1_strings[spectre_v1_mitigation]);
++}
++
++static int __init nospectre_v1_cmdline(char *str)
++{
++	spectre_v1_mitigation = SPECTRE_V1_MITIGATION_NONE;
++	return 0;
++}
++early_param("nospectre_v1", nospectre_v1_cmdline);
++
+ #undef pr_fmt
+ #define pr_fmt(fmt)     "Spectre V2 : " fmt
+ 
+@@ -1290,7 +1377,7 @@ static ssize_t cpu_show_common(struct device *dev, struct device_attribute *attr
+ 		break;
+ 
+ 	case X86_BUG_SPECTRE_V1:
+-		return sprintf(buf, "Mitigation: __user pointer sanitization\n");
++		return sprintf(buf, "%s\n", spectre_v1_strings[spectre_v1_mitigation]);
+ 
+ 	case X86_BUG_SPECTRE_V2:
+ 		return sprintf(buf, "%s%s%s%s%s%s\n", spectre_v2_strings[spectre_v2_enabled],
+diff --git a/arch/x86/kernel/cpu/common.c b/arch/x86/kernel/cpu/common.c
+index 11472178e17f..f125bf7ecb6f 100644
+--- a/arch/x86/kernel/cpu/common.c
++++ b/arch/x86/kernel/cpu/common.c
+@@ -1022,6 +1022,7 @@ static void identify_cpu_without_cpuid(struct cpuinfo_x86 *c)
+ #define NO_L1TF		BIT(3)
+ #define NO_MDS		BIT(4)
+ #define MSBDS_ONLY	BIT(5)
++#define NO_SWAPGS	BIT(6)
+ 
+ #define VULNWL(_vendor, _family, _model, _whitelist)	\
+ 	{ X86_VENDOR_##_vendor, _family, _model, X86_FEATURE_ANY, _whitelist }
+@@ -1048,30 +1049,38 @@ static const __initconst struct x86_cpu_id cpu_vuln_whitelist[] = {
+ 	VULNWL_INTEL(ATOM_BONNELL,		NO_SPECULATION),
+ 	VULNWL_INTEL(ATOM_BONNELL_MID,		NO_SPECULATION),
+ 
+-	VULNWL_INTEL(ATOM_SILVERMONT,		NO_SSB | NO_L1TF | MSBDS_ONLY),
+-	VULNWL_INTEL(ATOM_SILVERMONT_X,		NO_SSB | NO_L1TF | MSBDS_ONLY),
+-	VULNWL_INTEL(ATOM_SILVERMONT_MID,	NO_SSB | NO_L1TF | MSBDS_ONLY),
+-	VULNWL_INTEL(ATOM_AIRMONT,		NO_SSB | NO_L1TF | MSBDS_ONLY),
+-	VULNWL_INTEL(XEON_PHI_KNL,		NO_SSB | NO_L1TF | MSBDS_ONLY),
+-	VULNWL_INTEL(XEON_PHI_KNM,		NO_SSB | NO_L1TF | MSBDS_ONLY),
++	VULNWL_INTEL(ATOM_SILVERMONT,		NO_SSB | NO_L1TF | MSBDS_ONLY | NO_SWAPGS),
++	VULNWL_INTEL(ATOM_SILVERMONT_X,		NO_SSB | NO_L1TF | MSBDS_ONLY | NO_SWAPGS),
++	VULNWL_INTEL(ATOM_SILVERMONT_MID,	NO_SSB | NO_L1TF | MSBDS_ONLY | NO_SWAPGS),
++	VULNWL_INTEL(ATOM_AIRMONT,		NO_SSB | NO_L1TF | MSBDS_ONLY | NO_SWAPGS),
++	VULNWL_INTEL(XEON_PHI_KNL,		NO_SSB | NO_L1TF | MSBDS_ONLY | NO_SWAPGS),
++	VULNWL_INTEL(XEON_PHI_KNM,		NO_SSB | NO_L1TF | MSBDS_ONLY | NO_SWAPGS),
+ 
+ 	VULNWL_INTEL(CORE_YONAH,		NO_SSB),
+ 
+-	VULNWL_INTEL(ATOM_AIRMONT_MID,		NO_L1TF | MSBDS_ONLY),
++	VULNWL_INTEL(ATOM_AIRMONT_MID,		NO_L1TF | MSBDS_ONLY | NO_SWAPGS),
+ 
+-	VULNWL_INTEL(ATOM_GOLDMONT,		NO_MDS | NO_L1TF),
+-	VULNWL_INTEL(ATOM_GOLDMONT_X,		NO_MDS | NO_L1TF),
+-	VULNWL_INTEL(ATOM_GOLDMONT_PLUS,	NO_MDS | NO_L1TF),
++	VULNWL_INTEL(ATOM_GOLDMONT,		NO_MDS | NO_L1TF | NO_SWAPGS),
++	VULNWL_INTEL(ATOM_GOLDMONT_X,		NO_MDS | NO_L1TF | NO_SWAPGS),
++	VULNWL_INTEL(ATOM_GOLDMONT_PLUS,	NO_MDS | NO_L1TF | NO_SWAPGS),
++
++	/*
++	 * Technically, swapgs isn't serializing on AMD (despite it previously
++	 * being documented as such in the APM).  But according to AMD, %gs is
++	 * updated non-speculatively, and the issuing of %gs-relative memory
++	 * operands will be blocked until the %gs update completes, which is
++	 * good enough for our purposes.
++	 */
+ 
+ 	/* AMD Family 0xf - 0x12 */
+-	VULNWL_AMD(0x0f,	NO_MELTDOWN | NO_SSB | NO_L1TF | NO_MDS),
+-	VULNWL_AMD(0x10,	NO_MELTDOWN | NO_SSB | NO_L1TF | NO_MDS),
+-	VULNWL_AMD(0x11,	NO_MELTDOWN | NO_SSB | NO_L1TF | NO_MDS),
+-	VULNWL_AMD(0x12,	NO_MELTDOWN | NO_SSB | NO_L1TF | NO_MDS),
++	VULNWL_AMD(0x0f,	NO_MELTDOWN | NO_SSB | NO_L1TF | NO_MDS | NO_SWAPGS),
++	VULNWL_AMD(0x10,	NO_MELTDOWN | NO_SSB | NO_L1TF | NO_MDS | NO_SWAPGS),
++	VULNWL_AMD(0x11,	NO_MELTDOWN | NO_SSB | NO_L1TF | NO_MDS | NO_SWAPGS),
++	VULNWL_AMD(0x12,	NO_MELTDOWN | NO_SSB | NO_L1TF | NO_MDS | NO_SWAPGS),
+ 
+ 	/* FAMILY_ANY must be last, otherwise 0x0f - 0x12 matches won't work */
+-	VULNWL_AMD(X86_FAMILY_ANY,	NO_MELTDOWN | NO_L1TF | NO_MDS),
+-	VULNWL_HYGON(X86_FAMILY_ANY,	NO_MELTDOWN | NO_L1TF | NO_MDS),
++	VULNWL_AMD(X86_FAMILY_ANY,	NO_MELTDOWN | NO_L1TF | NO_MDS | NO_SWAPGS),
++	VULNWL_HYGON(X86_FAMILY_ANY,	NO_MELTDOWN | NO_L1TF | NO_MDS | NO_SWAPGS),
+ 	{}
+ };
+ 
+@@ -1108,6 +1117,9 @@ static void __init cpu_set_bug_bits(struct cpuinfo_x86 *c)
+ 			setup_force_cpu_bug(X86_BUG_MSBDS_ONLY);
+ 	}
+ 
++	if (!cpu_matches(NO_SWAPGS))
++		setup_force_cpu_bug(X86_BUG_SWAPGS);
++
+ 	if (cpu_matches(NO_MELTDOWN))
+ 		return;
+ 

@@ -1,0 +1,17 @@
+commit e0e29b683d6784ef59bbc914eac85a04b650e63c
+Author: Kees Cook <keescook@chromium.org>
+Commit: John W. Linville <linville@tuxdriver.com>
+
+    b43: stop format string leaking into error msgs
+    
+    The module parameter "fwpostfix" is userspace controllable, unfiltered,
+    and is used to define the firmware filename. b43_do_request_fw() populates
+    ctx->errors[] on error, containing the firmware filename. b43err()
+    parses its arguments as a format string. For systems with b43 hardware,
+    this could lead to a uid-0 to ring-0 escalation.
+    
+    CVE-2013-2852
+    
+    Signed-off-by: Kees Cook <keescook@chromium.org>
+    Cc: stable@vger.kernel.org
+    Signed-off-by: John W. Linville <linville@tuxdriver.com>

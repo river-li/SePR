@@ -1,0 +1,17 @@
+commit 5a021e9ffd56c22700133ebc37d607f95be8f7bd
+Author: Matt Mackall <mpm@selenic.com>
+Commit: Linus Torvalds <torvalds@woody.linux-foundation.org>
+
+    random: fix bound check ordering (CVE-2007-3105)
+    
+    If root raised the default wakeup threshold over the size of the
+    output pool, the pool transfer function could overflow the stack with
+    RNG bytes, causing a DoS or potential privilege escalation.
+    
+    (Bug reported by the PaX Team <pageexec@freemail.hu>)
+    
+    Cc: Theodore Tso <tytso@mit.edu>
+    Cc: Willy Tarreau <w@1wt.eu>
+    Signed-off-by: Matt Mackall <mpm@selenic.com>
+    Signed-off-by: Chris Wright <chrisw@sous-sol.org>
+    Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>

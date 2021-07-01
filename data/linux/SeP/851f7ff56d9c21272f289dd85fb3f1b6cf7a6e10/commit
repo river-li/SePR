@@ -1,0 +1,21 @@
+commit 851f7ff56d9c21272f289dd85fb3f1b6cf7a6e10
+Author: Eric Paris <eparis@redhat.com>
+Commit: James Morris <jmorris@namei.org>
+
+    This patch will print cap_permitted and cap_inheritable data in the PATH
+    records of any file that has file capabilities set.  Files which do not
+    have fcaps set will not have different PATH records.
+    
+    An example audit record if you run:
+    setcap "cap_net_admin+pie" /bin/bash
+    /bin/bash
+    
+    type=SYSCALL msg=audit(1225741937.363:230): arch=c000003e syscall=59 success=yes exit=0 a0=2119230 a1=210da30 a2=20ee290 a3=8 items=2 ppid=2149 pid=2923 auid=0 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=pts0 ses=3 comm="ping" exe="/bin/ping" subj=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c1023 key=(null)
+    type=EXECVE msg=audit(1225741937.363:230): argc=2 a0="ping" a1="www.google.com"
+    type=CWD msg=audit(1225741937.363:230):  cwd="/root"
+    type=PATH msg=audit(1225741937.363:230): item=0 name="/bin/ping" inode=49256 dev=fd:00 mode=0104755 ouid=0 ogid=0 rdev=00:00 obj=system_u:object_r:ping_exec_t:s0 cap_fp=0000000000002000 cap_fi=0000000000002000 cap_fe=1 cap_fver=2
+    type=PATH msg=audit(1225741937.363:230): item=1 name=(null) inode=507915 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 obj=system_u:object_r:ld_so_t:s0
+    
+    Signed-off-by: Eric Paris <eparis@redhat.com>
+    Acked-by: Serge Hallyn <serue@us.ibm.com>
+    Signed-off-by: James Morris <jmorris@namei.org>

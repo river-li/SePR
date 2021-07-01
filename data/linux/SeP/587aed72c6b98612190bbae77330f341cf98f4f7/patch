@@ -1,0 +1,26 @@
+diff --git a/arch/arm/boot/dts/socfpga_cyclone5_mcv.dtsi b/arch/arm/boot/dts/socfpga_cyclone5_mcv.dtsi
+index f86f9c060d7a..6ad3b1eb9b86 100644
+--- a/arch/arm/boot/dts/socfpga_cyclone5_mcv.dtsi
++++ b/arch/arm/boot/dts/socfpga_cyclone5_mcv.dtsi
+@@ -18,7 +18,7 @@
+ #include "socfpga_cyclone5.dtsi"
+ 
+ / {
+-	model = "DENX MCV";
++	model = "Aries/DENX MCV";
+ 	compatible = "altr,socfpga-cyclone5", "altr,socfpga";
+ 
+ 	memory {
+diff --git a/arch/arm/boot/dts/socfpga_cyclone5_mcvevk.dts b/arch/arm/boot/dts/socfpga_cyclone5_mcvevk.dts
+index 7186a29b8b86..424523b0d381 100644
+--- a/arch/arm/boot/dts/socfpga_cyclone5_mcvevk.dts
++++ b/arch/arm/boot/dts/socfpga_cyclone5_mcvevk.dts
+@@ -18,7 +18,7 @@
+ #include "socfpga_cyclone5_mcv.dtsi"
+ 
+ / {
+-	model = "DENX MCV EVK";
++	model = "Aries/DENX MCV EVK";
+ 	compatible = "altr,socfpga-cyclone5", "altr,socfpga";
+ 
+ 	aliases {

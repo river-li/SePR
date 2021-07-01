@@ -1,0 +1,11 @@
+commit d3dcd4efe2ad1ad1865b2fe5c863c1ebd9482a84
+Author: Patrick McHardy <kaber@trash.net>
+Commit: David S. Miller <davem@davemloft.net>
+
+    [NETFILTER]: xt_sctp: fix endless loop caused by 0 chunk length
+    
+    Fix endless loop in the SCTP match similar to those already fixed in
+    the SCTP conntrack helper (was CVE-2006-1527).
+    
+    Signed-off-by: Patrick McHardy <kaber@trash.net>
+    Signed-off-by: David S. Miller <davem@davemloft.net>

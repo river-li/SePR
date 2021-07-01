@@ -1,0 +1,22 @@
+commit 13da6ac106be36d7c2d7f201fd8850a9ac235e6b
+Merge: d41a3effbb53 a8318c13e79b
+Author: Linus Torvalds <torvalds@linux-foundation.org>
+Commit: Linus Torvalds <torvalds@linux-foundation.org>
+
+    Merge tag 'powerpc-5.3-5' of git://git.kernel.org/pub/scm/linux/kernel/git/powerpc/linux
+    
+    Pull powerpc fixes from Michael Ellerman:
+     "One fix for a boot hang on some Freescale machines when PREEMPT is
+      enabled.
+    
+      Two CVE fixes for bugs in our handling of FP registers and
+      transactional memory, both of which can result in corrupted FP state,
+      or FP state leaking between processes.
+    
+      Thanks to: Chris Packham, Christophe Leroy, Gustavo Romero, Michael
+      Neuling"
+    
+    * tag 'powerpc-5.3-5' of git://git.kernel.org/pub/scm/linux/kernel/git/powerpc/linux:
+      powerpc/tm: Fix restoring FP/VMX facility incorrectly on interrupts
+      powerpc/tm: Fix FP/VMX unavailable exceptions inside a transaction
+      powerpc/64e: Drop stale call to smp_processor_id() which hangs SMP startup

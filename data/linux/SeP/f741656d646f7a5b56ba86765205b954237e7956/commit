@@ -1,0 +1,25 @@
+commit f741656d646f7a5b56ba86765205b954237e7956
+Merge: ac8975869719 e9daff24a266
+Author: Linus Torvalds <torvalds@linux-foundation.org>
+Commit: Linus Torvalds <torvalds@linux-foundation.org>
+
+    Merge tag 'stable/for-linus-3.8-rc7-tag-two' of git://git.kernel.org/pub/scm/linux/kernel/git/konrad/xen
+    
+    Pull xen fixes from Konrad Rzeszutek Wilk:
+     "Two fixes:
+    
+       - A simple bug-fix for redundant NULL check.
+    
+       - CVE-2013-0228/XSA-42: x86/xen: don't assume %ds is usable in
+         xen_iret for 32-bit PVOPS
+    
+      and two reverts:
+    
+       - Revert the PVonHVM kexec.  The patch introduces a regression with
+         older hypervisor stacks, such as Xen 4.1."
+    
+    * tag 'stable/for-linus-3.8-rc7-tag-two' of git://git.kernel.org/pub/scm/linux/kernel/git/konrad/xen:
+      Revert "xen PVonHVM: use E820_Reserved area for shared_info"
+      Revert "xen/PVonHVM: fix compile warning in init_hvm_pv_info"
+      xen: remove redundant NULL check before unregister_and_remove_pcpu().
+      x86/xen: don't assume %ds is usable in xen_iret for 32-bit PVOPS.

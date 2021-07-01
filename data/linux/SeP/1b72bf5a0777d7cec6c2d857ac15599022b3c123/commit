@@ -1,0 +1,14 @@
+commit 1b72bf5a0777d7cec6c2d857ac15599022b3c123
+Merge: 823038ca030e fdf7cb4185b6
+Author: David S. Miller <davem@davemloft.net>
+Commit: David S. Miller <davem@davemloft.net>
+
+    Merge tag 'mac80211-for-davem-2017-10-16' of git://git.kernel.org/pub/scm/linux/kernel/git/jberg/mac80211
+    
+    Johannes Berg says:
+    
+    ====================
+    Just a single fix, for a WoWLAN-related part of CVE-2017-13080.
+    ====================
+    
+    Signed-off-by: David S. Miller <davem@davemloft.net>

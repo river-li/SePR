@@ -1,0 +1,1264 @@
+diff --git a/Documentation/virtual/kvm/api.txt b/Documentation/virtual/kvm/api.txt
+index f670e4b9e7f3..57d3ee9e4bde 100644
+--- a/Documentation/virtual/kvm/api.txt
++++ b/Documentation/virtual/kvm/api.txt
+@@ -2901,14 +2901,19 @@ userspace buffer and its length:
+ 
+ struct kvm_s390_irq_state {
+ 	__u64 buf;
+-	__u32 flags;
++	__u32 flags;        /* will stay unused for compatibility reasons */
+ 	__u32 len;
+-	__u32 reserved[4];
++	__u32 reserved[4];  /* will stay unused for compatibility reasons */
+ };
+ 
+ Userspace passes in the above struct and for each pending interrupt a
+ struct kvm_s390_irq is copied to the provided buffer.
+ 
++The structure contains a flags and a reserved field for future extensions. As
++the kernel never checked for flags == 0 and QEMU never pre-zeroed flags and
++reserved, these fields can not be used in the future without breaking
++compatibility.
++
+ If -ENOBUFS is returned the buffer provided was too small and userspace
+ may retry with a bigger buffer.
+ 
+@@ -2932,10 +2937,14 @@ containing a struct kvm_s390_irq_state:
+ 
+ struct kvm_s390_irq_state {
+ 	__u64 buf;
++	__u32 flags;        /* will stay unused for compatibility reasons */
+ 	__u32 len;
+-	__u32 pad;
++	__u32 reserved[4];  /* will stay unused for compatibility reasons */
+ };
+ 
++The restrictions for flags and reserved apply as well.
++(see KVM_S390_GET_IRQ_STATE)
++
+ The userspace memory referenced by buf contains a struct kvm_s390_irq
+ for each interrupt to be injected into the guest.
+ If one of the interrupts could not be injected for some reason the
+diff --git a/arch/arm/include/asm/kvm_arm.h b/arch/arm/include/asm/kvm_arm.h
+index c8781450905b..3ab8b3781bfe 100644
+--- a/arch/arm/include/asm/kvm_arm.h
++++ b/arch/arm/include/asm/kvm_arm.h
+@@ -161,8 +161,7 @@
+ #else
+ #define VTTBR_X		(5 - KVM_T0SZ)
+ #endif
+-#define VTTBR_BADDR_SHIFT (VTTBR_X - 1)
+-#define VTTBR_BADDR_MASK  (((_AC(1, ULL) << (40 - VTTBR_X)) - 1) << VTTBR_BADDR_SHIFT)
++#define VTTBR_BADDR_MASK  (((_AC(1, ULL) << (40 - VTTBR_X)) - 1) << VTTBR_X)
+ #define VTTBR_VMID_SHIFT  _AC(48, ULL)
+ #define VTTBR_VMID_MASK(size)	(_AT(u64, (1 << size) - 1) << VTTBR_VMID_SHIFT)
+ 
+diff --git a/arch/arm/include/asm/kvm_host.h b/arch/arm/include/asm/kvm_host.h
+index 242151ea6908..a9f7d3f47134 100644
+--- a/arch/arm/include/asm/kvm_host.h
++++ b/arch/arm/include/asm/kvm_host.h
+@@ -285,6 +285,11 @@ static inline void kvm_arm_init_debug(void) {}
+ static inline void kvm_arm_setup_debug(struct kvm_vcpu *vcpu) {}
+ static inline void kvm_arm_clear_debug(struct kvm_vcpu *vcpu) {}
+ static inline void kvm_arm_reset_debug_ptr(struct kvm_vcpu *vcpu) {}
++static inline bool kvm_arm_handle_step_debug(struct kvm_vcpu *vcpu,
++					     struct kvm_run *run)
++{
++	return false;
++}
+ 
+ int kvm_arm_vcpu_arch_set_attr(struct kvm_vcpu *vcpu,
+ 			       struct kvm_device_attr *attr);
+diff --git a/arch/arm64/include/asm/kvm_arm.h b/arch/arm64/include/asm/kvm_arm.h
+index 7f069ff37f06..715d395ef45b 100644
+--- a/arch/arm64/include/asm/kvm_arm.h
++++ b/arch/arm64/include/asm/kvm_arm.h
+@@ -170,8 +170,7 @@
+ #define VTCR_EL2_FLAGS			(VTCR_EL2_COMMON_BITS | VTCR_EL2_TGRAN_FLAGS)
+ #define VTTBR_X				(VTTBR_X_TGRAN_MAGIC - VTCR_EL2_T0SZ_IPA)
+ 
+-#define VTTBR_BADDR_SHIFT (VTTBR_X - 1)
+-#define VTTBR_BADDR_MASK  (((UL(1) << (PHYS_MASK_SHIFT - VTTBR_X)) - 1) << VTTBR_BADDR_SHIFT)
++#define VTTBR_BADDR_MASK  (((UL(1) << (PHYS_MASK_SHIFT - VTTBR_X)) - 1) << VTTBR_X)
+ #define VTTBR_VMID_SHIFT  (UL(48))
+ #define VTTBR_VMID_MASK(size) (_AT(u64, (1 << size) - 1) << VTTBR_VMID_SHIFT)
+ 
+diff --git a/arch/arm64/include/asm/kvm_host.h b/arch/arm64/include/asm/kvm_host.h
+index 674912d7a571..ea6cb5b24258 100644
+--- a/arch/arm64/include/asm/kvm_host.h
++++ b/arch/arm64/include/asm/kvm_host.h
+@@ -370,6 +370,7 @@ void kvm_arm_init_debug(void);
+ void kvm_arm_setup_debug(struct kvm_vcpu *vcpu);
+ void kvm_arm_clear_debug(struct kvm_vcpu *vcpu);
+ void kvm_arm_reset_debug_ptr(struct kvm_vcpu *vcpu);
++bool kvm_arm_handle_step_debug(struct kvm_vcpu *vcpu, struct kvm_run *run);
+ int kvm_arm_vcpu_arch_set_attr(struct kvm_vcpu *vcpu,
+ 			       struct kvm_device_attr *attr);
+ int kvm_arm_vcpu_arch_get_attr(struct kvm_vcpu *vcpu,
+diff --git a/arch/arm64/kvm/debug.c b/arch/arm64/kvm/debug.c
+index dbadfaf850a7..fa63b28c65e0 100644
+--- a/arch/arm64/kvm/debug.c
++++ b/arch/arm64/kvm/debug.c
+@@ -221,3 +221,24 @@ void kvm_arm_clear_debug(struct kvm_vcpu *vcpu)
+ 		}
+ 	}
+ }
++
++
++/*
++ * After successfully emulating an instruction, we might want to
++ * return to user space with a KVM_EXIT_DEBUG. We can only do this
++ * once the emulation is complete, though, so for userspace emulations
++ * we have to wait until we have re-entered KVM before calling this
++ * helper.
++ *
++ * Return true (and set exit_reason) to return to userspace or false
++ * if no further action is required.
++ */
++bool kvm_arm_handle_step_debug(struct kvm_vcpu *vcpu, struct kvm_run *run)
++{
++	if (vcpu->guest_debug & KVM_GUESTDBG_SINGLESTEP) {
++		run->exit_reason = KVM_EXIT_DEBUG;
++		run->debug.arch.hsr = ESR_ELx_EC_SOFTSTP_LOW << ESR_ELx_EC_SHIFT;
++		return true;
++	}
++	return false;
++}
+diff --git a/arch/arm64/kvm/handle_exit.c b/arch/arm64/kvm/handle_exit.c
+index b71247995469..304203fa9e33 100644
+--- a/arch/arm64/kvm/handle_exit.c
++++ b/arch/arm64/kvm/handle_exit.c
+@@ -28,6 +28,7 @@
+ #include <asm/kvm_emulate.h>
+ #include <asm/kvm_mmu.h>
+ #include <asm/kvm_psci.h>
++#include <asm/debug-monitors.h>
+ 
+ #define CREATE_TRACE_POINTS
+ #include "trace.h"
+@@ -186,6 +187,40 @@ static exit_handle_fn kvm_get_exit_handler(struct kvm_vcpu *vcpu)
+ 	return arm_exit_handlers[hsr_ec];
+ }
+ 
++/*
++ * We may be single-stepping an emulated instruction. If the emulation
++ * has been completed in the kernel, we can return to userspace with a
++ * KVM_EXIT_DEBUG, otherwise userspace needs to complete its
++ * emulation first.
++ */
++static int handle_trap_exceptions(struct kvm_vcpu *vcpu, struct kvm_run *run)
++{
++	int handled;
++
++	/*
++	 * See ARM ARM B1.14.1: "Hyp traps on instructions
++	 * that fail their condition code check"
++	 */
++	if (!kvm_condition_valid(vcpu)) {
++		kvm_skip_instr(vcpu, kvm_vcpu_trap_il_is32bit(vcpu));
++		handled = 1;
++	} else {
++		exit_handle_fn exit_handler;
++
++		exit_handler = kvm_get_exit_handler(vcpu);
++		handled = exit_handler(vcpu, run);
++	}
++
++	/*
++	 * kvm_arm_handle_step_debug() sets the exit_reason on the kvm_run
++	 * structure if we need to return to userspace.
++	 */
++	if (handled > 0 && kvm_arm_handle_step_debug(vcpu, run))
++		handled = 0;
++
++	return handled;
++}
++
+ /*
+  * Return > 0 to return to guest, < 0 on error, 0 (and set exit_reason) on
+  * proper exit to userspace.
+@@ -193,8 +228,6 @@ static exit_handle_fn kvm_get_exit_handler(struct kvm_vcpu *vcpu)
+ int handle_exit(struct kvm_vcpu *vcpu, struct kvm_run *run,
+ 		       int exception_index)
+ {
+-	exit_handle_fn exit_handler;
+-
+ 	if (ARM_SERROR_PENDING(exception_index)) {
+ 		u8 hsr_ec = ESR_ELx_EC(kvm_vcpu_get_hsr(vcpu));
+ 
+@@ -220,20 +253,14 @@ int handle_exit(struct kvm_vcpu *vcpu, struct kvm_run *run,
+ 		return 1;
+ 	case ARM_EXCEPTION_EL1_SERROR:
+ 		kvm_inject_vabt(vcpu);
+-		return 1;
+-	case ARM_EXCEPTION_TRAP:
+-		/*
+-		 * See ARM ARM B1.14.1: "Hyp traps on instructions
+-		 * that fail their condition code check"
+-		 */
+-		if (!kvm_condition_valid(vcpu)) {
+-			kvm_skip_instr(vcpu, kvm_vcpu_trap_il_is32bit(vcpu));
++		/* We may still need to return for single-step */
++		if (!(*vcpu_cpsr(vcpu) & DBG_SPSR_SS)
++			&& kvm_arm_handle_step_debug(vcpu, run))
++			return 0;
++		else
+ 			return 1;
+-		}
+-
+-		exit_handler = kvm_get_exit_handler(vcpu);
+-
+-		return exit_handler(vcpu, run);
++	case ARM_EXCEPTION_TRAP:
++		return handle_trap_exceptions(vcpu, run);
+ 	case ARM_EXCEPTION_HYP_GONE:
+ 		/*
+ 		 * EL2 has been reset to the hyp-stub. This happens when a guest
+diff --git a/arch/arm64/kvm/hyp/switch.c b/arch/arm64/kvm/hyp/switch.c
+index 525c01f48867..f7c651f3a8c0 100644
+--- a/arch/arm64/kvm/hyp/switch.c
++++ b/arch/arm64/kvm/hyp/switch.c
+@@ -22,6 +22,7 @@
+ #include <asm/kvm_emulate.h>
+ #include <asm/kvm_hyp.h>
+ #include <asm/fpsimd.h>
++#include <asm/debug-monitors.h>
+ 
+ static bool __hyp_text __fpsimd_enabled_nvhe(void)
+ {
+@@ -269,7 +270,11 @@ static bool __hyp_text __populate_fault_info(struct kvm_vcpu *vcpu)
+ 	return true;
+ }
+ 
+-static void __hyp_text __skip_instr(struct kvm_vcpu *vcpu)
++/* Skip an instruction which has been emulated. Returns true if
++ * execution can continue or false if we need to exit hyp mode because
++ * single-step was in effect.
++ */
++static bool __hyp_text __skip_instr(struct kvm_vcpu *vcpu)
+ {
+ 	*vcpu_pc(vcpu) = read_sysreg_el2(elr);
+ 
+@@ -282,6 +287,14 @@ static void __hyp_text __skip_instr(struct kvm_vcpu *vcpu)
+ 	}
+ 
+ 	write_sysreg_el2(*vcpu_pc(vcpu), elr);
++
++	if (vcpu->guest_debug & KVM_GUESTDBG_SINGLESTEP) {
++		vcpu->arch.fault.esr_el2 =
++			(ESR_ELx_EC_SOFTSTP_LOW << ESR_ELx_EC_SHIFT) | 0x22;
++		return false;
++	} else {
++		return true;
++	}
+ }
+ 
+ int __hyp_text __kvm_vcpu_run(struct kvm_vcpu *vcpu)
+@@ -342,13 +355,21 @@ int __hyp_text __kvm_vcpu_run(struct kvm_vcpu *vcpu)
+ 			int ret = __vgic_v2_perform_cpuif_access(vcpu);
+ 
+ 			if (ret == 1) {
+-				__skip_instr(vcpu);
+-				goto again;
++				if (__skip_instr(vcpu))
++					goto again;
++				else
++					exit_code = ARM_EXCEPTION_TRAP;
+ 			}
+ 
+ 			if (ret == -1) {
+-				/* Promote an illegal access to an SError */
+-				__skip_instr(vcpu);
++				/* Promote an illegal access to an
++				 * SError. If we would be returning
++				 * due to single-step clear the SS
++				 * bit so handle_exit knows what to
++				 * do after dealing with the error.
++				 */
++				if (!__skip_instr(vcpu))
++					*vcpu_cpsr(vcpu) &= ~DBG_SPSR_SS;
+ 				exit_code = ARM_EXCEPTION_EL1_SERROR;
+ 			}
+ 
+@@ -363,8 +384,10 @@ int __hyp_text __kvm_vcpu_run(struct kvm_vcpu *vcpu)
+ 		int ret = __vgic_v3_perform_cpuif_access(vcpu);
+ 
+ 		if (ret == 1) {
+-			__skip_instr(vcpu);
+-			goto again;
++			if (__skip_instr(vcpu))
++				goto again;
++			else
++				exit_code = ARM_EXCEPTION_TRAP;
+ 		}
+ 
+ 		/* 0 falls through to be handled out of EL2 */
+diff --git a/arch/s390/kvm/Makefile b/arch/s390/kvm/Makefile
+index 6048b1c6e580..05ee90a5ea08 100644
+--- a/arch/s390/kvm/Makefile
++++ b/arch/s390/kvm/Makefile
+@@ -1,10 +1,7 @@
++# SPDX-License-Identifier: GPL-2.0
+ # Makefile for kernel virtual machines on s390
+ #
+ # Copyright IBM Corp. 2008
+-#
+-# This program is free software; you can redistribute it and/or modify
+-# it under the terms of the GNU General Public License (version 2 only)
+-# as published by the Free Software Foundation.
+ 
+ KVM := ../../../virt/kvm
+ common-objs = $(KVM)/kvm_main.o $(KVM)/eventfd.o  $(KVM)/async_pf.o $(KVM)/irqchip.o $(KVM)/vfio.o
+diff --git a/arch/s390/kvm/diag.c b/arch/s390/kvm/diag.c
+index d93a2c0474bf..89aa114a2cba 100644
+--- a/arch/s390/kvm/diag.c
++++ b/arch/s390/kvm/diag.c
+@@ -1,12 +1,9 @@
++// SPDX-License-Identifier: GPL-2.0
+ /*
+  * handling diagnose instructions
+  *
+  * Copyright IBM Corp. 2008, 2011
+  *
+- * This program is free software; you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License (version 2 only)
+- * as published by the Free Software Foundation.
+- *
+  *    Author(s): Carsten Otte <cotte@de.ibm.com>
+  *               Christian Borntraeger <borntraeger@de.ibm.com>
+  */
+diff --git a/arch/s390/kvm/gaccess.h b/arch/s390/kvm/gaccess.h
+index bec42b852246..f4c51756c462 100644
+--- a/arch/s390/kvm/gaccess.h
++++ b/arch/s390/kvm/gaccess.h
+@@ -1,12 +1,9 @@
++/* SPDX-License-Identifier: GPL-2.0 */
+ /*
+  * access guest memory
+  *
+  * Copyright IBM Corp. 2008, 2014
+  *
+- * This program is free software; you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License (version 2 only)
+- * as published by the Free Software Foundation.
+- *
+  *    Author(s): Carsten Otte <cotte@de.ibm.com>
+  */
+ 
+diff --git a/arch/s390/kvm/guestdbg.c b/arch/s390/kvm/guestdbg.c
+index bcbd86621d01..b5f3e82006d0 100644
+--- a/arch/s390/kvm/guestdbg.c
++++ b/arch/s390/kvm/guestdbg.c
+@@ -1,12 +1,9 @@
++// SPDX-License-Identifier: GPL-2.0
+ /*
+  * kvm guest debug support
+  *
+  * Copyright IBM Corp. 2014
+  *
+- * This program is free software; you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License (version 2 only)
+- * as published by the Free Software Foundation.
+- *
+  *    Author(s): David Hildenbrand <dahi@linux.vnet.ibm.com>
+  */
+ #include <linux/kvm_host.h>
+diff --git a/arch/s390/kvm/intercept.c b/arch/s390/kvm/intercept.c
+index 8fe034beb623..9c7d70715862 100644
+--- a/arch/s390/kvm/intercept.c
++++ b/arch/s390/kvm/intercept.c
+@@ -1,12 +1,9 @@
++// SPDX-License-Identifier: GPL-2.0
+ /*
+  * in-kernel handling for sie intercepts
+  *
+  * Copyright IBM Corp. 2008, 2014
+  *
+- * This program is free software; you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License (version 2 only)
+- * as published by the Free Software Foundation.
+- *
+  *    Author(s): Carsten Otte <cotte@de.ibm.com>
+  *               Christian Borntraeger <borntraeger@de.ibm.com>
+  */
+diff --git a/arch/s390/kvm/interrupt.c b/arch/s390/kvm/interrupt.c
+index fa557372d600..024ad8bcc516 100644
+--- a/arch/s390/kvm/interrupt.c
++++ b/arch/s390/kvm/interrupt.c
+@@ -1,12 +1,9 @@
++// SPDX-License-Identifier: GPL-2.0
+ /*
+  * handling kvm guest interrupts
+  *
+  * Copyright IBM Corp. 2008, 2015
+  *
+- * This program is free software; you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License (version 2 only)
+- * as published by the Free Software Foundation.
+- *
+  *    Author(s): Carsten Otte <cotte@de.ibm.com>
+  */
+ 
+diff --git a/arch/s390/kvm/irq.h b/arch/s390/kvm/irq.h
+index d98e4159643d..484608c71dd0 100644
+--- a/arch/s390/kvm/irq.h
++++ b/arch/s390/kvm/irq.h
+@@ -1,12 +1,9 @@
++/* SPDX-License-Identifier: GPL-2.0 */
+ /*
+  * s390 irqchip routines
+  *
+  * Copyright IBM Corp. 2014
+  *
+- * This program is free software; you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License (version 2 only)
+- * as published by the Free Software Foundation.
+- *
+  *    Author(s): Cornelia Huck <cornelia.huck@de.ibm.com>
+  */
+ #ifndef __KVM_IRQ_H
+diff --git a/arch/s390/kvm/kvm-s390.c b/arch/s390/kvm/kvm-s390.c
+index 9614aea5839b..ec8b68e97d3c 100644
+--- a/arch/s390/kvm/kvm-s390.c
++++ b/arch/s390/kvm/kvm-s390.c
+@@ -1,11 +1,8 @@
++// SPDX-License-Identifier: GPL-2.0
+ /*
+- * hosting zSeries kernel virtual machines
++ * hosting IBM Z kernel virtual machines (s390x)
+  *
+- * Copyright IBM Corp. 2008, 2009
+- *
+- * This program is free software; you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License (version 2 only)
+- * as published by the Free Software Foundation.
++ * Copyright IBM Corp. 2008, 2017
+  *
+  *    Author(s): Carsten Otte <cotte@de.ibm.com>
+  *               Christian Borntraeger <borntraeger@de.ibm.com>
+@@ -3808,6 +3805,7 @@ long kvm_arch_vcpu_ioctl(struct file *filp,
+ 			r = -EINVAL;
+ 			break;
+ 		}
++		/* do not use irq_state.flags, it will break old QEMUs */
+ 		r = kvm_s390_set_irq_state(vcpu,
+ 					   (void __user *) irq_state.buf,
+ 					   irq_state.len);
+@@ -3823,6 +3821,7 @@ long kvm_arch_vcpu_ioctl(struct file *filp,
+ 			r = -EINVAL;
+ 			break;
+ 		}
++		/* do not use irq_state.flags, it will break old QEMUs */
+ 		r = kvm_s390_get_irq_state(vcpu,
+ 					   (__u8 __user *)  irq_state.buf,
+ 					   irq_state.len);
+diff --git a/arch/s390/kvm/kvm-s390.h b/arch/s390/kvm/kvm-s390.h
+index 10d65dfbc306..5e46ba429bcb 100644
+--- a/arch/s390/kvm/kvm-s390.h
++++ b/arch/s390/kvm/kvm-s390.h
+@@ -1,12 +1,9 @@
++/* SPDX-License-Identifier: GPL-2.0 */
+ /*
+  * definition for kvm on s390
+  *
+  * Copyright IBM Corp. 2008, 2009
+  *
+- * This program is free software; you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License (version 2 only)
+- * as published by the Free Software Foundation.
+- *
+  *    Author(s): Carsten Otte <cotte@de.ibm.com>
+  *               Christian Borntraeger <borntraeger@de.ibm.com>
+  *               Christian Ehrhardt <ehrhardt@de.ibm.com>
+diff --git a/arch/s390/kvm/priv.c b/arch/s390/kvm/priv.c
+index c954ac49eee4..572496c688cc 100644
+--- a/arch/s390/kvm/priv.c
++++ b/arch/s390/kvm/priv.c
+@@ -1,12 +1,9 @@
++// SPDX-License-Identifier: GPL-2.0
+ /*
+  * handling privileged instructions
+  *
+  * Copyright IBM Corp. 2008, 2013
+  *
+- * This program is free software; you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License (version 2 only)
+- * as published by the Free Software Foundation.
+- *
+  *    Author(s): Carsten Otte <cotte@de.ibm.com>
+  *               Christian Borntraeger <borntraeger@de.ibm.com>
+  */
+@@ -235,8 +232,6 @@ static int try_handle_skey(struct kvm_vcpu *vcpu)
+ 		VCPU_EVENT(vcpu, 4, "%s", "retrying storage key operation");
+ 		return -EAGAIN;
+ 	}
+-	if (vcpu->arch.sie_block->gpsw.mask & PSW_MASK_PSTATE)
+-		return kvm_s390_inject_program_int(vcpu, PGM_PRIVILEGED_OP);
+ 	return 0;
+ }
+ 
+@@ -247,6 +242,9 @@ static int handle_iske(struct kvm_vcpu *vcpu)
+ 	int reg1, reg2;
+ 	int rc;
+ 
++	if (vcpu->arch.sie_block->gpsw.mask & PSW_MASK_PSTATE)
++		return kvm_s390_inject_program_int(vcpu, PGM_PRIVILEGED_OP);
++
+ 	rc = try_handle_skey(vcpu);
+ 	if (rc)
+ 		return rc != -EAGAIN ? rc : 0;
+@@ -276,6 +274,9 @@ static int handle_rrbe(struct kvm_vcpu *vcpu)
+ 	int reg1, reg2;
+ 	int rc;
+ 
++	if (vcpu->arch.sie_block->gpsw.mask & PSW_MASK_PSTATE)
++		return kvm_s390_inject_program_int(vcpu, PGM_PRIVILEGED_OP);
++
+ 	rc = try_handle_skey(vcpu);
+ 	if (rc)
+ 		return rc != -EAGAIN ? rc : 0;
+@@ -311,6 +312,9 @@ static int handle_sske(struct kvm_vcpu *vcpu)
+ 	int reg1, reg2;
+ 	int rc;
+ 
++	if (vcpu->arch.sie_block->gpsw.mask & PSW_MASK_PSTATE)
++		return kvm_s390_inject_program_int(vcpu, PGM_PRIVILEGED_OP);
++
+ 	rc = try_handle_skey(vcpu);
+ 	if (rc)
+ 		return rc != -EAGAIN ? rc : 0;
+diff --git a/arch/s390/kvm/sigp.c b/arch/s390/kvm/sigp.c
+index 9d592ef4104b..c1f5cde2c878 100644
+--- a/arch/s390/kvm/sigp.c
++++ b/arch/s390/kvm/sigp.c
+@@ -1,12 +1,9 @@
++// SPDX-License-Identifier: GPL-2.0
+ /*
+  * handling interprocessor communication
+  *
+  * Copyright IBM Corp. 2008, 2013
+  *
+- * This program is free software; you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License (version 2 only)
+- * as published by the Free Software Foundation.
+- *
+  *    Author(s): Carsten Otte <cotte@de.ibm.com>
+  *               Christian Borntraeger <borntraeger@de.ibm.com>
+  *               Christian Ehrhardt <ehrhardt@de.ibm.com>
+diff --git a/arch/s390/kvm/vsie.c b/arch/s390/kvm/vsie.c
+index a311938b63b3..5d6ae0326d9e 100644
+--- a/arch/s390/kvm/vsie.c
++++ b/arch/s390/kvm/vsie.c
+@@ -1,12 +1,9 @@
++// SPDX-License-Identifier: GPL-2.0
+ /*
+  * kvm nested virtualization support for s390x
+  *
+  * Copyright IBM Corp. 2016
+  *
+- * This program is free software; you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License (version 2 only)
+- * as published by the Free Software Foundation.
+- *
+  *    Author(s): David Hildenbrand <dahi@linux.vnet.ibm.com>
+  */
+ #include <linux/vmalloc.h>
+diff --git a/arch/x86/include/asm/kvm_emulate.h b/arch/x86/include/asm/kvm_emulate.h
+index 034caa1a084e..b24b1c8b3979 100644
+--- a/arch/x86/include/asm/kvm_emulate.h
++++ b/arch/x86/include/asm/kvm_emulate.h
+@@ -214,8 +214,6 @@ struct x86_emulate_ops {
+ 	void (*halt)(struct x86_emulate_ctxt *ctxt);
+ 	void (*wbinvd)(struct x86_emulate_ctxt *ctxt);
+ 	int (*fix_hypercall)(struct x86_emulate_ctxt *ctxt);
+-	void (*get_fpu)(struct x86_emulate_ctxt *ctxt); /* disables preempt */
+-	void (*put_fpu)(struct x86_emulate_ctxt *ctxt); /* reenables preempt */
+ 	int (*intercept)(struct x86_emulate_ctxt *ctxt,
+ 			 struct x86_instruction_info *info,
+ 			 enum x86_intercept_stage stage);
+diff --git a/arch/x86/include/asm/kvm_host.h b/arch/x86/include/asm/kvm_host.h
+index 977de5fb968b..516798431328 100644
+--- a/arch/x86/include/asm/kvm_host.h
++++ b/arch/x86/include/asm/kvm_host.h
+@@ -536,7 +536,20 @@ struct kvm_vcpu_arch {
+ 	struct kvm_mmu_memory_cache mmu_page_cache;
+ 	struct kvm_mmu_memory_cache mmu_page_header_cache;
+ 
++	/*
++	 * QEMU userspace and the guest each have their own FPU state.
++	 * In vcpu_run, we switch between the user and guest FPU contexts.
++	 * While running a VCPU, the VCPU thread will have the guest FPU
++	 * context.
++	 *
++	 * Note that while the PKRU state lives inside the fpu registers,
++	 * it is switched out separately at VMENTER and VMEXIT time. The
++	 * "guest_fpu" state here contains the guest FPU context, with the
++	 * host PRKU bits.
++	 */
++	struct fpu user_fpu;
+ 	struct fpu guest_fpu;
++
+ 	u64 xcr0;
+ 	u64 guest_supported_xcr0;
+ 	u32 guest_xstate_size;
+@@ -1435,4 +1448,7 @@ static inline int kvm_cpu_get_apicid(int mps_cpu)
+ #define put_smstate(type, buf, offset, val)                      \
+ 	*(type *)((buf) + (offset) - 0x7e00) = val
+ 
++void kvm_arch_mmu_notifier_invalidate_range(struct kvm *kvm,
++		unsigned long start, unsigned long end);
++
+ #endif /* _ASM_X86_KVM_HOST_H */
+diff --git a/arch/x86/kvm/emulate.c b/arch/x86/kvm/emulate.c
+index e7d04d0c8008..abe74f779f9d 100644
+--- a/arch/x86/kvm/emulate.c
++++ b/arch/x86/kvm/emulate.c
+@@ -1046,7 +1046,6 @@ static void fetch_register_operand(struct operand *op)
+ 
+ static void read_sse_reg(struct x86_emulate_ctxt *ctxt, sse128_t *data, int reg)
+ {
+-	ctxt->ops->get_fpu(ctxt);
+ 	switch (reg) {
+ 	case 0: asm("movdqa %%xmm0, %0" : "=m"(*data)); break;
+ 	case 1: asm("movdqa %%xmm1, %0" : "=m"(*data)); break;
+@@ -1068,13 +1067,11 @@ static void read_sse_reg(struct x86_emulate_ctxt *ctxt, sse128_t *data, int reg)
+ #endif
+ 	default: BUG();
+ 	}
+-	ctxt->ops->put_fpu(ctxt);
+ }
+ 
+ static void write_sse_reg(struct x86_emulate_ctxt *ctxt, sse128_t *data,
+ 			  int reg)
+ {
+-	ctxt->ops->get_fpu(ctxt);
+ 	switch (reg) {
+ 	case 0: asm("movdqa %0, %%xmm0" : : "m"(*data)); break;
+ 	case 1: asm("movdqa %0, %%xmm1" : : "m"(*data)); break;
+@@ -1096,12 +1093,10 @@ static void write_sse_reg(struct x86_emulate_ctxt *ctxt, sse128_t *data,
+ #endif
+ 	default: BUG();
+ 	}
+-	ctxt->ops->put_fpu(ctxt);
+ }
+ 
+ static void read_mmx_reg(struct x86_emulate_ctxt *ctxt, u64 *data, int reg)
+ {
+-	ctxt->ops->get_fpu(ctxt);
+ 	switch (reg) {
+ 	case 0: asm("movq %%mm0, %0" : "=m"(*data)); break;
+ 	case 1: asm("movq %%mm1, %0" : "=m"(*data)); break;
+@@ -1113,12 +1108,10 @@ static void read_mmx_reg(struct x86_emulate_ctxt *ctxt, u64 *data, int reg)
+ 	case 7: asm("movq %%mm7, %0" : "=m"(*data)); break;
+ 	default: BUG();
+ 	}
+-	ctxt->ops->put_fpu(ctxt);
+ }
+ 
+ static void write_mmx_reg(struct x86_emulate_ctxt *ctxt, u64 *data, int reg)
+ {
+-	ctxt->ops->get_fpu(ctxt);
+ 	switch (reg) {
+ 	case 0: asm("movq %0, %%mm0" : : "m"(*data)); break;
+ 	case 1: asm("movq %0, %%mm1" : : "m"(*data)); break;
+@@ -1130,7 +1123,6 @@ static void write_mmx_reg(struct x86_emulate_ctxt *ctxt, u64 *data, int reg)
+ 	case 7: asm("movq %0, %%mm7" : : "m"(*data)); break;
+ 	default: BUG();
+ 	}
+-	ctxt->ops->put_fpu(ctxt);
+ }
+ 
+ static int em_fninit(struct x86_emulate_ctxt *ctxt)
+@@ -1138,9 +1130,7 @@ static int em_fninit(struct x86_emulate_ctxt *ctxt)
+ 	if (ctxt->ops->get_cr(ctxt, 0) & (X86_CR0_TS | X86_CR0_EM))
+ 		return emulate_nm(ctxt);
+ 
+-	ctxt->ops->get_fpu(ctxt);
+ 	asm volatile("fninit");
+-	ctxt->ops->put_fpu(ctxt);
+ 	return X86EMUL_CONTINUE;
+ }
+ 
+@@ -1151,9 +1141,7 @@ static int em_fnstcw(struct x86_emulate_ctxt *ctxt)
+ 	if (ctxt->ops->get_cr(ctxt, 0) & (X86_CR0_TS | X86_CR0_EM))
+ 		return emulate_nm(ctxt);
+ 
+-	ctxt->ops->get_fpu(ctxt);
+ 	asm volatile("fnstcw %0": "+m"(fcw));
+-	ctxt->ops->put_fpu(ctxt);
+ 
+ 	ctxt->dst.val = fcw;
+ 
+@@ -1167,9 +1155,7 @@ static int em_fnstsw(struct x86_emulate_ctxt *ctxt)
+ 	if (ctxt->ops->get_cr(ctxt, 0) & (X86_CR0_TS | X86_CR0_EM))
+ 		return emulate_nm(ctxt);
+ 
+-	ctxt->ops->get_fpu(ctxt);
+ 	asm volatile("fnstsw %0": "+m"(fsw));
+-	ctxt->ops->put_fpu(ctxt);
+ 
+ 	ctxt->dst.val = fsw;
+ 
+@@ -4001,12 +3987,8 @@ static int em_fxsave(struct x86_emulate_ctxt *ctxt)
+ 	if (rc != X86EMUL_CONTINUE)
+ 		return rc;
+ 
+-	ctxt->ops->get_fpu(ctxt);
+-
+ 	rc = asm_safe("fxsave %[fx]", , [fx] "+m"(fx_state));
+ 
+-	ctxt->ops->put_fpu(ctxt);
+-
+ 	if (rc != X86EMUL_CONTINUE)
+ 		return rc;
+ 
+@@ -4049,8 +4031,6 @@ static int em_fxrstor(struct x86_emulate_ctxt *ctxt)
+ 	if (rc != X86EMUL_CONTINUE)
+ 		return rc;
+ 
+-	ctxt->ops->get_fpu(ctxt);
+-
+ 	if (size < __fxstate_size(16)) {
+ 		rc = fxregs_fixup(&fx_state, size);
+ 		if (rc != X86EMUL_CONTINUE)
+@@ -4066,8 +4046,6 @@ static int em_fxrstor(struct x86_emulate_ctxt *ctxt)
+ 		rc = asm_safe("fxrstor %[fx]", : [fx] "m"(fx_state));
+ 
+ out:
+-	ctxt->ops->put_fpu(ctxt);
+-
+ 	return rc;
+ }
+ 
+@@ -5317,9 +5295,7 @@ static int flush_pending_x87_faults(struct x86_emulate_ctxt *ctxt)
+ {
+ 	int rc;
+ 
+-	ctxt->ops->get_fpu(ctxt);
+ 	rc = asm_safe("fwait");
+-	ctxt->ops->put_fpu(ctxt);
+ 
+ 	if (unlikely(rc != X86EMUL_CONTINUE))
+ 		return emulate_exception(ctxt, MF_VECTOR, 0, false);
+diff --git a/arch/x86/kvm/vmx.c b/arch/x86/kvm/vmx.c
+index 4704aaf6d19e..8eba631c4dbd 100644
+--- a/arch/x86/kvm/vmx.c
++++ b/arch/x86/kvm/vmx.c
+@@ -6751,16 +6751,10 @@ static __init int hardware_setup(void)
+ 			goto out;
+ 	}
+ 
+-	vmx_io_bitmap_b = (unsigned long *)__get_free_page(GFP_KERNEL);
+ 	memset(vmx_vmread_bitmap, 0xff, PAGE_SIZE);
+ 	memset(vmx_vmwrite_bitmap, 0xff, PAGE_SIZE);
+ 
+-	/*
+-	 * Allow direct access to the PC debug port (it is often used for I/O
+-	 * delays, but the vmexits simply slow things down).
+-	 */
+ 	memset(vmx_io_bitmap_a, 0xff, PAGE_SIZE);
+-	clear_bit(0x80, vmx_io_bitmap_a);
+ 
+ 	memset(vmx_io_bitmap_b, 0xff, PAGE_SIZE);
+ 
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index eee8e7faf1af..faf843c9b916 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -2937,7 +2937,6 @@ void kvm_arch_vcpu_put(struct kvm_vcpu *vcpu)
+ 	srcu_read_unlock(&vcpu->kvm->srcu, idx);
+ 	pagefault_enable();
+ 	kvm_x86_ops->vcpu_put(vcpu);
+-	kvm_put_guest_fpu(vcpu);
+ 	vcpu->arch.last_host_tsc = rdtsc();
+ }
+ 
+@@ -5252,17 +5251,6 @@ static void emulator_halt(struct x86_emulate_ctxt *ctxt)
+ 	emul_to_vcpu(ctxt)->arch.halt_request = 1;
+ }
+ 
+-static void emulator_get_fpu(struct x86_emulate_ctxt *ctxt)
+-{
+-	preempt_disable();
+-	kvm_load_guest_fpu(emul_to_vcpu(ctxt));
+-}
+-
+-static void emulator_put_fpu(struct x86_emulate_ctxt *ctxt)
+-{
+-	preempt_enable();
+-}
+-
+ static int emulator_intercept(struct x86_emulate_ctxt *ctxt,
+ 			      struct x86_instruction_info *info,
+ 			      enum x86_intercept_stage stage)
+@@ -5340,8 +5328,6 @@ static const struct x86_emulate_ops emulate_ops = {
+ 	.halt                = emulator_halt,
+ 	.wbinvd              = emulator_wbinvd,
+ 	.fix_hypercall       = emulator_fix_hypercall,
+-	.get_fpu             = emulator_get_fpu,
+-	.put_fpu             = emulator_put_fpu,
+ 	.intercept           = emulator_intercept,
+ 	.get_cpuid           = emulator_get_cpuid,
+ 	.set_nmi_mask        = emulator_set_nmi_mask,
+@@ -6778,6 +6764,20 @@ static void kvm_vcpu_flush_tlb(struct kvm_vcpu *vcpu)
+ 	kvm_x86_ops->tlb_flush(vcpu);
+ }
+ 
++void kvm_arch_mmu_notifier_invalidate_range(struct kvm *kvm,
++		unsigned long start, unsigned long end)
++{
++	unsigned long apic_address;
++
++	/*
++	 * The physical address of apic access page is stored in the VMCS.
++	 * Update it when it becomes invalid.
++	 */
++	apic_address = gfn_to_hva(kvm, APIC_DEFAULT_PHYS_BASE >> PAGE_SHIFT);
++	if (start <= apic_address && apic_address < end)
++		kvm_make_all_cpus_request(kvm, KVM_REQ_APIC_PAGE_RELOAD);
++}
++
+ void kvm_vcpu_reload_apic_access_page(struct kvm_vcpu *vcpu)
+ {
+ 	struct page *page = NULL;
+@@ -6952,7 +6952,6 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
+ 	preempt_disable();
+ 
+ 	kvm_x86_ops->prepare_guest_switch(vcpu);
+-	kvm_load_guest_fpu(vcpu);
+ 
+ 	/*
+ 	 * Disable IRQs before setting IN_GUEST_MODE.  Posted interrupt
+@@ -7297,12 +7296,14 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu, struct kvm_run *kvm_run)
+ 		}
+ 	}
+ 
++	kvm_load_guest_fpu(vcpu);
++
+ 	if (unlikely(vcpu->arch.complete_userspace_io)) {
+ 		int (*cui)(struct kvm_vcpu *) = vcpu->arch.complete_userspace_io;
+ 		vcpu->arch.complete_userspace_io = NULL;
+ 		r = cui(vcpu);
+ 		if (r <= 0)
+-			goto out;
++			goto out_fpu;
+ 	} else
+ 		WARN_ON(vcpu->arch.pio.count || vcpu->mmio_needed);
+ 
+@@ -7311,6 +7312,8 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu, struct kvm_run *kvm_run)
+ 	else
+ 		r = vcpu_run(vcpu);
+ 
++out_fpu:
++	kvm_put_guest_fpu(vcpu);
+ out:
+ 	post_kvm_run_save(vcpu);
+ 	kvm_sigset_deactivate(vcpu);
+@@ -7704,32 +7707,25 @@ static void fx_init(struct kvm_vcpu *vcpu)
+ 	vcpu->arch.cr0 |= X86_CR0_ET;
+ }
+ 
++/* Swap (qemu) user FPU context for the guest FPU context. */
+ void kvm_load_guest_fpu(struct kvm_vcpu *vcpu)
+ {
+-	if (vcpu->guest_fpu_loaded)
+-		return;
+-
+-	/*
+-	 * Restore all possible states in the guest,
+-	 * and assume host would use all available bits.
+-	 * Guest xcr0 would be loaded later.
+-	 */
+-	vcpu->guest_fpu_loaded = 1;
+-	__kernel_fpu_begin();
++	preempt_disable();
++	copy_fpregs_to_fpstate(&vcpu->arch.user_fpu);
+ 	/* PKRU is separately restored in kvm_x86_ops->run.  */
+ 	__copy_kernel_to_fpregs(&vcpu->arch.guest_fpu.state,
+ 				~XFEATURE_MASK_PKRU);
++	preempt_enable();
+ 	trace_kvm_fpu(1);
+ }
+ 
++/* When vcpu_run ends, restore user space FPU context. */
+ void kvm_put_guest_fpu(struct kvm_vcpu *vcpu)
+ {
+-	if (!vcpu->guest_fpu_loaded)
+-		return;
+-
+-	vcpu->guest_fpu_loaded = 0;
++	preempt_disable();
+ 	copy_fpregs_to_fpstate(&vcpu->arch.guest_fpu);
+-	__kernel_fpu_end();
++	copy_kernel_to_fpregs(&vcpu->arch.user_fpu.state);
++	preempt_enable();
+ 	++vcpu->stat.fpu_reload;
+ 	trace_kvm_fpu(0);
+ }
+@@ -7846,7 +7842,8 @@ void kvm_vcpu_reset(struct kvm_vcpu *vcpu, bool init_event)
+ 		 * To avoid have the INIT path from kvm_apic_has_events() that be
+ 		 * called with loaded FPU and does not let userspace fix the state.
+ 		 */
+-		kvm_put_guest_fpu(vcpu);
++		if (init_event)
++			kvm_put_guest_fpu(vcpu);
+ 		mpx_state_buffer = get_xsave_addr(&vcpu->arch.guest_fpu.state.xsave,
+ 					XFEATURE_MASK_BNDREGS);
+ 		if (mpx_state_buffer)
+@@ -7855,6 +7852,8 @@ void kvm_vcpu_reset(struct kvm_vcpu *vcpu, bool init_event)
+ 					XFEATURE_MASK_BNDCSR);
+ 		if (mpx_state_buffer)
+ 			memset(mpx_state_buffer, 0, sizeof(struct mpx_bndcsr));
++		if (init_event)
++			kvm_load_guest_fpu(vcpu);
+ 	}
+ 
+ 	if (!init_event) {
+diff --git a/include/kvm/arm_arch_timer.h b/include/kvm/arm_arch_timer.h
+index 01ee473517e2..6e45608b2399 100644
+--- a/include/kvm/arm_arch_timer.h
++++ b/include/kvm/arm_arch_timer.h
+@@ -93,7 +93,4 @@ void kvm_timer_init_vhe(void);
+ #define vcpu_vtimer(v)	(&(v)->arch.timer_cpu.vtimer)
+ #define vcpu_ptimer(v)	(&(v)->arch.timer_cpu.ptimer)
+ 
+-void enable_el1_phys_timer_access(void);
+-void disable_el1_phys_timer_access(void);
+-
+ #endif
+diff --git a/include/linux/kvm_host.h b/include/linux/kvm_host.h
+index 893d6d606cd0..6bdd4b9f6611 100644
+--- a/include/linux/kvm_host.h
++++ b/include/linux/kvm_host.h
+@@ -232,7 +232,7 @@ struct kvm_vcpu {
+ 	struct mutex mutex;
+ 	struct kvm_run *run;
+ 
+-	int guest_fpu_loaded, guest_xcr0_loaded;
++	int guest_xcr0_loaded;
+ 	struct swait_queue_head wq;
+ 	struct pid __rcu *pid;
+ 	int sigset_active;
+diff --git a/include/uapi/linux/kvm.h b/include/uapi/linux/kvm.h
+index 282d7613fce8..496e59a2738b 100644
+--- a/include/uapi/linux/kvm.h
++++ b/include/uapi/linux/kvm.h
+@@ -630,9 +630,9 @@ struct kvm_s390_irq {
+ 
+ struct kvm_s390_irq_state {
+ 	__u64 buf;
+-	__u32 flags;
++	__u32 flags;        /* will stay unused for compatibility reasons */
+ 	__u32 len;
+-	__u32 reserved[4];
++	__u32 reserved[4];  /* will stay unused for compatibility reasons */
+ };
+ 
+ /* for KVM_SET_GUEST_DEBUG */
+diff --git a/virt/kvm/arm/arch_timer.c b/virt/kvm/arm/arch_timer.c
+index 4151250ce8da..f9555b1e7f15 100644
+--- a/virt/kvm/arm/arch_timer.c
++++ b/virt/kvm/arm/arch_timer.c
+@@ -479,9 +479,6 @@ void kvm_timer_vcpu_load(struct kvm_vcpu *vcpu)
+ 
+ 	vtimer_restore_state(vcpu);
+ 
+-	if (has_vhe())
+-		disable_el1_phys_timer_access();
+-
+ 	/* Set the background timer for the physical timer emulation. */
+ 	phys_timer_emulate(vcpu);
+ }
+@@ -510,9 +507,6 @@ void kvm_timer_vcpu_put(struct kvm_vcpu *vcpu)
+ 	if (unlikely(!timer->enabled))
+ 		return;
+ 
+-	if (has_vhe())
+-		enable_el1_phys_timer_access();
+-
+ 	vtimer_save_state(vcpu);
+ 
+ 	/*
+@@ -841,7 +835,10 @@ int kvm_timer_enable(struct kvm_vcpu *vcpu)
+ no_vgic:
+ 	preempt_disable();
+ 	timer->enabled = 1;
+-	kvm_timer_vcpu_load_vgic(vcpu);
++	if (!irqchip_in_kernel(vcpu->kvm))
++		kvm_timer_vcpu_load_user(vcpu);
++	else
++		kvm_timer_vcpu_load_vgic(vcpu);
+ 	preempt_enable();
+ 
+ 	return 0;
+diff --git a/virt/kvm/arm/arm.c b/virt/kvm/arm/arm.c
+index a67c106d73f5..6b60c98a6e22 100644
+--- a/virt/kvm/arm/arm.c
++++ b/virt/kvm/arm/arm.c
+@@ -188,6 +188,7 @@ void kvm_arch_destroy_vm(struct kvm *kvm)
+ 			kvm->vcpus[i] = NULL;
+ 		}
+ 	}
++	atomic_set(&kvm->online_vcpus, 0);
+ }
+ 
+ int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
+@@ -296,7 +297,6 @@ void kvm_arch_vcpu_free(struct kvm_vcpu *vcpu)
+ {
+ 	kvm_mmu_free_memory_caches(vcpu);
+ 	kvm_timer_vcpu_terminate(vcpu);
+-	kvm_vgic_vcpu_destroy(vcpu);
+ 	kvm_pmu_vcpu_destroy(vcpu);
+ 	kvm_vcpu_uninit(vcpu);
+ 	kmem_cache_free(kvm_vcpu_cache, vcpu);
+@@ -627,6 +627,9 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu, struct kvm_run *run)
+ 		ret = kvm_handle_mmio_return(vcpu, vcpu->run);
+ 		if (ret)
+ 			return ret;
++		if (kvm_arm_handle_step_debug(vcpu, vcpu->run))
++			return 0;
++
+ 	}
+ 
+ 	if (run->immediate_exit)
+@@ -1502,7 +1505,7 @@ int kvm_arch_init(void *opaque)
+ 	bool in_hyp_mode;
+ 
+ 	if (!is_hyp_mode_available()) {
+-		kvm_err("HYP mode not available\n");
++		kvm_info("HYP mode not available\n");
+ 		return -ENODEV;
+ 	}
+ 
+diff --git a/virt/kvm/arm/hyp/timer-sr.c b/virt/kvm/arm/hyp/timer-sr.c
+index f39861639f08..f24404b3c8df 100644
+--- a/virt/kvm/arm/hyp/timer-sr.c
++++ b/virt/kvm/arm/hyp/timer-sr.c
+@@ -27,42 +27,34 @@ void __hyp_text __kvm_timer_set_cntvoff(u32 cntvoff_low, u32 cntvoff_high)
+ 	write_sysreg(cntvoff, cntvoff_el2);
+ }
+ 
+-void __hyp_text enable_el1_phys_timer_access(void)
+-{
+-	u64 val;
+-
+-	/* Allow physical timer/counter access for the host */
+-	val = read_sysreg(cnthctl_el2);
+-	val |= CNTHCTL_EL1PCTEN | CNTHCTL_EL1PCEN;
+-	write_sysreg(val, cnthctl_el2);
+-}
+-
+-void __hyp_text disable_el1_phys_timer_access(void)
+-{
+-	u64 val;
+-
+-	/*
+-	 * Disallow physical timer access for the guest
+-	 * Physical counter access is allowed
+-	 */
+-	val = read_sysreg(cnthctl_el2);
+-	val &= ~CNTHCTL_EL1PCEN;
+-	val |= CNTHCTL_EL1PCTEN;
+-	write_sysreg(val, cnthctl_el2);
+-}
+-
+ void __hyp_text __timer_disable_traps(struct kvm_vcpu *vcpu)
+ {
+ 	/*
+ 	 * We don't need to do this for VHE since the host kernel runs in EL2
+ 	 * with HCR_EL2.TGE ==1, which makes those bits have no impact.
+ 	 */
+-	if (!has_vhe())
+-		enable_el1_phys_timer_access();
++	if (!has_vhe()) {
++		u64 val;
++
++		/* Allow physical timer/counter access for the host */
++		val = read_sysreg(cnthctl_el2);
++		val |= CNTHCTL_EL1PCTEN | CNTHCTL_EL1PCEN;
++		write_sysreg(val, cnthctl_el2);
++	}
+ }
+ 
+ void __hyp_text __timer_enable_traps(struct kvm_vcpu *vcpu)
+ {
+-	if (!has_vhe())
+-		disable_el1_phys_timer_access();
++	if (!has_vhe()) {
++		u64 val;
++
++		/*
++		 * Disallow physical timer access for the guest
++		 * Physical counter access is allowed
++		 */
++		val = read_sysreg(cnthctl_el2);
++		val &= ~CNTHCTL_EL1PCEN;
++		val |= CNTHCTL_EL1PCTEN;
++		write_sysreg(val, cnthctl_el2);
++	}
+ }
+diff --git a/virt/kvm/arm/hyp/vgic-v2-sr.c b/virt/kvm/arm/hyp/vgic-v2-sr.c
+index a3f18d362366..d7fd46fe9efb 100644
+--- a/virt/kvm/arm/hyp/vgic-v2-sr.c
++++ b/virt/kvm/arm/hyp/vgic-v2-sr.c
+@@ -34,11 +34,7 @@ static void __hyp_text save_elrsr(struct kvm_vcpu *vcpu, void __iomem *base)
+ 	else
+ 		elrsr1 = 0;
+ 
+-#ifdef CONFIG_CPU_BIG_ENDIAN
+-	cpu_if->vgic_elrsr = ((u64)elrsr0 << 32) | elrsr1;
+-#else
+ 	cpu_if->vgic_elrsr = ((u64)elrsr1 << 32) | elrsr0;
+-#endif
+ }
+ 
+ static void __hyp_text save_lrs(struct kvm_vcpu *vcpu, void __iomem *base)
+diff --git a/virt/kvm/arm/vgic/vgic-irqfd.c b/virt/kvm/arm/vgic/vgic-irqfd.c
+index b7baf581611a..99e026d2dade 100644
+--- a/virt/kvm/arm/vgic/vgic-irqfd.c
++++ b/virt/kvm/arm/vgic/vgic-irqfd.c
+@@ -112,8 +112,7 @@ int kvm_vgic_setup_default_irq_routing(struct kvm *kvm)
+ 	u32 nr = dist->nr_spis;
+ 	int i, ret;
+ 
+-	entries = kcalloc(nr, sizeof(struct kvm_kernel_irq_routing_entry),
+-			  GFP_KERNEL);
++	entries = kcalloc(nr, sizeof(*entries), GFP_KERNEL);
+ 	if (!entries)
+ 		return -ENOMEM;
+ 
+diff --git a/virt/kvm/arm/vgic/vgic-its.c b/virt/kvm/arm/vgic/vgic-its.c
+index 1f761a9991e7..8e633bd9cc1e 100644
+--- a/virt/kvm/arm/vgic/vgic-its.c
++++ b/virt/kvm/arm/vgic/vgic-its.c
+@@ -421,6 +421,7 @@ static int its_sync_lpi_pending_table(struct kvm_vcpu *vcpu)
+ 	u32 *intids;
+ 	int nr_irqs, i;
+ 	unsigned long flags;
++	u8 pendmask;
+ 
+ 	nr_irqs = vgic_copy_lpi_list(vcpu, &intids);
+ 	if (nr_irqs < 0)
+@@ -428,7 +429,6 @@ static int its_sync_lpi_pending_table(struct kvm_vcpu *vcpu)
+ 
+ 	for (i = 0; i < nr_irqs; i++) {
+ 		int byte_offset, bit_nr;
+-		u8 pendmask;
+ 
+ 		byte_offset = intids[i] / BITS_PER_BYTE;
+ 		bit_nr = intids[i] % BITS_PER_BYTE;
+@@ -821,6 +821,8 @@ static int vgic_its_alloc_collection(struct vgic_its *its,
+ 		return E_ITS_MAPC_COLLECTION_OOR;
+ 
+ 	collection = kzalloc(sizeof(*collection), GFP_KERNEL);
++	if (!collection)
++		return -ENOMEM;
+ 
+ 	collection->collection_id = coll_id;
+ 	collection->target_addr = COLLECTION_NOT_MAPPED;
+diff --git a/virt/kvm/arm/vgic/vgic-v3.c b/virt/kvm/arm/vgic/vgic-v3.c
+index 2f05f732d3fd..f47e8481fa45 100644
+--- a/virt/kvm/arm/vgic/vgic-v3.c
++++ b/virt/kvm/arm/vgic/vgic-v3.c
+@@ -327,13 +327,13 @@ int vgic_v3_save_pending_tables(struct kvm *kvm)
+ 	int last_byte_offset = -1;
+ 	struct vgic_irq *irq;
+ 	int ret;
++	u8 val;
+ 
+ 	list_for_each_entry(irq, &dist->lpi_list_head, lpi_list) {
+ 		int byte_offset, bit_nr;
+ 		struct kvm_vcpu *vcpu;
+ 		gpa_t pendbase, ptr;
+ 		bool stored;
+-		u8 val;
+ 
+ 		vcpu = irq->target_vcpu;
+ 		if (!vcpu)
+diff --git a/virt/kvm/arm/vgic/vgic-v4.c b/virt/kvm/arm/vgic/vgic-v4.c
+index 53c324aa44ef..4a37292855bc 100644
+--- a/virt/kvm/arm/vgic/vgic-v4.c
++++ b/virt/kvm/arm/vgic/vgic-v4.c
+@@ -337,8 +337,10 @@ int kvm_vgic_v4_unset_forwarding(struct kvm *kvm, int virq,
+ 		goto out;
+ 
+ 	WARN_ON(!(irq->hw && irq->host_irq == virq));
+-	irq->hw = false;
+-	ret = its_unmap_vlpi(virq);
++	if (irq->hw) {
++		irq->hw = false;
++		ret = its_unmap_vlpi(virq);
++	}
+ 
+ out:
+ 	mutex_unlock(&its->its_lock);
+diff --git a/virt/kvm/arm/vgic/vgic.c b/virt/kvm/arm/vgic/vgic.c
+index b168a328a9e0..ecb8e25f5fe5 100644
+--- a/virt/kvm/arm/vgic/vgic.c
++++ b/virt/kvm/arm/vgic/vgic.c
+@@ -492,6 +492,7 @@ int kvm_vgic_unmap_phys_irq(struct kvm_vcpu *vcpu, unsigned int vintid)
+ int kvm_vgic_set_owner(struct kvm_vcpu *vcpu, unsigned int intid, void *owner)
+ {
+ 	struct vgic_irq *irq;
++	unsigned long flags;
+ 	int ret = 0;
+ 
+ 	if (!vgic_initialized(vcpu->kvm))
+@@ -502,12 +503,12 @@ int kvm_vgic_set_owner(struct kvm_vcpu *vcpu, unsigned int intid, void *owner)
+ 		return -EINVAL;
+ 
+ 	irq = vgic_get_irq(vcpu->kvm, vcpu, intid);
+-	spin_lock(&irq->irq_lock);
++	spin_lock_irqsave(&irq->irq_lock, flags);
+ 	if (irq->owner && irq->owner != owner)
+ 		ret = -EEXIST;
+ 	else
+ 		irq->owner = owner;
+-	spin_unlock(&irq->irq_lock);
++	spin_unlock_irqrestore(&irq->irq_lock, flags);
+ 
+ 	return ret;
+ }
+@@ -823,13 +824,14 @@ void vgic_kick_vcpus(struct kvm *kvm)
+ 
+ bool kvm_vgic_map_is_active(struct kvm_vcpu *vcpu, unsigned int vintid)
+ {
+-	struct vgic_irq *irq = vgic_get_irq(vcpu->kvm, vcpu, vintid);
++	struct vgic_irq *irq;
+ 	bool map_is_active;
+ 	unsigned long flags;
+ 
+ 	if (!vgic_initialized(vcpu->kvm))
+ 		return false;
+ 
++	irq = vgic_get_irq(vcpu->kvm, vcpu, vintid);
+ 	spin_lock_irqsave(&irq->irq_lock, flags);
+ 	map_is_active = irq->hw && irq->active;
+ 	spin_unlock_irqrestore(&irq->irq_lock, flags);
+diff --git a/virt/kvm/kvm_main.c b/virt/kvm/kvm_main.c
+index c422c10cd1dd..210bf820385a 100644
+--- a/virt/kvm/kvm_main.c
++++ b/virt/kvm/kvm_main.c
+@@ -135,6 +135,11 @@ static void kvm_uevent_notify_change(unsigned int type, struct kvm *kvm);
+ static unsigned long long kvm_createvm_count;
+ static unsigned long long kvm_active_vms;
+ 
++__weak void kvm_arch_mmu_notifier_invalidate_range(struct kvm *kvm,
++		unsigned long start, unsigned long end)
++{
++}
++
+ bool kvm_is_reserved_pfn(kvm_pfn_t pfn)
+ {
+ 	if (pfn_valid(pfn))
+@@ -360,6 +365,9 @@ static void kvm_mmu_notifier_invalidate_range_start(struct mmu_notifier *mn,
+ 		kvm_flush_remote_tlbs(kvm);
+ 
+ 	spin_unlock(&kvm->mmu_lock);
++
++	kvm_arch_mmu_notifier_invalidate_range(kvm, start, end);
++
+ 	srcu_read_unlock(&kvm->srcu, idx);
+ }
+ 

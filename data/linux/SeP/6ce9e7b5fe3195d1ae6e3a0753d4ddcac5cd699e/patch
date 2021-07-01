@@ -1,0 +1,135 @@
+diff --git a/net/ipv4/ip_output.c b/net/ipv4/ip_output.c
+index 7d0821054729..afae0cbabbf9 100644
+--- a/net/ipv4/ip_output.c
++++ b/net/ipv4/ip_output.c
+@@ -1302,7 +1302,7 @@ int ip_push_pending_frames(struct sock *sk)
+ 	err = ip_local_out(skb);
+ 	if (err) {
+ 		if (err > 0)
+-			err = inet->recverr ? net_xmit_errno(err) : 0;
++			err = net_xmit_errno(err);
+ 		if (err)
+ 			goto error;
+ 	}
+diff --git a/net/ipv4/raw.c b/net/ipv4/raw.c
+index 2979f14bb188..ebb1e5848bc6 100644
+--- a/net/ipv4/raw.c
++++ b/net/ipv4/raw.c
+@@ -375,7 +375,7 @@ static int raw_send_hdrinc(struct sock *sk, void *from, size_t length,
+ 	err = NF_HOOK(PF_INET, NF_INET_LOCAL_OUT, skb, NULL, rt->u.dst.dev,
+ 		      dst_output);
+ 	if (err > 0)
+-		err = inet->recverr ? net_xmit_errno(err) : 0;
++		err = net_xmit_errno(err);
+ 	if (err)
+ 		goto error;
+ out:
+@@ -386,6 +386,8 @@ static int raw_send_hdrinc(struct sock *sk, void *from, size_t length,
+ 	kfree_skb(skb);
+ error:
+ 	IP_INC_STATS(net, IPSTATS_MIB_OUTDISCARDS);
++	if (err == -ENOBUFS && !inet->recverr)
++		err = 0;
+ 	return err;
+ }
+ 
+@@ -576,8 +578,11 @@ static int raw_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
+ 					&ipc, &rt, msg->msg_flags);
+ 		if (err)
+ 			ip_flush_pending_frames(sk);
+-		else if (!(msg->msg_flags & MSG_MORE))
++		else if (!(msg->msg_flags & MSG_MORE)) {
+ 			err = ip_push_pending_frames(sk);
++			if (err == -ENOBUFS && !inet->recverr)
++				err = 0;
++		}
+ 		release_sock(sk);
+ 	}
+ done:
+diff --git a/net/ipv4/udp.c b/net/ipv4/udp.c
+index 29ebb0d27a1e..ebaaa7f973d7 100644
+--- a/net/ipv4/udp.c
++++ b/net/ipv4/udp.c
+@@ -561,12 +561,18 @@ static int udp_push_pending_frames(struct sock *sk)
+ 
+ send:
+ 	err = ip_push_pending_frames(sk);
++	if (err) {
++		if (err == -ENOBUFS && !inet->recverr) {
++			UDP_INC_STATS_USER(sock_net(sk),
++					   UDP_MIB_SNDBUFERRORS, is_udplite);
++			err = 0;
++		}
++	} else
++		UDP_INC_STATS_USER(sock_net(sk),
++				   UDP_MIB_OUTDATAGRAMS, is_udplite);
+ out:
+ 	up->len = 0;
+ 	up->pending = 0;
+-	if (!err)
+-		UDP_INC_STATS_USER(sock_net(sk),
+-				UDP_MIB_OUTDATAGRAMS, is_udplite);
+ 	return err;
+ }
+ 
+diff --git a/net/ipv6/ip6_output.c b/net/ipv6/ip6_output.c
+index a931229856b6..cd48801a8d6f 100644
+--- a/net/ipv6/ip6_output.c
++++ b/net/ipv6/ip6_output.c
+@@ -1511,7 +1511,7 @@ int ip6_push_pending_frames(struct sock *sk)
+ 	err = ip6_local_out(skb);
+ 	if (err) {
+ 		if (err > 0)
+-			err = np->recverr ? net_xmit_errno(err) : 0;
++			err = net_xmit_errno(err);
+ 		if (err)
+ 			goto error;
+ 	}
+diff --git a/net/ipv6/raw.c b/net/ipv6/raw.c
+index 506841030fbe..7d675b8d82d3 100644
+--- a/net/ipv6/raw.c
++++ b/net/ipv6/raw.c
+@@ -642,7 +642,7 @@ static int rawv6_send_hdrinc(struct sock *sk, void *from, int length,
+ 	err = NF_HOOK(PF_INET6, NF_INET_LOCAL_OUT, skb, NULL, rt->u.dst.dev,
+ 		      dst_output);
+ 	if (err > 0)
+-		err = np->recverr ? net_xmit_errno(err) : 0;
++		err = net_xmit_errno(err);
+ 	if (err)
+ 		goto error;
+ out:
+@@ -653,6 +653,8 @@ static int rawv6_send_hdrinc(struct sock *sk, void *from, int length,
+ 	kfree_skb(skb);
+ error:
+ 	IP6_INC_STATS(sock_net(sk), rt->rt6i_idev, IPSTATS_MIB_OUTDISCARDS);
++	if (err == -ENOBUFS && !np->recverr)
++		err = 0;
+ 	return err;
+ }
+ 
+diff --git a/net/ipv6/udp.c b/net/ipv6/udp.c
+index 20d2ffc15f0d..164040613c2e 100644
+--- a/net/ipv6/udp.c
++++ b/net/ipv6/udp.c
+@@ -724,12 +724,18 @@ static int udp_v6_push_pending_frames(struct sock *sk)
+ 
+ send:
+ 	err = ip6_push_pending_frames(sk);
++	if (err) {
++		if (err == -ENOBUFS && !inet6_sk(sk)->recverr) {
++			UDP6_INC_STATS_USER(sock_net(sk),
++					    UDP_MIB_SNDBUFERRORS, is_udplite);
++			err = 0;
++		}
++	} else
++		UDP6_INC_STATS_USER(sock_net(sk),
++				    UDP_MIB_OUTDATAGRAMS, is_udplite);
+ out:
+ 	up->len = 0;
+ 	up->pending = 0;
+-	if (!err)
+-		UDP6_INC_STATS_USER(sock_net(sk),
+-				UDP_MIB_OUTDATAGRAMS, is_udplite);
+ 	return err;
+ }
+ 

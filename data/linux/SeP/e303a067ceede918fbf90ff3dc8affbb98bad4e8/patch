@@ -1,0 +1,53 @@
+diff --git a/arch/x86/kvm/vmx/nested.c b/arch/x86/kvm/vmx/nested.c
+index 8ff20523661b..d8ea4ebd79e7 100644
+--- a/arch/x86/kvm/vmx/nested.c
++++ b/arch/x86/kvm/vmx/nested.c
+@@ -211,6 +211,7 @@ static void free_nested(struct kvm_vcpu *vcpu)
+ 	if (!vmx->nested.vmxon && !vmx->nested.smm.vmxon)
+ 		return;
+ 
++	hrtimer_cancel(&vmx->nested.preemption_timer);
+ 	vmx->nested.vmxon = false;
+ 	vmx->nested.smm.vmxon = false;
+ 	free_vpid(vmx->nested.vpid02);
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index 3d27206f6c01..e67ecf25e690 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -5116,6 +5116,13 @@ int kvm_read_guest_virt(struct kvm_vcpu *vcpu,
+ {
+ 	u32 access = (kvm_x86_ops->get_cpl(vcpu) == 3) ? PFERR_USER_MASK : 0;
+ 
++	/*
++	 * FIXME: this should call handle_emulation_failure if X86EMUL_IO_NEEDED
++	 * is returned, but our callers are not ready for that and they blindly
++	 * call kvm_inject_page_fault.  Ensure that they at least do not leak
++	 * uninitialized kernel stack memory into cr2 and error code.
++	 */
++	memset(exception, 0, sizeof(*exception));
+ 	return kvm_read_guest_virt_helper(addr, val, bytes, vcpu, access,
+ 					  exception);
+ }
+diff --git a/virt/kvm/kvm_main.c b/virt/kvm/kvm_main.c
+index 5ecea812cb6a..585845203db8 100644
+--- a/virt/kvm/kvm_main.c
++++ b/virt/kvm/kvm_main.c
+@@ -3000,8 +3000,10 @@ static int kvm_ioctl_create_device(struct kvm *kvm,
+ 	if (ops->init)
+ 		ops->init(dev);
+ 
++	kvm_get_kvm(kvm);
+ 	ret = anon_inode_getfd(ops->name, &kvm_device_fops, dev, O_RDWR | O_CLOEXEC);
+ 	if (ret < 0) {
++		kvm_put_kvm(kvm);
+ 		mutex_lock(&kvm->lock);
+ 		list_del(&dev->vm_node);
+ 		mutex_unlock(&kvm->lock);
+@@ -3009,7 +3011,6 @@ static int kvm_ioctl_create_device(struct kvm *kvm,
+ 		return ret;
+ 	}
+ 
+-	kvm_get_kvm(kvm);
+ 	cd->fd = ret;
+ 	return 0;
+ }

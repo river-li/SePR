@@ -1,0 +1,13 @@
+commit de542925fbf179fb4b39bab2c3235b4525f96794
+Merge: 5fdfd42e3a69 b78b6af66a5f
+Author: Linus Torvalds <torvalds@g5.osdl.org>
+Commit: Linus Torvalds <torvalds@g5.osdl.org>
+
+    Merge master.kernel.org:/pub/scm/linux/kernel/git/gregkh/stable-2.6
+    
+    * master.kernel.org:/pub/scm/linux/kernel/git/gregkh/stable-2.6:
+      [PATCH] shmat: stop mprotect from giving write permission to a readonly attachment (CVE-2006-1524)
+      [PATCH] cciss: bug fix for crash when running hpacucli
+      [PATCH] ext3: Fix missed mutex unlock
+      [PATCH] Fix block device symlink name
+      [PATCH] isd200: limit to BLK_DEV_IDE

@@ -1,0 +1,25 @@
+commit ca96a895a6bae7efe7b11a35d9f43e6228467562
+Author: Jiri Pirko <jpirko@redhat.com>
+Commit: Al Viro <viro@zeniv.linux.org.uk>
+
+    audit: EXECVE record - removed bogus newline
+    
+    (updated)
+    Added hunk that changes the comment, the rest is the same.
+    
+    EXECVE records contain a newline after every argument. auditd converts
+    "\n" to " " so you cannot see newlines even in raw logs, but they're
+    there nevertheless. If you're not using auditd, you need to work round
+    them. These '\n' chars are can be easily replaced by spaces when
+    creating record in kernel. Note there is no need for trailing '\n' in
+    an audit record.
+    
+    record before this patch:
+    "type=EXECVE msg=audit(1231421801.566:31): argc=4 a0=\"./test\"\na1=\"a\"\na2=\"b\"\na3=\"c\"\n"
+    
+    record after this patch:
+    "type=EXECVE msg=audit(1231421801.566:31): argc=4 a0=\"./test\" a1=\"a\" a2=\"b\" a3=\"c\""
+    
+    Signed-off-by: Jiri Pirko <jpirko@redhat.com>
+    Acked-by: Eric Paris <eparis@redhat.com>
+    Signed-off-by: Al Viro <viro@zeniv.linux.org.uk>

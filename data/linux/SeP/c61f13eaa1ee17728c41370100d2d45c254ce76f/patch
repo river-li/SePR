@@ -1,0 +1,65 @@
+diff --git a/arch/Kconfig b/arch/Kconfig
+index 99839c23d453..646ba0f42c5f 100644
+--- a/arch/Kconfig
++++ b/arch/Kconfig
+@@ -410,6 +410,28 @@ config GCC_PLUGIN_LATENT_ENTROPY
+ 	   * https://grsecurity.net/
+ 	   * https://pax.grsecurity.net/
+ 
++config GCC_PLUGIN_STRUCTLEAK
++	bool "Force initialization of variables containing userspace addresses"
++	depends on GCC_PLUGINS
++	help
++	  This plugin zero-initializes any structures that containing a
++	  __user attribute. This can prevent some classes of information
++	  exposures.
++
++	  This plugin was ported from grsecurity/PaX. More information at:
++	   * https://grsecurity.net/
++	   * https://pax.grsecurity.net/
++
++config GCC_PLUGIN_STRUCTLEAK_VERBOSE
++	bool "Report forcefully initialized variables"
++	depends on GCC_PLUGIN_STRUCTLEAK
++	depends on !COMPILE_TEST
++	help
++	  This option will cause a warning to be printed each time the
++	  structleak plugin finds a variable it thinks needs to be
++	  initialized. Since not all existing initializers are detected
++	  by the plugin, this can produce false positive warnings.
++
+ config HAVE_CC_STACKPROTECTOR
+ 	bool
+ 	help
+diff --git a/include/linux/compiler.h b/include/linux/compiler.h
+index cf0fa5d86059..91c30cba984e 100644
+--- a/include/linux/compiler.h
++++ b/include/linux/compiler.h
+@@ -27,7 +27,11 @@ extern void __chk_user_ptr(const volatile void __user *);
+ extern void __chk_io_ptr(const volatile void __iomem *);
+ # define ACCESS_PRIVATE(p, member) (*((typeof((p)->member) __force *) &(p)->member))
+ #else /* __CHECKER__ */
+-# define __user
++# ifdef STRUCTLEAK_PLUGIN
++#  define __user __attribute__((user))
++# else
++#  define __user
++# endif
+ # define __kernel
+ # define __safe
+ # define __force
+diff --git a/scripts/Makefile.gcc-plugins b/scripts/Makefile.gcc-plugins
+index 060d2cb373db..a084f7a511d8 100644
+--- a/scripts/Makefile.gcc-plugins
++++ b/scripts/Makefile.gcc-plugins
+@@ -25,6 +25,10 @@ ifdef CONFIG_GCC_PLUGINS
+     endif
+   endif
+ 
++  gcc-plugin-$(CONFIG_GCC_PLUGIN_STRUCTLEAK)	+= structleak_plugin.so
++  gcc-plugin-cflags-$(CONFIG_GCC_PLUGIN_STRUCTLEAK_VERBOSE)	+= -fplugin-arg-structleak_plugin-verbose
++  gcc-plugin-cflags-$(CONFIG_GCC_PLUGIN_STRUCTLEAK)	+= -DSTRUCTLEAK_PLUGIN
++
+   GCC_PLUGINS_CFLAGS := $(strip $(addprefix -fplugin=$(objtree)/scripts/gcc-plugins/, $(gcc-plugin-y)) $(gcc-plugin-cflags-y))
+ 
+   export PLUGINCC GCC_PLUGINS_CFLAGS GCC_PLUGIN GCC_PLUGIN_SUBDIR

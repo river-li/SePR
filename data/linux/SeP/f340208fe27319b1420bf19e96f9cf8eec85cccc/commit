@@ -1,0 +1,17 @@
+commit f340208fe27319b1420bf19e96f9cf8eec85cccc
+Merge: f2c7c76c5d0a c1ea02f15ab5
+Author: Linus Torvalds <torvalds@linux-foundation.org>
+Commit: Linus Torvalds <torvalds@linux-foundation.org>
+
+    Merge tag 'for_linus' of git://git.kernel.org/pub/scm/linux/kernel/git/mst/vhost
+    
+    Pull virtio fixes from Michael Tsirkin:
+     "Several fixes, some of them for CVEs"
+    
+    * tag 'for_linus' of git://git.kernel.org/pub/scm/linux/kernel/git/mst/vhost:
+      vhost: scsi: add weight support
+      vhost: vsock: add weight support
+      vhost_net: fix possible infinite loop
+      vhost: introduce vhost_exceeds_weight()
+      virtio: Fix indentation of VIRTIO_MMIO
+      virtio: add unlikely() to WARN_ON_ONCE()

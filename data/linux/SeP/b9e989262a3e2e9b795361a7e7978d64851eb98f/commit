@@ -1,0 +1,13 @@
+commit b9e989262a3e2e9b795361a7e7978d64851eb98f
+Author: Mark Starovoytov <mstarovo@pm.me>
+Commit: David S. Miller <davem@davemloft.net>
+
+    net: atlantic: make TCVEC2RING accept nic_cfg
+    
+    This patch updates TCVEC2RING to accept nic_cfg, which is needed to be able
+    to use it from hw_atl.
+    The name is updated to reflect the changes.
+    
+    Signed-off-by: Mark Starovoytov <mstarovoitov@marvell.com>
+    Signed-off-by: Igor Russkikh <irusskikh@marvell.com>
+    Signed-off-by: David S. Miller <davem@davemloft.net>

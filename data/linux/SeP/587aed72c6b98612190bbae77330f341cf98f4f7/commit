@@ -1,0 +1,11 @@
+commit 587aed72c6b98612190bbae77330f341cf98f4f7
+Author: Marek Vasut <marex@denx.de>
+Commit: Dinh Nguyen <dinguyen@opensource.altera.com>
+
+    ARM: dts: socfpga: Add new MCVEVK manufacturer compat
+    
+    The board is now manufactured by Aries Embedded GmbH, update compat string.
+    
+    Signed-off-by: Marek Vasut <marex@denx.de>
+    Cc: Dinh Nguyen <dinguyen@opensource.altera.com>
+    Signed-off-by: Dinh Nguyen <dinguyen@opensource.altera.com>

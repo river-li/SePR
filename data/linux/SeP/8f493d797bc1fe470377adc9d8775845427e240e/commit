@@ -1,0 +1,16 @@
+commit 8f493d797bc1fe470377adc9d8775845427e240e
+Author: Andi Kleen <ak@linux.intel.com>
+Commit: Linus Torvalds <torvalds@g5.osdl.org>
+
+    [PATCH] Make sure interleave masks have at least one node set
+    
+    Otherwise a bad mem policy system call can confuse the interleaving
+    code into referencing undefined nodes.
+    
+    Originally reported by Doug Chapman
+    
+    I was told it's CVE-2005-3358
+    (one has to love these security people - they make everything sound important)
+    
+    Signed-off-by: Andi Kleen <ak@suse.de>
+    Signed-off-by: Linus Torvalds <torvalds@osdl.org>

@@ -1,0 +1,12 @@
+commit ea81e2722e55ba0269c92f266763e445dcffb973
+Merge: 0b1fc335d2f2 b301ea8c81b1
+Author: Linus Torvalds <torvalds@linux-foundation.org>
+Commit: Linus Torvalds <torvalds@linux-foundation.org>
+
+    Merge branch 'for-linus' of git://git390.osdl.marist.edu/pub/scm/linux-2.6
+    
+    * 'for-linus' of git://git390.osdl.marist.edu/pub/scm/linux-2.6:
+      [S390] cio: allow offline processing for disconnected devices
+      [S390] cio: handle ssch() return codes correctly.
+      [S390] cio: Correct cleanup on error.
+      [S390] CVE-2008-1514: prevent ptrace padding area read/write in 31-bit mode

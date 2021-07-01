@@ -1,0 +1,12 @@
+commit 17b24b3c97498935a2ef9777370b1151dfed3f6f
+Author: Chas Williams <chas@cmf.nrl.navy.mil>
+Commit: David S. Miller <davem@davemloft.net>
+
+    ATM: CVE-2008-5079: duplicate listen() on socket corrupts the vcc table
+    
+    As reported by Hugo Dias that it is possible to cause a local denial
+    of service attack by calling the svc_listen function twice on the same
+    socket and reading /proc/net/atm/*vc
+    
+    Signed-off-by: Chas Williams <chas@cmf.nrl.navy.mil>
+    Signed-off-by: David S. Miller <davem@davemloft.net>

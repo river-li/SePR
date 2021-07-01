@@ -1,0 +1,175 @@
+diff --git a/Documentation/admin-guide/kernel-parameters.txt b/Documentation/admin-guide/kernel-parameters.txt
+index 43176340c73d..5be4d3ff5e70 100644
+--- a/Documentation/admin-guide/kernel-parameters.txt
++++ b/Documentation/admin-guide/kernel-parameters.txt
+@@ -3174,6 +3174,16 @@
+ 			This will also cause panics on machine check exceptions.
+ 			Useful together with panic=30 to trigger a reboot.
+ 
++	page_alloc.shuffle=
++			[KNL] Boolean flag to control whether the page allocator
++			should randomize its free lists. The randomization may
++			be automatically enabled if the kernel detects it is
++			running on a platform with a direct-mapped memory-side
++			cache, and this parameter can be used to
++			override/disable that behavior. The state of the flag
++			can be read from sysfs at:
++			/sys/module/page_alloc/parameters/shuffle.
++
+ 	page_owner=	[KNL] Boot-time page_owner enabling option.
+ 			Storage of the information about who allocated
+ 			each page is disabled in default. With this switch,
+diff --git a/include/linux/list.h b/include/linux/list.h
+index 9e9a6403dbe4..d3b4db895340 100644
+--- a/include/linux/list.h
++++ b/include/linux/list.h
+@@ -150,6 +150,23 @@ static inline void list_replace_init(struct list_head *old,
+ 	INIT_LIST_HEAD(old);
+ }
+ 
++/**
++ * list_swap - replace entry1 with entry2 and re-add entry1 at entry2's position
++ * @entry1: the location to place entry2
++ * @entry2: the location to place entry1
++ */
++static inline void list_swap(struct list_head *entry1,
++			     struct list_head *entry2)
++{
++	struct list_head *pos = entry2->prev;
++
++	list_del(entry2);
++	list_replace(entry1, entry2);
++	if (pos == entry1)
++		pos = entry2;
++	list_add(entry1, pos);
++}
++
+ /**
+  * list_del_init - deletes entry from list and reinitialize it.
+  * @entry: the element to delete from the list.
+diff --git a/include/linux/mmzone.h b/include/linux/mmzone.h
+index 5a4aedc160bd..1fb5a04530aa 100644
+--- a/include/linux/mmzone.h
++++ b/include/linux/mmzone.h
+@@ -1271,6 +1271,7 @@ void sparse_init(void);
+ #else
+ #define sparse_init()	do {} while (0)
+ #define sparse_index_init(_sec, _nid)  do {} while (0)
++#define pfn_present pfn_valid
+ #endif /* CONFIG_SPARSEMEM */
+ 
+ /*
+diff --git a/init/Kconfig b/init/Kconfig
+index 82b84e5ee30d..8b9ffe236e4f 100644
+--- a/init/Kconfig
++++ b/init/Kconfig
+@@ -1752,6 +1752,30 @@ config SLAB_FREELIST_HARDENED
+ 	  sacrifies to harden the kernel slab allocator against common
+ 	  freelist exploit methods.
+ 
++config SHUFFLE_PAGE_ALLOCATOR
++	bool "Page allocator randomization"
++	default SLAB_FREELIST_RANDOM && ACPI_NUMA
++	help
++	  Randomization of the page allocator improves the average
++	  utilization of a direct-mapped memory-side-cache. See section
++	  5.2.27 Heterogeneous Memory Attribute Table (HMAT) in the ACPI
++	  6.2a specification for an example of how a platform advertises
++	  the presence of a memory-side-cache. There are also incidental
++	  security benefits as it reduces the predictability of page
++	  allocations to compliment SLAB_FREELIST_RANDOM, but the
++	  default granularity of shuffling on the "MAX_ORDER - 1" i.e,
++	  10th order of pages is selected based on cache utilization
++	  benefits on x86.
++
++	  While the randomization improves cache utilization it may
++	  negatively impact workloads on platforms without a cache. For
++	  this reason, by default, the randomization is enabled only
++	  after runtime detection of a direct-mapped memory-side-cache.
++	  Otherwise, the randomization may be force enabled with the
++	  'page_alloc.shuffle' kernel command line parameter.
++
++	  Say Y if unsure.
++
+ config SLUB_CPU_PARTIAL
+ 	default y
+ 	depends on SLUB && SMP
+diff --git a/mm/Makefile b/mm/Makefile
+index d210cc9d6f80..ac5e5ba78874 100644
+--- a/mm/Makefile
++++ b/mm/Makefile
+@@ -33,7 +33,7 @@ mmu-$(CONFIG_MMU)	+= process_vm_access.o
+ endif
+ 
+ obj-y			:= filemap.o mempool.o oom_kill.o fadvise.o \
+-			   maccess.o page_alloc.o page-writeback.o \
++			   maccess.o page-writeback.o \
+ 			   readahead.o swap.o truncate.o vmscan.o shmem.o \
+ 			   util.o mmzone.o vmstat.o backing-dev.o \
+ 			   mm_init.o mmu_context.o percpu.o slab_common.o \
+@@ -41,6 +41,11 @@ obj-y			:= filemap.o mempool.o oom_kill.o fadvise.o \
+ 			   interval_tree.o list_lru.o workingset.o \
+ 			   debug.o $(mmu-y)
+ 
++# Give 'page_alloc' its own module-parameter namespace
++page-alloc-y := page_alloc.o
++page-alloc-$(CONFIG_SHUFFLE_PAGE_ALLOCATOR) += shuffle.o
++
++obj-y += page-alloc.o
+ obj-y += init-mm.o
+ obj-y += memblock.o
+ 
+diff --git a/mm/memory_hotplug.c b/mm/memory_hotplug.c
+index 6c0c4f48638e..328878b6799d 100644
+--- a/mm/memory_hotplug.c
++++ b/mm/memory_hotplug.c
+@@ -39,6 +39,7 @@
+ #include <asm/tlbflush.h>
+ 
+ #include "internal.h"
++#include "shuffle.h"
+ 
+ /*
+  * online_page_callback contains pointer to current page onlining function.
+@@ -891,6 +892,8 @@ int __ref online_pages(unsigned long pfn, unsigned long nr_pages, int online_typ
+ 	zone->zone_pgdat->node_present_pages += onlined_pages;
+ 	pgdat_resize_unlock(zone->zone_pgdat, &flags);
+ 
++	shuffle_zone(zone);
++
+ 	if (onlined_pages) {
+ 		node_states_set_node(nid, &arg);
+ 		if (need_zonelists_rebuild)
+diff --git a/mm/page_alloc.c b/mm/page_alloc.c
+index 4b2d5f50431d..548f8f5d3295 100644
+--- a/mm/page_alloc.c
++++ b/mm/page_alloc.c
+@@ -72,6 +72,7 @@
+ #include <asm/tlbflush.h>
+ #include <asm/div64.h>
+ #include "internal.h"
++#include "shuffle.h"
+ 
+ /* prevent >1 _updater_ of zone percpu pageset ->high and ->batch fields */
+ static DEFINE_MUTEX(pcp_batch_high_lock);
+@@ -1874,9 +1875,9 @@ _deferred_grow_zone(struct zone *zone, unsigned int order)
+ void __init page_alloc_init_late(void)
+ {
+ 	struct zone *zone;
++	int nid;
+ 
+ #ifdef CONFIG_DEFERRED_STRUCT_PAGE_INIT
+-	int nid;
+ 
+ 	/* There will be num_node_state(N_MEMORY) threads */
+ 	atomic_set(&pgdat_init_n_undone, num_node_state(N_MEMORY));
+@@ -1900,6 +1901,9 @@ void __init page_alloc_init_late(void)
+ 	/* Discard memblock private memory */
+ 	memblock_discard();
+ 
++	for_each_node_state(nid, N_MEMORY)
++		shuffle_free_memory(NODE_DATA(nid));
++
+ 	for_each_populated_zone(zone)
+ 		set_zone_contiguous(zone);
+ }

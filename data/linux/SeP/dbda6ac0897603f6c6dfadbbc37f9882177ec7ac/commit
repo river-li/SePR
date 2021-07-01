@@ -1,0 +1,10 @@
+commit dbda6ac0897603f6c6dfadbbc37f9882177ec7ac
+Author: Ralf Baechle <ralf@linux-mips.org>
+Commit: Ralf Baechle <ralf@linux-mips.org>
+
+    MIPS: CVE-2009-0029: Enable syscall wrappers.
+    
+    Thanks to David Daney helping with debugging and testing.
+    
+    Signed-off-by: Ralf Baechle <ralf@linux-mips.org>
+    Signed-off-by: David Daney <ddaney@caviumnetworks.com>

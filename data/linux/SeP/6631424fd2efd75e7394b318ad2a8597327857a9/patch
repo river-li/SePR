@@ -1,0 +1,1139 @@
+diff --git a/MAINTAINERS b/MAINTAINERS
+index 28d4bf0e483e..1a203f9626f6 100644
+--- a/MAINTAINERS
++++ b/MAINTAINERS
+@@ -3083,6 +3083,7 @@ F:	include/scsi/*iscsi*
+ ISDN SUBSYSTEM
+ M:	Karsten Keil <isdn@linux-pingi.de>
+ L:	isdn4linux@listserv.isdn4linux.de (subscribers-only)
++L:	netdev@vger.kernel.org
+ W:	http://www.isdn4linux.de
+ T:	git git://git.kernel.org/pub/scm/linux/kernel/git/kkeil/isdn-2.6.git
+ S:	Maintained
+diff --git a/drivers/net/atlx/atl1.c b/drivers/net/atlx/atl1.c
+index 9ba547069db3..0ebd8208f606 100644
+--- a/drivers/net/atlx/atl1.c
++++ b/drivers/net/atlx/atl1.c
+@@ -84,7 +84,7 @@
+ 
+ #define ATLX_DRIVER_VERSION "2.1.3"
+ MODULE_AUTHOR("Xiong Huang <xiong.huang@atheros.com>, \
+-	Chris Snook <csnook@redhat.com>, Jay Cliburn <jcliburn@gmail.com>");
++Chris Snook <csnook@redhat.com>, Jay Cliburn <jcliburn@gmail.com>");
+ MODULE_LICENSE("GPL");
+ MODULE_VERSION(ATLX_DRIVER_VERSION);
+ 
+diff --git a/drivers/net/benet/be_ethtool.c b/drivers/net/benet/be_ethtool.c
+index 9560d48944ab..51e1065e7897 100644
+--- a/drivers/net/benet/be_ethtool.c
++++ b/drivers/net/benet/be_ethtool.c
+@@ -490,7 +490,7 @@ be_test_ddr_dma(struct be_adapter *adapter)
+ {
+ 	int ret, i;
+ 	struct be_dma_mem ddrdma_cmd;
+-	u64 pattern[2] = {0x5a5a5a5a5a5a5a5a, 0xa5a5a5a5a5a5a5a5};
++	u64 pattern[2] = {0x5a5a5a5a5a5a5a5aULL, 0xa5a5a5a5a5a5a5a5ULL};
+ 
+ 	ddrdma_cmd.size = sizeof(struct be_cmd_req_ddrdma_test);
+ 	ddrdma_cmd.va = pci_alloc_consistent(adapter->pdev, ddrdma_cmd.size,
+diff --git a/drivers/net/bonding/bond_main.c b/drivers/net/bonding/bond_main.c
+index 430c02267d7e..5b92fbff431d 100644
+--- a/drivers/net/bonding/bond_main.c
++++ b/drivers/net/bonding/bond_main.c
+@@ -1235,6 +1235,11 @@ void bond_change_active_slave(struct bonding *bond, struct slave *new_active)
+ 			write_lock_bh(&bond->curr_slave_lock);
+ 		}
+ 	}
++
++	/* resend IGMP joins since all were sent on curr_active_slave */
++	if (bond->params.mode == BOND_MODE_ROUNDROBIN) {
++		bond_resend_igmp_join_requests(bond);
++	}
+ }
+ 
+ /**
+@@ -4138,22 +4143,41 @@ static int bond_xmit_roundrobin(struct sk_buff *skb, struct net_device *bond_dev
+ 	struct bonding *bond = netdev_priv(bond_dev);
+ 	struct slave *slave, *start_at;
+ 	int i, slave_no, res = 1;
++	struct iphdr *iph = ip_hdr(skb);
+ 
+ 	read_lock(&bond->lock);
+ 
+ 	if (!BOND_IS_OK(bond))
+ 		goto out;
+-
+ 	/*
+-	 * Concurrent TX may collide on rr_tx_counter; we accept that
+-	 * as being rare enough not to justify using an atomic op here
++	 * Start with the curr_active_slave that joined the bond as the
++	 * default for sending IGMP traffic.  For failover purposes one
++	 * needs to maintain some consistency for the interface that will
++	 * send the join/membership reports.  The curr_active_slave found
++	 * will send all of this type of traffic.
+ 	 */
+-	slave_no = bond->rr_tx_counter++ % bond->slave_cnt;
++	if ((iph->protocol == htons(IPPROTO_IGMP)) &&
++	    (skb->protocol == htons(ETH_P_IP))) {
+ 
+-	bond_for_each_slave(bond, slave, i) {
+-		slave_no--;
+-		if (slave_no < 0)
+-			break;
++		read_lock(&bond->curr_slave_lock);
++		slave = bond->curr_active_slave;
++		read_unlock(&bond->curr_slave_lock);
++
++		if (!slave)
++			goto out;
++	} else {
++		/*
++		 * Concurrent TX may collide on rr_tx_counter; we accept
++		 * that as being rare enough not to justify using an
++		 * atomic op here.
++		 */
++		slave_no = bond->rr_tx_counter++ % bond->slave_cnt;
++
++		bond_for_each_slave(bond, slave, i) {
++			slave_no--;
++			if (slave_no < 0)
++				break;
++		}
+ 	}
+ 
+ 	start_at = slave;
+diff --git a/drivers/net/e1000/e1000.h b/drivers/net/e1000/e1000.h
+index 9902b33b7160..2f29c2131851 100644
+--- a/drivers/net/e1000/e1000.h
++++ b/drivers/net/e1000/e1000.h
+@@ -261,7 +261,6 @@ struct e1000_adapter {
+ 	/* TX */
+ 	struct e1000_tx_ring *tx_ring;      /* One per active queue */
+ 	unsigned int restart_queue;
+-	unsigned long tx_queue_len;
+ 	u32 txd_cmd;
+ 	u32 tx_int_delay;
+ 	u32 tx_abs_int_delay;
+diff --git a/drivers/net/e1000/e1000_main.c b/drivers/net/e1000/e1000_main.c
+index 8be6faee43e6..b15ece26ed84 100644
+--- a/drivers/net/e1000/e1000_main.c
++++ b/drivers/net/e1000/e1000_main.c
+@@ -383,8 +383,6 @@ static void e1000_configure(struct e1000_adapter *adapter)
+ 		adapter->alloc_rx_buf(adapter, ring,
+ 		                      E1000_DESC_UNUSED(ring));
+ 	}
+-
+-	adapter->tx_queue_len = netdev->tx_queue_len;
+ }
+ 
+ int e1000_up(struct e1000_adapter *adapter)
+@@ -503,7 +501,6 @@ void e1000_down(struct e1000_adapter *adapter)
+ 	del_timer_sync(&adapter->watchdog_timer);
+ 	del_timer_sync(&adapter->phy_info_timer);
+ 
+-	netdev->tx_queue_len = adapter->tx_queue_len;
+ 	adapter->link_speed = 0;
+ 	adapter->link_duplex = 0;
+ 	netif_carrier_off(netdev);
+@@ -2316,19 +2313,15 @@ static void e1000_watchdog(unsigned long data)
+ 			        E1000_CTRL_RFCE) ? "RX" : ((ctrl &
+ 			        E1000_CTRL_TFCE) ? "TX" : "None" )));
+ 
+-			/* tweak tx_queue_len according to speed/duplex
+-			 * and adjust the timeout factor */
+-			netdev->tx_queue_len = adapter->tx_queue_len;
++			/* adjust timeout factor according to speed/duplex */
+ 			adapter->tx_timeout_factor = 1;
+ 			switch (adapter->link_speed) {
+ 			case SPEED_10:
+ 				txb2b = false;
+-				netdev->tx_queue_len = 10;
+ 				adapter->tx_timeout_factor = 16;
+ 				break;
+ 			case SPEED_100:
+ 				txb2b = false;
+-				netdev->tx_queue_len = 100;
+ 				/* maybe add some timeout factor ? */
+ 				break;
+ 			}
+diff --git a/drivers/net/e1000e/e1000.h b/drivers/net/e1000e/e1000.h
+index c2ec095d2163..118bdf483593 100644
+--- a/drivers/net/e1000e/e1000.h
++++ b/drivers/net/e1000e/e1000.h
+@@ -279,7 +279,6 @@ struct e1000_adapter {
+ 
+ 	struct napi_struct napi;
+ 
+-	unsigned long tx_queue_len;
+ 	unsigned int restart_queue;
+ 	u32 txd_cmd;
+ 
+diff --git a/drivers/net/e1000e/netdev.c b/drivers/net/e1000e/netdev.c
+index 88d54d3efcef..e1cceb606576 100644
+--- a/drivers/net/e1000e/netdev.c
++++ b/drivers/net/e1000e/netdev.c
+@@ -2289,8 +2289,6 @@ static void e1000_configure_tx(struct e1000_adapter *adapter)
+ 	ew32(TCTL, tctl);
+ 
+ 	e1000e_config_collision_dist(hw);
+-
+-	adapter->tx_queue_len = adapter->netdev->tx_queue_len;
+ }
+ 
+ /**
+@@ -2877,7 +2875,6 @@ void e1000e_down(struct e1000_adapter *adapter)
+ 	del_timer_sync(&adapter->watchdog_timer);
+ 	del_timer_sync(&adapter->phy_info_timer);
+ 
+-	netdev->tx_queue_len = adapter->tx_queue_len;
+ 	netif_carrier_off(netdev);
+ 	adapter->link_speed = 0;
+ 	adapter->link_duplex = 0;
+@@ -3588,21 +3585,15 @@ static void e1000_watchdog_task(struct work_struct *work)
+ 					       "link gets many collisions.\n");
+ 			}
+ 
+-			/*
+-			 * tweak tx_queue_len according to speed/duplex
+-			 * and adjust the timeout factor
+-			 */
+-			netdev->tx_queue_len = adapter->tx_queue_len;
++			/* adjust timeout factor according to speed/duplex */
+ 			adapter->tx_timeout_factor = 1;
+ 			switch (adapter->link_speed) {
+ 			case SPEED_10:
+ 				txb2b = 0;
+-				netdev->tx_queue_len = 10;
+ 				adapter->tx_timeout_factor = 16;
+ 				break;
+ 			case SPEED_100:
+ 				txb2b = 0;
+-				netdev->tx_queue_len = 100;
+ 				adapter->tx_timeout_factor = 10;
+ 				break;
+ 			}
+diff --git a/drivers/net/gianfar.c b/drivers/net/gianfar.c
+index b6715553cf17..669de028d44f 100644
+--- a/drivers/net/gianfar.c
++++ b/drivers/net/gianfar.c
+@@ -2393,6 +2393,7 @@ struct sk_buff * gfar_new_skb(struct net_device *dev)
+ 	 * as many bytes as needed to align the data properly
+ 	 */
+ 	skb_reserve(skb, alignamount);
++	GFAR_CB(skb)->alignamount = alignamount;
+ 
+ 	return skb;
+ }
+@@ -2533,13 +2534,13 @@ int gfar_clean_rx_ring(struct gfar_priv_rx_q *rx_queue, int rx_work_limit)
+ 				newskb = skb;
+ 			else if (skb) {
+ 				/*
+-				 * We need to reset ->data to what it
++				 * We need to un-reserve() the skb to what it
+ 				 * was before gfar_new_skb() re-aligned
+ 				 * it to an RXBUF_ALIGNMENT boundary
+ 				 * before we put the skb back on the
+ 				 * recycle list.
+ 				 */
+-				skb->data = skb->head + NET_SKB_PAD;
++				skb_reserve(skb, -GFAR_CB(skb)->alignamount);
+ 				__skb_queue_head(&priv->rx_recycle, skb);
+ 			}
+ 		} else {
+diff --git a/drivers/net/gianfar.h b/drivers/net/gianfar.h
+index 3d72dc43dca5..17d25e714236 100644
+--- a/drivers/net/gianfar.h
++++ b/drivers/net/gianfar.h
+@@ -566,6 +566,12 @@ struct rxfcb {
+ 	u16	vlctl;	/* VLAN control word */
+ };
+ 
++struct gianfar_skb_cb {
++	int alignamount;
++};
++
++#define GFAR_CB(skb) ((struct gianfar_skb_cb *)((skb)->cb))
++
+ struct rmon_mib
+ {
+ 	u32	tr64;	/* 0x.680 - Transmit and Receive 64-byte Frame Counter */
+diff --git a/drivers/net/igb/e1000_mac.c b/drivers/net/igb/e1000_mac.c
+index 2a8a886b37eb..be8d010e4021 100644
+--- a/drivers/net/igb/e1000_mac.c
++++ b/drivers/net/igb/e1000_mac.c
+@@ -1367,7 +1367,8 @@ s32 igb_write_8bit_ctrl_reg(struct e1000_hw *hw, u32 reg,
+  *  igb_enable_mng_pass_thru - Enable processing of ARP's
+  *  @hw: pointer to the HW structure
+  *
+- *  Verifies the hardware needs to allow ARPs to be processed by the host.
++ *  Verifies the hardware needs to leave interface enabled so that frames can
++ *  be directed to and from the management interface.
+  **/
+ bool igb_enable_mng_pass_thru(struct e1000_hw *hw)
+ {
+@@ -1380,8 +1381,7 @@ bool igb_enable_mng_pass_thru(struct e1000_hw *hw)
+ 
+ 	manc = rd32(E1000_MANC);
+ 
+-	if (!(manc & E1000_MANC_RCV_TCO_EN) ||
+-	    !(manc & E1000_MANC_EN_MAC_ADDR_FILTER))
++	if (!(manc & E1000_MANC_RCV_TCO_EN))
+ 		goto out;
+ 
+ 	if (hw->mac.arc_subsystem_valid) {
+diff --git a/drivers/net/igbvf/igbvf.h b/drivers/net/igbvf/igbvf.h
+index a1774b29d222..debeee2dc717 100644
+--- a/drivers/net/igbvf/igbvf.h
++++ b/drivers/net/igbvf/igbvf.h
+@@ -198,7 +198,6 @@ struct igbvf_adapter {
+ 	struct igbvf_ring *tx_ring /* One per active queue */
+ 	____cacheline_aligned_in_smp;
+ 
+-	unsigned long tx_queue_len;
+ 	unsigned int restart_queue;
+ 	u32 txd_cmd;
+ 
+diff --git a/drivers/net/igbvf/netdev.c b/drivers/net/igbvf/netdev.c
+index a77afd8a14bb..b41037ed8083 100644
+--- a/drivers/net/igbvf/netdev.c
++++ b/drivers/net/igbvf/netdev.c
+@@ -1304,8 +1304,6 @@ static void igbvf_configure_tx(struct igbvf_adapter *adapter)
+ 
+ 	/* enable Report Status bit */
+ 	adapter->txd_cmd |= E1000_ADVTXD_DCMD_RS;
+-
+-	adapter->tx_queue_len = adapter->netdev->tx_queue_len;
+ }
+ 
+ /**
+@@ -1524,7 +1522,6 @@ void igbvf_down(struct igbvf_adapter *adapter)
+ 
+ 	del_timer_sync(&adapter->watchdog_timer);
+ 
+-	netdev->tx_queue_len = adapter->tx_queue_len;
+ 	netif_carrier_off(netdev);
+ 
+ 	/* record the stats before reset*/
+@@ -1857,21 +1854,15 @@ static void igbvf_watchdog_task(struct work_struct *work)
+ 			                          &adapter->link_duplex);
+ 			igbvf_print_link_info(adapter);
+ 
+-			/*
+-			 * tweak tx_queue_len according to speed/duplex
+-			 * and adjust the timeout factor
+-			 */
+-			netdev->tx_queue_len = adapter->tx_queue_len;
++			/* adjust timeout factor according to speed/duplex */
+ 			adapter->tx_timeout_factor = 1;
+ 			switch (adapter->link_speed) {
+ 			case SPEED_10:
+ 				txb2b = 0;
+-				netdev->tx_queue_len = 10;
+ 				adapter->tx_timeout_factor = 16;
+ 				break;
+ 			case SPEED_100:
+ 				txb2b = 0;
+-				netdev->tx_queue_len = 100;
+ 				/* maybe add some timeout factor ? */
+ 				break;
+ 			}
+diff --git a/drivers/net/ixgbe/ixgbe.h b/drivers/net/ixgbe/ixgbe.h
+index 19e94ee155a2..79c35ae3718c 100644
+--- a/drivers/net/ixgbe/ixgbe.h
++++ b/drivers/net/ixgbe/ixgbe.h
+@@ -204,14 +204,17 @@ enum ixgbe_ring_f_enum {
+ #define IXGBE_MAX_FDIR_INDICES 64
+ #ifdef IXGBE_FCOE
+ #define IXGBE_MAX_FCOE_INDICES  8
++#define MAX_RX_QUEUES (IXGBE_MAX_FDIR_INDICES + IXGBE_MAX_FCOE_INDICES)
++#define MAX_TX_QUEUES (IXGBE_MAX_FDIR_INDICES + IXGBE_MAX_FCOE_INDICES)
++#else
++#define MAX_RX_QUEUES IXGBE_MAX_FDIR_INDICES
++#define MAX_TX_QUEUES IXGBE_MAX_FDIR_INDICES
+ #endif /* IXGBE_FCOE */
+ struct ixgbe_ring_feature {
+ 	int indices;
+ 	int mask;
+ } ____cacheline_internodealigned_in_smp;
+ 
+-#define MAX_RX_QUEUES 128
+-#define MAX_TX_QUEUES 128
+ 
+ #define MAX_RX_PACKET_BUFFERS ((adapter->flags & IXGBE_FLAG_DCB_ENABLED) \
+                               ? 8 : 1)
+diff --git a/drivers/net/ixgbe/ixgbe_ethtool.c b/drivers/net/ixgbe/ixgbe_ethtool.c
+index 7949a446e4c7..1959ef76c962 100644
+--- a/drivers/net/ixgbe/ixgbe_ethtool.c
++++ b/drivers/net/ixgbe/ixgbe_ethtool.c
+@@ -1853,6 +1853,26 @@ static void ixgbe_diag_test(struct net_device *netdev,
+ 		if (ixgbe_link_test(adapter, &data[4]))
+ 			eth_test->flags |= ETH_TEST_FL_FAILED;
+ 
++		if (adapter->flags & IXGBE_FLAG_SRIOV_ENABLED) {
++			int i;
++			for (i = 0; i < adapter->num_vfs; i++) {
++				if (adapter->vfinfo[i].clear_to_send) {
++					netdev_warn(netdev, "%s",
++						    "offline diagnostic is not "
++						    "supported when VFs are "
++						    "present\n");
++					data[0] = 1;
++					data[1] = 1;
++					data[2] = 1;
++					data[3] = 1;
++					eth_test->flags |= ETH_TEST_FL_FAILED;
++					clear_bit(__IXGBE_TESTING,
++						  &adapter->state);
++					goto skip_ol_tests;
++				}
++			}
++		}
++
+ 		if (if_running)
+ 			/* indicate we're in test mode */
+ 			dev_close(netdev);
+@@ -1908,6 +1928,7 @@ static void ixgbe_diag_test(struct net_device *netdev,
+ 
+ 		clear_bit(__IXGBE_TESTING, &adapter->state);
+ 	}
++skip_ol_tests:
+ 	msleep_interruptible(4 * 1000);
+ }
+ 
+diff --git a/drivers/net/ixgbe/ixgbe_fcoe.c b/drivers/net/ixgbe/ixgbe_fcoe.c
+index 700cfc0aa1b9..9276d5965b0d 100644
+--- a/drivers/net/ixgbe/ixgbe_fcoe.c
++++ b/drivers/net/ixgbe/ixgbe_fcoe.c
+@@ -202,6 +202,15 @@ int ixgbe_fcoe_ddp_get(struct net_device *netdev, u16 xid,
+ 		addr = sg_dma_address(sg);
+ 		len = sg_dma_len(sg);
+ 		while (len) {
++			/* max number of buffers allowed in one DDP context */
++			if (j >= IXGBE_BUFFCNT_MAX) {
++				netif_err(adapter, drv, adapter->netdev,
++					  "xid=%x:%d,%d,%d:addr=%llx "
++					  "not enough descriptors\n",
++					  xid, i, j, dmacount, (u64)addr);
++				goto out_noddp_free;
++			}
++
+ 			/* get the offset of length of current buffer */
+ 			thisoff = addr & ((dma_addr_t)bufflen - 1);
+ 			thislen = min((bufflen - thisoff), len);
+@@ -227,20 +236,13 @@ int ixgbe_fcoe_ddp_get(struct net_device *netdev, u16 xid,
+ 			len -= thislen;
+ 			addr += thislen;
+ 			j++;
+-			/* max number of buffers allowed in one DDP context */
+-			if (j > IXGBE_BUFFCNT_MAX) {
+-				DPRINTK(DRV, ERR, "xid=%x:%d,%d,%d:addr=%llx "
+-					"not enough descriptors\n",
+-					xid, i, j, dmacount, (u64)addr);
+-				goto out_noddp_free;
+-			}
+ 		}
+ 	}
+ 	/* only the last buffer may have non-full bufflen */
+ 	lastsize = thisoff + thislen;
+ 
+ 	fcbuff = (IXGBE_FCBUFF_4KB << IXGBE_FCBUFF_BUFFSIZE_SHIFT);
+-	fcbuff |= (j << IXGBE_FCBUFF_BUFFCNT_SHIFT);
++	fcbuff |= ((j & 0xff) << IXGBE_FCBUFF_BUFFCNT_SHIFT);
+ 	fcbuff |= (firstoff << IXGBE_FCBUFF_OFFSET_SHIFT);
+ 	fcbuff |= (IXGBE_FCBUFF_VALID);
+ 
+@@ -520,6 +522,9 @@ void ixgbe_configure_fcoe(struct ixgbe_adapter *adapter)
+ 	/* Enable L2 eth type filter for FCoE */
+ 	IXGBE_WRITE_REG(hw, IXGBE_ETQF(IXGBE_ETQF_FILTER_FCOE),
+ 			(ETH_P_FCOE | IXGBE_ETQF_FCOE | IXGBE_ETQF_FILTER_EN));
++	/* Enable L2 eth type filter for FIP */
++	IXGBE_WRITE_REG(hw, IXGBE_ETQF(IXGBE_ETQF_FILTER_FIP),
++			(ETH_P_FIP | IXGBE_ETQF_FILTER_EN));
+ 	if (adapter->ring_feature[RING_F_FCOE].indices) {
+ 		/* Use multiple rx queues for FCoE by redirection table */
+ 		for (i = 0; i < IXGBE_FCRETA_SIZE; i++) {
+@@ -530,6 +535,12 @@ void ixgbe_configure_fcoe(struct ixgbe_adapter *adapter)
+ 		}
+ 		IXGBE_WRITE_REG(hw, IXGBE_FCRECTL, IXGBE_FCRECTL_ENA);
+ 		IXGBE_WRITE_REG(hw, IXGBE_ETQS(IXGBE_ETQF_FILTER_FCOE), 0);
++		fcoe_i = f->mask;
++		fcoe_i &= IXGBE_FCRETA_ENTRY_MASK;
++		fcoe_q = adapter->rx_ring[fcoe_i]->reg_idx;
++		IXGBE_WRITE_REG(hw, IXGBE_ETQS(IXGBE_ETQF_FILTER_FIP),
++				IXGBE_ETQS_QUEUE_EN |
++				(fcoe_q << IXGBE_ETQS_RX_QUEUE_SHIFT));
+ 	} else  {
+ 		/* Use single rx queue for FCoE */
+ 		fcoe_i = f->mask;
+@@ -539,6 +550,12 @@ void ixgbe_configure_fcoe(struct ixgbe_adapter *adapter)
+ 				IXGBE_ETQS_QUEUE_EN |
+ 				(fcoe_q << IXGBE_ETQS_RX_QUEUE_SHIFT));
+ 	}
++	/* send FIP frames to the first FCoE queue */
++	fcoe_i = f->mask;
++	fcoe_q = adapter->rx_ring[fcoe_i]->reg_idx;
++	IXGBE_WRITE_REG(hw, IXGBE_ETQS(IXGBE_ETQF_FILTER_FIP),
++			IXGBE_ETQS_QUEUE_EN |
++			(fcoe_q << IXGBE_ETQS_RX_QUEUE_SHIFT));
+ 
+ 	IXGBE_WRITE_REG(hw, IXGBE_FCRXCTRL,
+ 			IXGBE_FCRXCTRL_FCOELLI |
+diff --git a/drivers/net/ixgbe/ixgbe_main.c b/drivers/net/ixgbe/ixgbe_main.c
+index d75c46ff31f6..0c553f6cb534 100644
+--- a/drivers/net/ixgbe/ixgbe_main.c
++++ b/drivers/net/ixgbe/ixgbe_main.c
+@@ -3056,6 +3056,14 @@ void ixgbe_reinit_locked(struct ixgbe_adapter *adapter)
+ 	while (test_and_set_bit(__IXGBE_RESETTING, &adapter->state))
+ 		msleep(1);
+ 	ixgbe_down(adapter);
++	/*
++	 * If SR-IOV enabled then wait a bit before bringing the adapter
++	 * back up to give the VFs time to respond to the reset.  The
++	 * two second wait is based upon the watchdog timer cycle in
++	 * the VF driver.
++	 */
++	if (adapter->flags & IXGBE_FLAG_SRIOV_ENABLED)
++		msleep(2000);
+ 	ixgbe_up(adapter);
+ 	clear_bit(__IXGBE_RESETTING, &adapter->state);
+ }
+@@ -3236,13 +3244,15 @@ void ixgbe_down(struct ixgbe_adapter *adapter)
+ 
+ 	/* disable receive for all VFs and wait one second */
+ 	if (adapter->num_vfs) {
+-		for (i = 0 ; i < adapter->num_vfs; i++)
+-			adapter->vfinfo[i].clear_to_send = 0;
+-
+ 		/* ping all the active vfs to let them know we are going down */
+ 		ixgbe_ping_all_vfs(adapter);
++
+ 		/* Disable all VFTE/VFRE TX/RX */
+ 		ixgbe_disable_tx_rx(adapter);
++
++		/* Mark all the VFs as inactive */
++		for (i = 0 ; i < adapter->num_vfs; i++)
++			adapter->vfinfo[i].clear_to_send = 0;
+ 	}
+ 
+ 	/* disable receives */
+@@ -5638,7 +5648,8 @@ static u16 ixgbe_select_queue(struct net_device *dev, struct sk_buff *skb)
+ 
+ #ifdef IXGBE_FCOE
+ 	if ((adapter->flags & IXGBE_FLAG_FCOE_ENABLED) &&
+-	    (skb->protocol == htons(ETH_P_FCOE))) {
++	    ((skb->protocol == htons(ETH_P_FCOE)) ||
++	     (skb->protocol == htons(ETH_P_FIP)))) {
+ 		txq &= (adapter->ring_feature[RING_F_FCOE].indices - 1);
+ 		txq += adapter->ring_feature[RING_F_FCOE].mask;
+ 		return txq;
+@@ -5685,18 +5696,25 @@ static netdev_tx_t ixgbe_xmit_frame(struct sk_buff *skb,
+ 
+ 	tx_ring = adapter->tx_ring[skb->queue_mapping];
+ 
+-	if ((adapter->flags & IXGBE_FLAG_FCOE_ENABLED) &&
+-	    (skb->protocol == htons(ETH_P_FCOE))) {
+-		tx_flags |= IXGBE_TX_FLAGS_FCOE;
+ #ifdef IXGBE_FCOE
++	if (adapter->flags & IXGBE_FLAG_FCOE_ENABLED) {
+ #ifdef CONFIG_IXGBE_DCB
+-		tx_flags &= ~(IXGBE_TX_FLAGS_VLAN_PRIO_MASK
+-			      << IXGBE_TX_FLAGS_VLAN_SHIFT);
+-		tx_flags |= ((adapter->fcoe.up << 13)
+-			      << IXGBE_TX_FLAGS_VLAN_SHIFT);
+-#endif
++		/* for FCoE with DCB, we force the priority to what
++		 * was specified by the switch */
++		if ((skb->protocol == htons(ETH_P_FCOE)) ||
++		    (skb->protocol == htons(ETH_P_FIP))) {
++			tx_flags &= ~(IXGBE_TX_FLAGS_VLAN_PRIO_MASK
++				      << IXGBE_TX_FLAGS_VLAN_SHIFT);
++			tx_flags |= ((adapter->fcoe.up << 13)
++				     << IXGBE_TX_FLAGS_VLAN_SHIFT);
++		}
+ #endif
++		/* flag for FCoE offloads */
++		if (skb->protocol == htons(ETH_P_FCOE))
++			tx_flags |= IXGBE_TX_FLAGS_FCOE;
+ 	}
++#endif
++
+ 	/* four things can cause us to need a context descriptor */
+ 	if (skb_is_gso(skb) ||
+ 	    (skb->ip_summed == CHECKSUM_PARTIAL) ||
+@@ -6051,7 +6069,6 @@ static int __devinit ixgbe_probe(struct pci_dev *pdev,
+ 	indices += min_t(unsigned int, num_possible_cpus(),
+ 			 IXGBE_MAX_FCOE_INDICES);
+ #endif
+-	indices = min_t(unsigned int, indices, MAX_TX_QUEUES);
+ 	netdev = alloc_etherdev_mq(sizeof(struct ixgbe_adapter), indices);
+ 	if (!netdev) {
+ 		err = -ENOMEM;
+diff --git a/drivers/net/ixgbe/ixgbe_type.h b/drivers/net/ixgbe/ixgbe_type.h
+index 0ed5ab37cc53..4ec6dc1a5b75 100644
+--- a/drivers/net/ixgbe/ixgbe_type.h
++++ b/drivers/net/ixgbe/ixgbe_type.h
+@@ -1298,6 +1298,7 @@
+ #define IXGBE_ETQF_FILTER_BCN            1
+ #define IXGBE_ETQF_FILTER_FCOE           2
+ #define IXGBE_ETQF_FILTER_1588           3
++#define IXGBE_ETQF_FILTER_FIP            4
+ /* VLAN Control Bit Masks */
+ #define IXGBE_VLNCTRL_VET       0x0000FFFF  /* bits 0-15 */
+ #define IXGBE_VLNCTRL_CFI       0x10000000  /* bit 28 */
+diff --git a/drivers/net/ixgbevf/ixgbevf_main.c b/drivers/net/ixgbevf/ixgbevf_main.c
+index d6cbd943a6f0..1bbbef3ee3f4 100644
+--- a/drivers/net/ixgbevf/ixgbevf_main.c
++++ b/drivers/net/ixgbevf/ixgbevf_main.c
+@@ -2943,9 +2943,10 @@ static int ixgbevf_tx_map(struct ixgbevf_adapter *adapter,
+ 	struct ixgbevf_tx_buffer *tx_buffer_info;
+ 	unsigned int len;
+ 	unsigned int total = skb->len;
+-	unsigned int offset = 0, size, count = 0, i;
++	unsigned int offset = 0, size, count = 0;
+ 	unsigned int nr_frags = skb_shinfo(skb)->nr_frags;
+ 	unsigned int f;
++	int i;
+ 
+ 	i = tx_ring->next_to_use;
+ 
+diff --git a/drivers/net/netxen/netxen_nic.h b/drivers/net/netxen/netxen_nic.h
+index 144d2e880422..0f703838e21a 100644
+--- a/drivers/net/netxen/netxen_nic.h
++++ b/drivers/net/netxen/netxen_nic.h
+@@ -53,8 +53,8 @@
+ 
+ #define _NETXEN_NIC_LINUX_MAJOR 4
+ #define _NETXEN_NIC_LINUX_MINOR 0
+-#define _NETXEN_NIC_LINUX_SUBVERSION 72
+-#define NETXEN_NIC_LINUX_VERSIONID  "4.0.72"
++#define _NETXEN_NIC_LINUX_SUBVERSION 73
++#define NETXEN_NIC_LINUX_VERSIONID  "4.0.73"
+ 
+ #define NETXEN_VERSION_CODE(a, b, c)	(((a) << 24) + ((b) << 16) + (c))
+ #define _major(v)	(((v) >> 24) & 0xff)
+diff --git a/drivers/net/netxen/netxen_nic_ctx.c b/drivers/net/netxen/netxen_nic_ctx.c
+index 2a8ef5fc9663..f26e54716c88 100644
+--- a/drivers/net/netxen/netxen_nic_ctx.c
++++ b/drivers/net/netxen/netxen_nic_ctx.c
+@@ -669,13 +669,15 @@ int netxen_alloc_hw_resources(struct netxen_adapter *adapter)
+ 		}
+ 		sds_ring->desc_head = (struct status_desc *)addr;
+ 
+-		sds_ring->crb_sts_consumer =
+-			netxen_get_ioaddr(adapter,
+-			recv_crb_registers[port].crb_sts_consumer[ring]);
++		if (NX_IS_REVISION_P2(adapter->ahw.revision_id)) {
++			sds_ring->crb_sts_consumer =
++				netxen_get_ioaddr(adapter,
++				recv_crb_registers[port].crb_sts_consumer[ring]);
+ 
+-		sds_ring->crb_intr_mask =
+-			netxen_get_ioaddr(adapter,
+-			recv_crb_registers[port].sw_int_mask[ring]);
++			sds_ring->crb_intr_mask =
++				netxen_get_ioaddr(adapter,
++				recv_crb_registers[port].sw_int_mask[ring]);
++		}
+ 	}
+ 
+ 
+diff --git a/drivers/net/netxen/netxen_nic_init.c b/drivers/net/netxen/netxen_nic_init.c
+index 1c63610ead42..7eb925a9f36e 100644
+--- a/drivers/net/netxen/netxen_nic_init.c
++++ b/drivers/net/netxen/netxen_nic_init.c
+@@ -761,7 +761,7 @@ nx_get_bios_version(struct netxen_adapter *adapter)
+ 	if (adapter->fw_type == NX_UNIFIED_ROMIMAGE) {
+ 		bios_ver = cpu_to_le32(*((u32 *) (&fw->data[prd_off])
+ 						+ NX_UNI_BIOS_VERSION_OFF));
+-		return (bios_ver << 24) + ((bios_ver >> 8) & 0xff00) +
++		return (bios_ver << 16) + ((bios_ver >> 8) & 0xff00) +
+ 							(bios_ver >> 24);
+ 	} else
+ 		return cpu_to_le32(*(u32 *)&fw->data[NX_BIOS_VERSION_OFFSET]);
+diff --git a/drivers/net/netxen/netxen_nic_main.c b/drivers/net/netxen/netxen_nic_main.c
+index 9a7a0f3c36c4..01808b28d1b6 100644
+--- a/drivers/net/netxen/netxen_nic_main.c
++++ b/drivers/net/netxen/netxen_nic_main.c
+@@ -604,16 +604,14 @@ netxen_cleanup_pci_map(struct netxen_adapter *adapter)
+ static int
+ netxen_setup_pci_map(struct netxen_adapter *adapter)
+ {
+-	void __iomem *mem_ptr0 = NULL;
+-	void __iomem *mem_ptr1 = NULL;
+-	void __iomem *mem_ptr2 = NULL;
+ 	void __iomem *db_ptr = NULL;
+ 
+ 	resource_size_t mem_base, db_base;
+-	unsigned long mem_len, db_len = 0, pci_len0 = 0;
++	unsigned long mem_len, db_len = 0;
+ 
+ 	struct pci_dev *pdev = adapter->pdev;
+ 	int pci_func = adapter->ahw.pci_func;
++	struct netxen_hardware_context *ahw = &adapter->ahw;
+ 
+ 	int err = 0;
+ 
+@@ -630,24 +628,40 @@ netxen_setup_pci_map(struct netxen_adapter *adapter)
+ 
+ 	/* 128 Meg of memory */
+ 	if (mem_len == NETXEN_PCI_128MB_SIZE) {
+-		mem_ptr0 = ioremap(mem_base, FIRST_PAGE_GROUP_SIZE);
+-		mem_ptr1 = ioremap(mem_base + SECOND_PAGE_GROUP_START,
++
++		ahw->pci_base0 = ioremap(mem_base, FIRST_PAGE_GROUP_SIZE);
++		ahw->pci_base1 = ioremap(mem_base + SECOND_PAGE_GROUP_START,
+ 				SECOND_PAGE_GROUP_SIZE);
+-		mem_ptr2 = ioremap(mem_base + THIRD_PAGE_GROUP_START,
++		ahw->pci_base2 = ioremap(mem_base + THIRD_PAGE_GROUP_START,
+ 				THIRD_PAGE_GROUP_SIZE);
+-		pci_len0 = FIRST_PAGE_GROUP_SIZE;
++		if (ahw->pci_base0 == NULL || ahw->pci_base1 == NULL ||
++						ahw->pci_base2 == NULL) {
++			dev_err(&pdev->dev, "failed to map PCI bar 0\n");
++			err = -EIO;
++			goto err_out;
++		}
++
++		ahw->pci_len0 = FIRST_PAGE_GROUP_SIZE;
++
+ 	} else if (mem_len == NETXEN_PCI_32MB_SIZE) {
+-		mem_ptr1 = ioremap(mem_base, SECOND_PAGE_GROUP_SIZE);
+-		mem_ptr2 = ioremap(mem_base + THIRD_PAGE_GROUP_START -
++
++		ahw->pci_base1 = ioremap(mem_base, SECOND_PAGE_GROUP_SIZE);
++		ahw->pci_base2 = ioremap(mem_base + THIRD_PAGE_GROUP_START -
+ 			SECOND_PAGE_GROUP_START, THIRD_PAGE_GROUP_SIZE);
++		if (ahw->pci_base1 == NULL || ahw->pci_base2 == NULL) {
++			dev_err(&pdev->dev, "failed to map PCI bar 0\n");
++			err = -EIO;
++			goto err_out;
++		}
++
+ 	} else if (mem_len == NETXEN_PCI_2MB_SIZE) {
+ 
+-		mem_ptr0 = pci_ioremap_bar(pdev, 0);
+-		if (mem_ptr0 == NULL) {
++		ahw->pci_base0 = pci_ioremap_bar(pdev, 0);
++		if (ahw->pci_base0 == NULL) {
+ 			dev_err(&pdev->dev, "failed to map PCI bar 0\n");
+ 			return -EIO;
+ 		}
+-		pci_len0 = mem_len;
++		ahw->pci_len0 = mem_len;
+ 	} else {
+ 		return -EIO;
+ 	}
+@@ -656,11 +670,6 @@ netxen_setup_pci_map(struct netxen_adapter *adapter)
+ 
+ 	dev_info(&pdev->dev, "%dMB memory map\n", (int)(mem_len>>20));
+ 
+-	adapter->ahw.pci_base0 = mem_ptr0;
+-	adapter->ahw.pci_len0 = pci_len0;
+-	adapter->ahw.pci_base1 = mem_ptr1;
+-	adapter->ahw.pci_base2 = mem_ptr2;
+-
+ 	if (NX_IS_REVISION_P3P(adapter->ahw.revision_id)) {
+ 		adapter->ahw.ocm_win_crb = netxen_get_ioaddr(adapter,
+ 			NETXEN_PCIX_PS_REG(PCIX_OCM_WINDOW_REG(pci_func)));
+diff --git a/drivers/net/pcmcia/pcnet_cs.c b/drivers/net/pcmcia/pcnet_cs.c
+index 776cad2f5715..1028fcb91a28 100644
+--- a/drivers/net/pcmcia/pcnet_cs.c
++++ b/drivers/net/pcmcia/pcnet_cs.c
+@@ -1549,6 +1549,7 @@ static struct pcmcia_device_id pcnet_ids[] = {
+ 	PCMCIA_PFC_DEVICE_MANF_CARD(0, 0x021b, 0x0101),
+ 	PCMCIA_PFC_DEVICE_MANF_CARD(0, 0x08a1, 0xc0ab),
+ 	PCMCIA_PFC_DEVICE_PROD_ID12(0, "AnyCom", "Fast Ethernet + 56K COMBO", 0x578ba6e7, 0xb0ac62c4),
++	PCMCIA_PFC_DEVICE_PROD_ID12(0, "ATKK", "LM33-PCM-T", 0xba9eb7e2, 0x077c174e),
+ 	PCMCIA_PFC_DEVICE_PROD_ID12(0, "D-Link", "DME336T", 0x1a424a1c, 0xb23897ff),
+ 	PCMCIA_PFC_DEVICE_PROD_ID12(0, "Grey Cell", "GCS3000", 0x2a151fac, 0x48b932ae),
+ 	PCMCIA_PFC_DEVICE_PROD_ID12(0, "Linksys", "EtherFast 10&100 + 56K PC Card (PCMLM56)", 0x0733cc81, 0xb3765033),
+@@ -1740,7 +1741,7 @@ static struct pcmcia_device_id pcnet_ids[] = {
+ 	PCMCIA_MFC_DEVICE_CIS_PROD_ID12(0, "DAYNA COMMUNICATIONS", "LAN AND MODEM MULTIFUNCTION", 0x8fdf8f89, 0xdd5ed9e8, "cis/DP83903.cis"),
+ 	PCMCIA_MFC_DEVICE_CIS_PROD_ID4(0, "NSC MF LAN/Modem", 0x58fc6056, "cis/DP83903.cis"),
+ 	PCMCIA_MFC_DEVICE_CIS_MANF_CARD(0, 0x0175, 0x0000, "cis/DP83903.cis"),
+-	PCMCIA_DEVICE_CIS_MANF_CARD(0xc00f, 0x0002, "cis/LA-PCM.cis"),
++	PCMCIA_DEVICE_CIS_PROD_ID12("Allied Telesis,K.K", "Ethernet LAN Card", 0x2ad62f3c, 0x9fd2f0a2, "cis/LA-PCM.cis"),
+ 	PCMCIA_DEVICE_CIS_PROD_ID12("KTI", "PE520 PLUS", 0xad180345, 0x9d58d392, "cis/PE520.cis"),
+ 	PCMCIA_DEVICE_CIS_PROD_ID12("NDC", "Ethernet", 0x01c43ae1, 0x00b2e941, "cis/NE2K.cis"),
+ 	PCMCIA_DEVICE_CIS_PROD_ID12("PMX   ", "PE-200", 0x34f3f1c8, 0x10b59f8c, "cis/PE-200.cis"),
+diff --git a/drivers/net/r8169.c b/drivers/net/r8169.c
+index 9d3ebf3e975e..96740051cdcc 100644
+--- a/drivers/net/r8169.c
++++ b/drivers/net/r8169.c
+@@ -186,8 +186,13 @@ static DEFINE_PCI_DEVICE_TABLE(rtl8169_pci_tbl) = {
+ 
+ MODULE_DEVICE_TABLE(pci, rtl8169_pci_tbl);
+ 
+-static int rx_copybreak = 200;
+-static int use_dac = -1;
++/*
++ * we set our copybreak very high so that we don't have
++ * to allocate 16k frames all the time (see note in
++ * rtl8169_open()
++ */
++static int rx_copybreak = 16383;
++static int use_dac;
+ static struct {
+ 	u32 msg_enable;
+ } debug = { -1 };
+@@ -511,8 +516,7 @@ MODULE_DESCRIPTION("RealTek RTL-8169 Gigabit Ethernet driver");
+ module_param(rx_copybreak, int, 0);
+ MODULE_PARM_DESC(rx_copybreak, "Copy breakpoint for copy-only-tiny-frames");
+ module_param(use_dac, int, 0);
+-MODULE_PARM_DESC(use_dac, "Enable PCI DAC. -1 defaults on for PCI Express only."
+-" Unsafe on 32 bit PCI slot.");
++MODULE_PARM_DESC(use_dac, "Enable PCI DAC. Unsafe on 32 bit PCI slot.");
+ module_param_named(debug, debug.msg_enable, int, 0);
+ MODULE_PARM_DESC(debug, "Debug verbosity level (0=none, ..., 16=all)");
+ MODULE_LICENSE("GPL");
+@@ -2821,8 +2825,8 @@ static void rtl_rar_set(struct rtl8169_private *tp, u8 *addr)
+ 	spin_lock_irq(&tp->lock);
+ 
+ 	RTL_W8(Cfg9346, Cfg9346_Unlock);
+-	RTL_W32(MAC0, low);
+ 	RTL_W32(MAC4, high);
++	RTL_W32(MAC0, low);
+ 	RTL_W8(Cfg9346, Cfg9346_Lock);
+ 
+ 	spin_unlock_irq(&tp->lock);
+@@ -2974,7 +2978,6 @@ rtl8169_init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
+ 	void __iomem *ioaddr;
+ 	unsigned int i;
+ 	int rc;
+-	int this_use_dac = use_dac;
+ 
+ 	if (netif_msg_drv(&debug)) {
+ 		printk(KERN_INFO "%s Gigabit Ethernet driver %s loaded\n",
+@@ -3040,17 +3043,8 @@ rtl8169_init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
+ 
+ 	tp->cp_cmd = PCIMulRW | RxChkSum;
+ 
+-	tp->pcie_cap = pci_find_capability(pdev, PCI_CAP_ID_EXP);
+-	if (!tp->pcie_cap)
+-		netif_info(tp, probe, dev, "no PCI Express capability\n");
+-
+-	if (this_use_dac < 0)
+-		this_use_dac = tp->pcie_cap != 0;
+-
+ 	if ((sizeof(dma_addr_t) > 4) &&
+-	    this_use_dac &&
+-	    !pci_set_dma_mask(pdev, DMA_BIT_MASK(64))) {
+-		netif_info(tp, probe, dev, "using 64-bit DMA\n");
++	    !pci_set_dma_mask(pdev, DMA_BIT_MASK(64)) && use_dac) {
+ 		tp->cp_cmd |= PCIDAC;
+ 		dev->features |= NETIF_F_HIGHDMA;
+ 	} else {
+@@ -3069,6 +3063,10 @@ rtl8169_init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
+ 		goto err_out_free_res_4;
+ 	}
+ 
++	tp->pcie_cap = pci_find_capability(pdev, PCI_CAP_ID_EXP);
++	if (!tp->pcie_cap)
++		netif_info(tp, probe, dev, "no PCI Express capability\n");
++
+ 	RTL_W16(IntrMask, 0x0000);
+ 
+ 	/* Soft reset the chip. */
+@@ -3224,9 +3222,13 @@ static void __devexit rtl8169_remove_one(struct pci_dev *pdev)
+ }
+ 
+ static void rtl8169_set_rxbufsize(struct rtl8169_private *tp,
+-				  struct net_device *dev)
++				  unsigned int mtu)
+ {
+-	unsigned int max_frame = dev->mtu + VLAN_ETH_HLEN + ETH_FCS_LEN;
++	unsigned int max_frame = mtu + VLAN_ETH_HLEN + ETH_FCS_LEN;
++
++	if (max_frame != 16383)
++		printk(KERN_WARNING "WARNING! Changing of MTU on this NIC"
++			"May lead to frame reception errors!\n");
+ 
+ 	tp->rx_buf_sz = (max_frame > RX_BUF_SIZE) ? max_frame : RX_BUF_SIZE;
+ }
+@@ -3238,7 +3240,17 @@ static int rtl8169_open(struct net_device *dev)
+ 	int retval = -ENOMEM;
+ 
+ 
+-	rtl8169_set_rxbufsize(tp, dev);
++	/*
++	 * Note that we use a magic value here, its wierd I know
++	 * its done because, some subset of rtl8169 hardware suffers from
++	 * a problem in which frames received that are longer than
++	 * the size set in RxMaxSize register return garbage sizes
++	 * when received.  To avoid this we need to turn off filtering,
++	 * which is done by setting a value of 16383 in the RxMaxSize register
++	 * and allocating 16k frames to handle the largest possible rx value
++	 * thats what the magic math below does.
++	 */
++	rtl8169_set_rxbufsize(tp, 16383 - VLAN_ETH_HLEN - ETH_FCS_LEN);
+ 
+ 	/*
+ 	 * Rx and Tx desscriptors needs 256 bytes alignment.
+@@ -3891,7 +3903,7 @@ static int rtl8169_change_mtu(struct net_device *dev, int new_mtu)
+ 
+ 	rtl8169_down(dev);
+ 
+-	rtl8169_set_rxbufsize(tp, dev);
++	rtl8169_set_rxbufsize(tp, dev->mtu);
+ 
+ 	ret = rtl8169_init_ring(dev);
+ 	if (ret < 0)
+@@ -4754,8 +4766,8 @@ static void rtl_set_rx_mode(struct net_device *dev)
+ 		mc_filter[1] = swab32(data);
+ 	}
+ 
+-	RTL_W32(MAR0 + 0, mc_filter[0]);
+ 	RTL_W32(MAR0 + 4, mc_filter[1]);
++	RTL_W32(MAR0 + 0, mc_filter[0]);
+ 
+ 	RTL_W32(RxConfig, tmp);
+ 
+diff --git a/drivers/net/tulip/uli526x.c b/drivers/net/tulip/uli526x.c
+index 0ab05af237e5..a4f09d490531 100644
+--- a/drivers/net/tulip/uli526x.c
++++ b/drivers/net/tulip/uli526x.c
+@@ -851,13 +851,15 @@ static void uli526x_rx_packet(struct net_device *dev, struct uli526x_board_info
+ 
+ 			if ( !(rdes0 & 0x8000) ||
+ 				((db->cr6_data & CR6_PM) && (rxlen>6)) ) {
++				struct sk_buff *new_skb = NULL;
++
+ 				skb = rxptr->rx_skb_ptr;
+ 
+ 				/* Good packet, send to upper layer */
+ 				/* Shorst packet used new SKB */
+-				if ( (rxlen < RX_COPY_SIZE) &&
+-					( (skb = dev_alloc_skb(rxlen + 2) )
+-					!= NULL) ) {
++				if ((rxlen < RX_COPY_SIZE) &&
++				    (((new_skb = dev_alloc_skb(rxlen + 2)) != NULL))) {
++					skb = new_skb;
+ 					/* size less than COPY_SIZE, allocate a rxlen SKB */
+ 					skb_reserve(skb, 2); /* 16byte align */
+ 					memcpy(skb_put(skb, rxlen),
+diff --git a/drivers/serial/serial_cs.c b/drivers/serial/serial_cs.c
+index e91db4b38012..175d202ab37e 100644
+--- a/drivers/serial/serial_cs.c
++++ b/drivers/serial/serial_cs.c
+@@ -745,6 +745,7 @@ static struct pcmcia_device_id serial_ids[] = {
+ 	PCMCIA_PFC_DEVICE_PROD_ID13(1, "Xircom", "REM10", 0x2e3ee845, 0x76df1d29),
+ 	PCMCIA_PFC_DEVICE_PROD_ID13(1, "Xircom", "XEM5600", 0x2e3ee845, 0xf1403719),
+ 	PCMCIA_PFC_DEVICE_PROD_ID12(1, "AnyCom", "Fast Ethernet + 56K COMBO", 0x578ba6e7, 0xb0ac62c4),
++	PCMCIA_PFC_DEVICE_PROD_ID12(1, "ATKK", "LM33-PCM-T", 0xba9eb7e2, 0x077c174e),
+ 	PCMCIA_PFC_DEVICE_PROD_ID12(1, "D-Link", "DME336T", 0x1a424a1c, 0xb23897ff),
+ 	PCMCIA_PFC_DEVICE_PROD_ID12(1, "Gateway 2000", "XJEM3336", 0xdd9989be, 0x662c394c),
+ 	PCMCIA_PFC_DEVICE_PROD_ID12(1, "Grey Cell", "GCS3000", 0x2a151fac, 0x48b932ae),
+diff --git a/include/linux/socket.h b/include/linux/socket.h
+index 7b3aae2052a6..354cc5617f8b 100644
+--- a/include/linux/socket.h
++++ b/include/linux/socket.h
+@@ -255,6 +255,7 @@ struct ucred {
+ #define MSG_ERRQUEUE	0x2000	/* Fetch message from error queue */
+ #define MSG_NOSIGNAL	0x4000	/* Do not generate SIGPIPE */
+ #define MSG_MORE	0x8000	/* Sender will send more */
++#define MSG_WAITFORONE	0x10000	/* recvmmsg(): block until 1+ packets avail */
+ 
+ #define MSG_EOF         MSG_FIN
+ 
+diff --git a/net/ipv4/devinet.c b/net/ipv4/devinet.c
+index 51ca946e3392..3feb2b390308 100644
+--- a/net/ipv4/devinet.c
++++ b/net/ipv4/devinet.c
+@@ -1194,7 +1194,7 @@ static int inet_dump_ifaddr(struct sk_buff *skb, struct netlink_callback *cb)
+ 		hlist_for_each_entry_rcu(dev, node, head, index_hlist) {
+ 			if (idx < s_idx)
+ 				goto cont;
+-			if (idx > s_idx)
++			if (h > s_h || idx > s_idx)
+ 				s_ip_idx = 0;
+ 			in_dev = __in_dev_get_rcu(dev);
+ 			if (!in_dev)
+diff --git a/net/ipv4/ipmr.c b/net/ipv4/ipmr.c
+index 0b9d03c54dc3..d0a6092a67be 100644
+--- a/net/ipv4/ipmr.c
++++ b/net/ipv4/ipmr.c
+@@ -1616,17 +1616,20 @@ ipmr_fill_mroute(struct sk_buff *skb, struct mfc_cache *c, struct rtmsg *rtm)
+ 	int ct;
+ 	struct rtnexthop *nhp;
+ 	struct net *net = mfc_net(c);
+-	struct net_device *dev = net->ipv4.vif_table[c->mfc_parent].dev;
+ 	u8 *b = skb_tail_pointer(skb);
+ 	struct rtattr *mp_head;
+ 
+-	if (dev)
+-		RTA_PUT(skb, RTA_IIF, 4, &dev->ifindex);
++	/* If cache is unresolved, don't try to parse IIF and OIF */
++	if (c->mfc_parent > MAXVIFS)
++		return -ENOENT;
++
++	if (VIF_EXISTS(net, c->mfc_parent))
++		RTA_PUT(skb, RTA_IIF, 4, &net->ipv4.vif_table[c->mfc_parent].dev->ifindex);
+ 
+ 	mp_head = (struct rtattr *)skb_put(skb, RTA_LENGTH(0));
+ 
+ 	for (ct = c->mfc_un.res.minvif; ct < c->mfc_un.res.maxvif; ct++) {
+-		if (c->mfc_un.res.ttls[ct] < 255) {
++		if (VIF_EXISTS(net, ct) && c->mfc_un.res.ttls[ct] < 255) {
+ 			if (skb_tailroom(skb) < RTA_ALIGN(RTA_ALIGN(sizeof(*nhp)) + 4))
+ 				goto rtattr_failure;
+ 			nhp = (struct rtnexthop *)skb_put(skb, RTA_ALIGN(sizeof(*nhp)));
+diff --git a/net/ipv4/route.c b/net/ipv4/route.c
+index 54fd68c14c87..d413b57be9b3 100644
+--- a/net/ipv4/route.c
++++ b/net/ipv4/route.c
+@@ -1097,7 +1097,7 @@ static int slow_chain_length(const struct rtable *head)
+ }
+ 
+ static int rt_intern_hash(unsigned hash, struct rtable *rt,
+-			  struct rtable **rp, struct sk_buff *skb)
++			  struct rtable **rp, struct sk_buff *skb, int ifindex)
+ {
+ 	struct rtable	*rth, **rthp;
+ 	unsigned long	now;
+@@ -1212,11 +1212,16 @@ static int rt_intern_hash(unsigned hash, struct rtable *rt,
+ 		    slow_chain_length(rt_hash_table[hash].chain) > rt_chain_length_max) {
+ 			struct net *net = dev_net(rt->u.dst.dev);
+ 			int num = ++net->ipv4.current_rt_cache_rebuild_count;
+-			if (!rt_caching(dev_net(rt->u.dst.dev))) {
++			if (!rt_caching(net)) {
+ 				printk(KERN_WARNING "%s: %d rebuilds is over limit, route caching disabled\n",
+ 					rt->u.dst.dev->name, num);
+ 			}
+-			rt_emergency_hash_rebuild(dev_net(rt->u.dst.dev));
++			rt_emergency_hash_rebuild(net);
++			spin_unlock_bh(rt_hash_lock_addr(hash));
++
++			hash = rt_hash(rt->fl.fl4_dst, rt->fl.fl4_src,
++					ifindex, rt_genid(net));
++			goto restart;
+ 		}
+ 	}
+ 
+@@ -1477,7 +1482,7 @@ void ip_rt_redirect(__be32 old_gw, __be32 daddr, __be32 new_gw,
+ 							&netevent);
+ 
+ 				rt_del(hash, rth);
+-				if (!rt_intern_hash(hash, rt, &rt, NULL))
++				if (!rt_intern_hash(hash, rt, &rt, NULL, rt->fl.oif))
+ 					ip_rt_put(rt);
+ 				goto do_next;
+ 			}
+@@ -1931,7 +1936,7 @@ static int ip_route_input_mc(struct sk_buff *skb, __be32 daddr, __be32 saddr,
+ 
+ 	in_dev_put(in_dev);
+ 	hash = rt_hash(daddr, saddr, dev->ifindex, rt_genid(dev_net(dev)));
+-	return rt_intern_hash(hash, rth, NULL, skb);
++	return rt_intern_hash(hash, rth, NULL, skb, dev->ifindex);
+ 
+ e_nobufs:
+ 	in_dev_put(in_dev);
+@@ -2098,7 +2103,7 @@ static int ip_mkroute_input(struct sk_buff *skb,
+ 	/* put it into the cache */
+ 	hash = rt_hash(daddr, saddr, fl->iif,
+ 		       rt_genid(dev_net(rth->u.dst.dev)));
+-	return rt_intern_hash(hash, rth, NULL, skb);
++	return rt_intern_hash(hash, rth, NULL, skb, fl->iif);
+ }
+ 
+ /*
+@@ -2255,7 +2260,7 @@ out:	return err;
+ 	}
+ 	rth->rt_type	= res.type;
+ 	hash = rt_hash(daddr, saddr, fl.iif, rt_genid(net));
+-	err = rt_intern_hash(hash, rth, NULL, skb);
++	err = rt_intern_hash(hash, rth, NULL, skb, fl.iif);
+ 	goto done;
+ 
+ no_route:
+@@ -2502,7 +2507,7 @@ static int ip_mkroute_output(struct rtable **rp,
+ 	if (err == 0) {
+ 		hash = rt_hash(oldflp->fl4_dst, oldflp->fl4_src, oldflp->oif,
+ 			       rt_genid(dev_net(dev_out)));
+-		err = rt_intern_hash(hash, rth, rp, NULL);
++		err = rt_intern_hash(hash, rth, rp, NULL, oldflp->oif);
+ 	}
+ 
+ 	return err;
+diff --git a/net/ipv6/addrconf.c b/net/ipv6/addrconf.c
+index 3381b4317c27..7e567ae5eaab 100644
+--- a/net/ipv6/addrconf.c
++++ b/net/ipv6/addrconf.c
+@@ -3610,7 +3610,7 @@ static int inet6_dump_addr(struct sk_buff *skb, struct netlink_callback *cb,
+ 		hlist_for_each_entry_rcu(dev, node, head, index_hlist) {
+ 			if (idx < s_idx)
+ 				goto cont;
+-			if (idx > s_idx)
++			if (h > s_h || idx > s_idx)
+ 				s_ip_idx = 0;
+ 			ip_idx = 0;
+ 			if ((idev = __in6_dev_get(dev)) == NULL)
+diff --git a/net/ipv6/ip6mr.c b/net/ipv6/ip6mr.c
+index 23e4ac0cc30e..27acfb58650a 100644
+--- a/net/ipv6/ip6mr.c
++++ b/net/ipv6/ip6mr.c
+@@ -1695,17 +1695,20 @@ ip6mr_fill_mroute(struct sk_buff *skb, struct mfc6_cache *c, struct rtmsg *rtm)
+ 	int ct;
+ 	struct rtnexthop *nhp;
+ 	struct net *net = mfc6_net(c);
+-	struct net_device *dev = net->ipv6.vif6_table[c->mf6c_parent].dev;
+ 	u8 *b = skb_tail_pointer(skb);
+ 	struct rtattr *mp_head;
+ 
+-	if (dev)
+-		RTA_PUT(skb, RTA_IIF, 4, &dev->ifindex);
++	/* If cache is unresolved, don't try to parse IIF and OIF */
++	if (c->mf6c_parent > MAXMIFS)
++		return -ENOENT;
++
++	if (MIF_EXISTS(net, c->mf6c_parent))
++		RTA_PUT(skb, RTA_IIF, 4, &net->ipv6.vif6_table[c->mf6c_parent].dev->ifindex);
+ 
+ 	mp_head = (struct rtattr *)skb_put(skb, RTA_LENGTH(0));
+ 
+ 	for (ct = c->mfc_un.res.minvif; ct < c->mfc_un.res.maxvif; ct++) {
+-		if (c->mfc_un.res.ttls[ct] < 255) {
++		if (MIF_EXISTS(net, ct) && c->mfc_un.res.ttls[ct] < 255) {
+ 			if (skb_tailroom(skb) < RTA_ALIGN(RTA_ALIGN(sizeof(*nhp)) + 4))
+ 				goto rtattr_failure;
+ 			nhp = (struct rtnexthop *)skb_put(skb, RTA_ALIGN(sizeof(*nhp)));
+diff --git a/net/ipv6/route.c b/net/ipv6/route.c
+index 7fcb0e5d1213..0d7713c5c206 100644
+--- a/net/ipv6/route.c
++++ b/net/ipv6/route.c
+@@ -890,12 +890,17 @@ static struct dst_entry *ip6_negative_advice(struct dst_entry *dst)
+ 	struct rt6_info *rt = (struct rt6_info *) dst;
+ 
+ 	if (rt) {
+-		if (rt->rt6i_flags & RTF_CACHE)
+-			ip6_del_rt(rt);
+-		else
++		if (rt->rt6i_flags & RTF_CACHE) {
++			if (rt6_check_expired(rt)) {
++				ip6_del_rt(rt);
++				dst = NULL;
++			}
++		} else {
+ 			dst_release(dst);
++			dst = NULL;
++		}
+ 	}
+-	return NULL;
++	return dst;
+ }
+ 
+ static void ip6_link_failure(struct sk_buff *skb)
+diff --git a/net/socket.c b/net/socket.c
+index 769c386bd428..f55ffe9f8c87 100644
+--- a/net/socket.c
++++ b/net/socket.c
+@@ -2135,6 +2135,10 @@ int __sys_recvmmsg(int fd, struct mmsghdr __user *mmsg, unsigned int vlen,
+ 			break;
+ 		++datagrams;
+ 
++		/* MSG_WAITFORONE turns on MSG_DONTWAIT after one packet */
++		if (flags & MSG_WAITFORONE)
++			flags |= MSG_DONTWAIT;
++
+ 		if (timeout) {
+ 			ktime_get_ts(timeout);
+ 			*timeout = timespec_sub(end_time, *timeout);

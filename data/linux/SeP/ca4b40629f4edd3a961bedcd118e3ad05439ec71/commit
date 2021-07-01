@@ -1,0 +1,33 @@
+commit ca4b40629f4edd3a961bedcd118e3ad05439ec71
+Merge: 280664f558c9 ca976bfb3154
+Author: Linus Torvalds <torvalds@linux-foundation.org>
+Commit: Linus Torvalds <torvalds@linux-foundation.org>
+
+    Merge tag 'kgdb-5.2-rc1' of git://git.kernel.org/pub/scm/linux/kernel/git/danielt/linux
+    
+    Pull kgdb updates from Daniel Thompson:
+     "Mostly cleanups but there are also a couple of fixes for out-of-bounds
+      accesses (including a potential write to the byte before a static
+      buffer).
+    
+      The main changes are:
+    
+       - Fixes to those out-of-bounds access (empty string to configure test
+         module could write the byte before a buffer, high cpu counts could
+         read outside of per-cpu structures).
+    
+       - Improvements to string handling problems picked up by new compiler
+         warnings and other static checks. Most are fixing benign issues
+         that can't be tickled without code changes but still reduce the wtf
+         factor a little.
+    
+       - Tidy up the terminal output"
+    
+    * tag 'kgdb-5.2-rc1' of git://git.kernel.org/pub/scm/linux/kernel/git/danielt/linux:
+      kdb: Fix bound check compiler warning
+      kdb: do a sanity check on the cpu in kdb_per_cpu()
+      kdb: Get rid of broken attempt to print CCVERSION in kdb summary
+      misc: kgdbts: fix out-of-bounds access in function param_set_kgdbts_var
+      kdb: kdb_support: replace strcpy() by strscpy()
+      gdbstub: Replace strcpy() by strscpy()
+      gdbstub: mark expected switch fall-throughs

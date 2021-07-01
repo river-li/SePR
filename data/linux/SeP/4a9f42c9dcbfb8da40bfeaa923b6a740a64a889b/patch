@@ -1,0 +1,726 @@
+diff --git a/include/linux/bpf.h b/include/linux/bpf.h
+index 523481a3471b..988a00797bcd 100644
+--- a/include/linux/bpf.h
++++ b/include/linux/bpf.h
+@@ -212,6 +212,7 @@ enum bpf_reg_type {
+ 	PTR_TO_PACKET_META,	 /* skb->data - meta_len */
+ 	PTR_TO_PACKET,		 /* reg points to skb->data */
+ 	PTR_TO_PACKET_END,	 /* skb->data + headlen */
++	PTR_TO_FLOW_KEYS,	 /* reg points to bpf_flow_keys */
+ };
+ 
+ /* The information passed from prog-specific *_is_valid_access
+diff --git a/include/linux/bpf_types.h b/include/linux/bpf_types.h
+index cd26c090e7c0..22083712dd18 100644
+--- a/include/linux/bpf_types.h
++++ b/include/linux/bpf_types.h
+@@ -32,6 +32,7 @@ BPF_PROG_TYPE(BPF_PROG_TYPE_LIRC_MODE2, lirc_mode2)
+ #ifdef CONFIG_INET
+ BPF_PROG_TYPE(BPF_PROG_TYPE_SK_REUSEPORT, sk_reuseport)
+ #endif
++BPF_PROG_TYPE(BPF_PROG_TYPE_FLOW_DISSECTOR, flow_dissector)
+ 
+ BPF_MAP_TYPE(BPF_MAP_TYPE_ARRAY, array_map_ops)
+ BPF_MAP_TYPE(BPF_MAP_TYPE_PERCPU_ARRAY, percpu_array_map_ops)
+diff --git a/include/linux/skbuff.h b/include/linux/skbuff.h
+index 17a13e4785fc..ce0e863f02a2 100644
+--- a/include/linux/skbuff.h
++++ b/include/linux/skbuff.h
+@@ -243,6 +243,8 @@ struct scatterlist;
+ struct pipe_inode_info;
+ struct iov_iter;
+ struct napi_struct;
++struct bpf_prog;
++union bpf_attr;
+ 
+ #if defined(CONFIG_NF_CONNTRACK) || defined(CONFIG_NF_CONNTRACK_MODULE)
+ struct nf_conntrack {
+@@ -1192,6 +1194,11 @@ void skb_flow_dissector_init(struct flow_dissector *flow_dissector,
+ 			     const struct flow_dissector_key *key,
+ 			     unsigned int key_count);
+ 
++int skb_flow_dissector_bpf_prog_attach(const union bpf_attr *attr,
++				       struct bpf_prog *prog);
++
++int skb_flow_dissector_bpf_prog_detach(const union bpf_attr *attr);
++
+ bool __skb_flow_dissect(const struct sk_buff *skb,
+ 			struct flow_dissector *flow_dissector,
+ 			void *target_container,
+diff --git a/include/net/net_namespace.h b/include/net/net_namespace.h
+index 9b5fdc50519a..99d4148e0f90 100644
+--- a/include/net/net_namespace.h
++++ b/include/net/net_namespace.h
+@@ -43,6 +43,7 @@ struct ctl_table_header;
+ struct net_generic;
+ struct uevent_sock;
+ struct netns_ipvs;
++struct bpf_prog;
+ 
+ 
+ #define NETDEV_HASHBITS    8
+@@ -145,6 +146,8 @@ struct net {
+ #endif
+ 	struct net_generic __rcu	*gen;
+ 
++	struct bpf_prog __rcu	*flow_dissector_prog;
++
+ 	/* Note : following structs are cache line aligned */
+ #ifdef CONFIG_XFRM
+ 	struct netns_xfrm	xfrm;
+diff --git a/include/net/sch_generic.h b/include/net/sch_generic.h
+index a6d00093f35e..1b81ba85fd2d 100644
+--- a/include/net/sch_generic.h
++++ b/include/net/sch_generic.h
+@@ -19,6 +19,7 @@ struct Qdisc_ops;
+ struct qdisc_walker;
+ struct tcf_walker;
+ struct module;
++struct bpf_flow_keys;
+ 
+ typedef int tc_setup_cb_t(enum tc_setup_type type,
+ 			  void *type_data, void *cb_priv);
+@@ -307,9 +308,14 @@ struct tcf_proto {
+ };
+ 
+ struct qdisc_skb_cb {
+-	unsigned int		pkt_len;
+-	u16			slave_dev_queue_mapping;
+-	u16			tc_classid;
++	union {
++		struct {
++			unsigned int		pkt_len;
++			u16			slave_dev_queue_mapping;
++			u16			tc_classid;
++		};
++		struct bpf_flow_keys *flow_keys;
++	};
+ #define QDISC_CB_PRIV_LEN 20
+ 	unsigned char		data[QDISC_CB_PRIV_LEN];
+ };
+diff --git a/include/uapi/linux/bpf.h b/include/uapi/linux/bpf.h
+index 66917a4eba27..aa5ccd2385ed 100644
+--- a/include/uapi/linux/bpf.h
++++ b/include/uapi/linux/bpf.h
+@@ -152,6 +152,7 @@ enum bpf_prog_type {
+ 	BPF_PROG_TYPE_LWT_SEG6LOCAL,
+ 	BPF_PROG_TYPE_LIRC_MODE2,
+ 	BPF_PROG_TYPE_SK_REUSEPORT,
++	BPF_PROG_TYPE_FLOW_DISSECTOR,
+ };
+ 
+ enum bpf_attach_type {
+@@ -172,6 +173,7 @@ enum bpf_attach_type {
+ 	BPF_CGROUP_UDP4_SENDMSG,
+ 	BPF_CGROUP_UDP6_SENDMSG,
+ 	BPF_LIRC_MODE2,
++	BPF_FLOW_DISSECTOR,
+ 	__MAX_BPF_ATTACH_TYPE
+ };
+ 
+@@ -2333,6 +2335,7 @@ struct __sk_buff {
+ 	/* ... here. */
+ 
+ 	__u32 data_meta;
++	struct bpf_flow_keys *flow_keys;
+ };
+ 
+ struct bpf_tunnel_key {
+@@ -2778,4 +2781,27 @@ enum bpf_task_fd_type {
+ 	BPF_FD_TYPE_URETPROBE,		/* filename + offset */
+ };
+ 
++struct bpf_flow_keys {
++	__u16	nhoff;
++	__u16	thoff;
++	__u16	addr_proto;			/* ETH_P_* of valid addrs */
++	__u8	is_frag;
++	__u8	is_first_frag;
++	__u8	is_encap;
++	__u8	ip_proto;
++	__be16	n_proto;
++	__be16	sport;
++	__be16	dport;
++	union {
++		struct {
++			__be32	ipv4_src;
++			__be32	ipv4_dst;
++		};
++		struct {
++			__u32	ipv6_src[4];	/* in6_addr; network order */
++			__u32	ipv6_dst[4];	/* in6_addr; network order */
++		};
++	};
++};
++
+ #endif /* _UAPI__LINUX_BPF_H__ */
+diff --git a/kernel/bpf/syscall.c b/kernel/bpf/syscall.c
+index 3c9636f03bb2..b3c2d09bcf7a 100644
+--- a/kernel/bpf/syscall.c
++++ b/kernel/bpf/syscall.c
+@@ -1615,6 +1615,9 @@ static int bpf_prog_attach(const union bpf_attr *attr)
+ 	case BPF_LIRC_MODE2:
+ 		ptype = BPF_PROG_TYPE_LIRC_MODE2;
+ 		break;
++	case BPF_FLOW_DISSECTOR:
++		ptype = BPF_PROG_TYPE_FLOW_DISSECTOR;
++		break;
+ 	default:
+ 		return -EINVAL;
+ 	}
+@@ -1636,6 +1639,9 @@ static int bpf_prog_attach(const union bpf_attr *attr)
+ 	case BPF_PROG_TYPE_LIRC_MODE2:
+ 		ret = lirc_prog_attach(attr, prog);
+ 		break;
++	case BPF_PROG_TYPE_FLOW_DISSECTOR:
++		ret = skb_flow_dissector_bpf_prog_attach(attr, prog);
++		break;
+ 	default:
+ 		ret = cgroup_bpf_prog_attach(attr, ptype, prog);
+ 	}
+@@ -1688,6 +1694,8 @@ static int bpf_prog_detach(const union bpf_attr *attr)
+ 		return sockmap_get_from_fd(attr, BPF_PROG_TYPE_SK_SKB, NULL);
+ 	case BPF_LIRC_MODE2:
+ 		return lirc_prog_detach(attr);
++	case BPF_FLOW_DISSECTOR:
++		return skb_flow_dissector_bpf_prog_detach(attr);
+ 	default:
+ 		return -EINVAL;
+ 	}
+diff --git a/kernel/bpf/verifier.c b/kernel/bpf/verifier.c
+index 6ff1bac1795d..8ccbff4fff93 100644
+--- a/kernel/bpf/verifier.c
++++ b/kernel/bpf/verifier.c
+@@ -261,6 +261,7 @@ static const char * const reg_type_str[] = {
+ 	[PTR_TO_PACKET]		= "pkt",
+ 	[PTR_TO_PACKET_META]	= "pkt_meta",
+ 	[PTR_TO_PACKET_END]	= "pkt_end",
++	[PTR_TO_FLOW_KEYS]	= "flow_keys",
+ };
+ 
+ static char slot_type_char[] = {
+@@ -965,6 +966,7 @@ static bool is_spillable_regtype(enum bpf_reg_type type)
+ 	case PTR_TO_PACKET:
+ 	case PTR_TO_PACKET_META:
+ 	case PTR_TO_PACKET_END:
++	case PTR_TO_FLOW_KEYS:
+ 	case CONST_PTR_TO_MAP:
+ 		return true;
+ 	default:
+@@ -1238,6 +1240,7 @@ static bool may_access_direct_pkt_data(struct bpf_verifier_env *env,
+ 	case BPF_PROG_TYPE_LWT_XMIT:
+ 	case BPF_PROG_TYPE_SK_SKB:
+ 	case BPF_PROG_TYPE_SK_MSG:
++	case BPF_PROG_TYPE_FLOW_DISSECTOR:
+ 		if (meta)
+ 			return meta->pkt_access;
+ 
+@@ -1321,6 +1324,18 @@ static int check_ctx_access(struct bpf_verifier_env *env, int insn_idx, int off,
+ 	return -EACCES;
+ }
+ 
++static int check_flow_keys_access(struct bpf_verifier_env *env, int off,
++				  int size)
++{
++	if (size < 0 || off < 0 ||
++	    (u64)off + size > sizeof(struct bpf_flow_keys)) {
++		verbose(env, "invalid access to flow keys off=%d size=%d\n",
++			off, size);
++		return -EACCES;
++	}
++	return 0;
++}
++
+ static bool __is_pointer_value(bool allow_ptr_leaks,
+ 			       const struct bpf_reg_state *reg)
+ {
+@@ -1422,6 +1437,9 @@ static int check_ptr_alignment(struct bpf_verifier_env *env,
+ 		 * right in front, treat it the very same way.
+ 		 */
+ 		return check_pkt_ptr_alignment(env, reg, off, size, strict);
++	case PTR_TO_FLOW_KEYS:
++		pointer_desc = "flow keys ";
++		break;
+ 	case PTR_TO_MAP_VALUE:
+ 		pointer_desc = "value ";
+ 		break;
+@@ -1692,6 +1710,17 @@ static int check_mem_access(struct bpf_verifier_env *env, int insn_idx, u32 regn
+ 		err = check_packet_access(env, regno, off, size, false);
+ 		if (!err && t == BPF_READ && value_regno >= 0)
+ 			mark_reg_unknown(env, regs, value_regno);
++	} else if (reg->type == PTR_TO_FLOW_KEYS) {
++		if (t == BPF_WRITE && value_regno >= 0 &&
++		    is_pointer_value(env, value_regno)) {
++			verbose(env, "R%d leaks addr into flow keys\n",
++				value_regno);
++			return -EACCES;
++		}
++
++		err = check_flow_keys_access(env, off, size);
++		if (!err && t == BPF_READ && value_regno >= 0)
++			mark_reg_unknown(env, regs, value_regno);
+ 	} else {
+ 		verbose(env, "R%d invalid mem access '%s'\n", regno,
+ 			reg_type_str[reg->type]);
+@@ -1839,6 +1868,8 @@ static int check_helper_mem_access(struct bpf_verifier_env *env, int regno,
+ 	case PTR_TO_PACKET_META:
+ 		return check_packet_access(env, regno, reg->off, access_size,
+ 					   zero_size_allowed);
++	case PTR_TO_FLOW_KEYS:
++		return check_flow_keys_access(env, reg->off, access_size);
+ 	case PTR_TO_MAP_VALUE:
+ 		return check_map_access(env, regno, reg->off, access_size,
+ 					zero_size_allowed);
+@@ -4366,6 +4397,7 @@ static bool regsafe(struct bpf_reg_state *rold, struct bpf_reg_state *rcur,
+ 	case PTR_TO_CTX:
+ 	case CONST_PTR_TO_MAP:
+ 	case PTR_TO_PACKET_END:
++	case PTR_TO_FLOW_KEYS:
+ 		/* Only valid matches are exact, which memcmp() above
+ 		 * would have accepted
+ 		 */
+diff --git a/net/core/filter.c b/net/core/filter.c
+index bf5b6efd369a..9cc76f134ddb 100644
+--- a/net/core/filter.c
++++ b/net/core/filter.c
+@@ -5123,6 +5123,17 @@ sk_skb_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
+ 	}
+ }
+ 
++static const struct bpf_func_proto *
++flow_dissector_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
++{
++	switch (func_id) {
++	case BPF_FUNC_skb_load_bytes:
++		return &bpf_skb_load_bytes_proto;
++	default:
++		return bpf_base_func_proto(func_id);
++	}
++}
++
+ static const struct bpf_func_proto *
+ lwt_out_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
+ {
+@@ -5241,6 +5252,10 @@ static bool bpf_skb_is_valid_access(int off, int size, enum bpf_access_type type
+ 		if (size != size_default)
+ 			return false;
+ 		break;
++	case bpf_ctx_range(struct __sk_buff, flow_keys):
++		if (size != sizeof(struct bpf_flow_keys *))
++			return false;
++		break;
+ 	default:
+ 		/* Only narrow read access allowed for now. */
+ 		if (type == BPF_WRITE) {
+@@ -5266,6 +5281,7 @@ static bool sk_filter_is_valid_access(int off, int size,
+ 	case bpf_ctx_range(struct __sk_buff, data):
+ 	case bpf_ctx_range(struct __sk_buff, data_meta):
+ 	case bpf_ctx_range(struct __sk_buff, data_end):
++	case bpf_ctx_range(struct __sk_buff, flow_keys):
+ 	case bpf_ctx_range_till(struct __sk_buff, family, local_port):
+ 		return false;
+ 	}
+@@ -5291,6 +5307,7 @@ static bool lwt_is_valid_access(int off, int size,
+ 	case bpf_ctx_range(struct __sk_buff, tc_classid):
+ 	case bpf_ctx_range_till(struct __sk_buff, family, local_port):
+ 	case bpf_ctx_range(struct __sk_buff, data_meta):
++	case bpf_ctx_range(struct __sk_buff, flow_keys):
+ 		return false;
+ 	}
+ 
+@@ -5501,6 +5518,7 @@ static bool tc_cls_act_is_valid_access(int off, int size,
+ 	case bpf_ctx_range(struct __sk_buff, data_end):
+ 		info->reg_type = PTR_TO_PACKET_END;
+ 		break;
++	case bpf_ctx_range(struct __sk_buff, flow_keys):
+ 	case bpf_ctx_range_till(struct __sk_buff, family, local_port):
+ 		return false;
+ 	}
+@@ -5702,6 +5720,7 @@ static bool sk_skb_is_valid_access(int off, int size,
+ 	switch (off) {
+ 	case bpf_ctx_range(struct __sk_buff, tc_classid):
+ 	case bpf_ctx_range(struct __sk_buff, data_meta):
++	case bpf_ctx_range(struct __sk_buff, flow_keys):
+ 		return false;
+ 	}
+ 
+@@ -5761,6 +5780,39 @@ static bool sk_msg_is_valid_access(int off, int size,
+ 	return true;
+ }
+ 
++static bool flow_dissector_is_valid_access(int off, int size,
++					   enum bpf_access_type type,
++					   const struct bpf_prog *prog,
++					   struct bpf_insn_access_aux *info)
++{
++	if (type == BPF_WRITE) {
++		switch (off) {
++		case bpf_ctx_range_till(struct __sk_buff, cb[0], cb[4]):
++			break;
++		default:
++			return false;
++		}
++	}
++
++	switch (off) {
++	case bpf_ctx_range(struct __sk_buff, data):
++		info->reg_type = PTR_TO_PACKET;
++		break;
++	case bpf_ctx_range(struct __sk_buff, data_end):
++		info->reg_type = PTR_TO_PACKET_END;
++		break;
++	case bpf_ctx_range(struct __sk_buff, flow_keys):
++		info->reg_type = PTR_TO_FLOW_KEYS;
++		break;
++	case bpf_ctx_range(struct __sk_buff, tc_classid):
++	case bpf_ctx_range(struct __sk_buff, data_meta):
++	case bpf_ctx_range_till(struct __sk_buff, family, local_port):
++		return false;
++	}
++
++	return bpf_skb_is_valid_access(off, size, type, prog, info);
++}
++
+ static u32 bpf_convert_ctx_access(enum bpf_access_type type,
+ 				  const struct bpf_insn *si,
+ 				  struct bpf_insn *insn_buf,
+@@ -6055,6 +6107,15 @@ static u32 bpf_convert_ctx_access(enum bpf_access_type type,
+ 				      bpf_target_off(struct sock_common,
+ 						     skc_num, 2, target_size));
+ 		break;
++
++	case offsetof(struct __sk_buff, flow_keys):
++		off  = si->off;
++		off -= offsetof(struct __sk_buff, flow_keys);
++		off += offsetof(struct sk_buff, cb);
++		off += offsetof(struct qdisc_skb_cb, flow_keys);
++		*insn++ = BPF_LDX_MEM(BPF_SIZEOF(void *), si->dst_reg,
++				      si->src_reg, off);
++		break;
+ 	}
+ 
+ 	return insn - insn_buf;
+@@ -7018,6 +7079,15 @@ const struct bpf_verifier_ops sk_msg_verifier_ops = {
+ const struct bpf_prog_ops sk_msg_prog_ops = {
+ };
+ 
++const struct bpf_verifier_ops flow_dissector_verifier_ops = {
++	.get_func_proto		= flow_dissector_func_proto,
++	.is_valid_access	= flow_dissector_is_valid_access,
++	.convert_ctx_access	= bpf_convert_ctx_access,
++};
++
++const struct bpf_prog_ops flow_dissector_prog_ops = {
++};
++
+ int sk_detach_filter(struct sock *sk)
+ {
+ 	int ret = -ENOENT;
+diff --git a/net/core/flow_dissector.c b/net/core/flow_dissector.c
+index ce9eeeb7c024..5c5dd74b5b3b 100644
+--- a/net/core/flow_dissector.c
++++ b/net/core/flow_dissector.c
+@@ -25,6 +25,9 @@
+ #include <net/flow_dissector.h>
+ #include <scsi/fc/fc_fcoe.h>
+ #include <uapi/linux/batadv_packet.h>
++#include <linux/bpf.h>
++
++static DEFINE_MUTEX(flow_dissector_mutex);
+ 
+ static void dissector_set_key(struct flow_dissector *flow_dissector,
+ 			      enum flow_dissector_key_id key_id)
+@@ -62,6 +65,44 @@ void skb_flow_dissector_init(struct flow_dissector *flow_dissector,
+ }
+ EXPORT_SYMBOL(skb_flow_dissector_init);
+ 
++int skb_flow_dissector_bpf_prog_attach(const union bpf_attr *attr,
++				       struct bpf_prog *prog)
++{
++	struct bpf_prog *attached;
++	struct net *net;
++
++	net = current->nsproxy->net_ns;
++	mutex_lock(&flow_dissector_mutex);
++	attached = rcu_dereference_protected(net->flow_dissector_prog,
++					     lockdep_is_held(&flow_dissector_mutex));
++	if (attached) {
++		/* Only one BPF program can be attached at a time */
++		mutex_unlock(&flow_dissector_mutex);
++		return -EEXIST;
++	}
++	rcu_assign_pointer(net->flow_dissector_prog, prog);
++	mutex_unlock(&flow_dissector_mutex);
++	return 0;
++}
++
++int skb_flow_dissector_bpf_prog_detach(const union bpf_attr *attr)
++{
++	struct bpf_prog *attached;
++	struct net *net;
++
++	net = current->nsproxy->net_ns;
++	mutex_lock(&flow_dissector_mutex);
++	attached = rcu_dereference_protected(net->flow_dissector_prog,
++					     lockdep_is_held(&flow_dissector_mutex));
++	if (!attached) {
++		mutex_unlock(&flow_dissector_mutex);
++		return -ENOENT;
++	}
++	bpf_prog_put(attached);
++	RCU_INIT_POINTER(net->flow_dissector_prog, NULL);
++	mutex_unlock(&flow_dissector_mutex);
++	return 0;
++}
+ /**
+  * skb_flow_get_be16 - extract be16 entity
+  * @skb: sk_buff to extract from
+@@ -588,6 +629,60 @@ static bool skb_flow_dissect_allowed(int *num_hdrs)
+ 	return (*num_hdrs <= MAX_FLOW_DISSECT_HDRS);
+ }
+ 
++static void __skb_flow_bpf_to_target(const struct bpf_flow_keys *flow_keys,
++				     struct flow_dissector *flow_dissector,
++				     void *target_container)
++{
++	struct flow_dissector_key_control *key_control;
++	struct flow_dissector_key_basic *key_basic;
++	struct flow_dissector_key_addrs *key_addrs;
++	struct flow_dissector_key_ports *key_ports;
++
++	key_control = skb_flow_dissector_target(flow_dissector,
++						FLOW_DISSECTOR_KEY_CONTROL,
++						target_container);
++	key_control->thoff = flow_keys->thoff;
++	if (flow_keys->is_frag)
++		key_control->flags |= FLOW_DIS_IS_FRAGMENT;
++	if (flow_keys->is_first_frag)
++		key_control->flags |= FLOW_DIS_FIRST_FRAG;
++	if (flow_keys->is_encap)
++		key_control->flags |= FLOW_DIS_ENCAPSULATION;
++
++	key_basic = skb_flow_dissector_target(flow_dissector,
++					      FLOW_DISSECTOR_KEY_BASIC,
++					      target_container);
++	key_basic->n_proto = flow_keys->n_proto;
++	key_basic->ip_proto = flow_keys->ip_proto;
++
++	if (flow_keys->addr_proto == ETH_P_IP &&
++	    dissector_uses_key(flow_dissector, FLOW_DISSECTOR_KEY_IPV4_ADDRS)) {
++		key_addrs = skb_flow_dissector_target(flow_dissector,
++						      FLOW_DISSECTOR_KEY_IPV4_ADDRS,
++						      target_container);
++		key_addrs->v4addrs.src = flow_keys->ipv4_src;
++		key_addrs->v4addrs.dst = flow_keys->ipv4_dst;
++		key_control->addr_type = FLOW_DISSECTOR_KEY_IPV4_ADDRS;
++	} else if (flow_keys->addr_proto == ETH_P_IPV6 &&
++		   dissector_uses_key(flow_dissector,
++				      FLOW_DISSECTOR_KEY_IPV6_ADDRS)) {
++		key_addrs = skb_flow_dissector_target(flow_dissector,
++						      FLOW_DISSECTOR_KEY_IPV6_ADDRS,
++						      target_container);
++		memcpy(&key_addrs->v6addrs, &flow_keys->ipv6_src,
++		       sizeof(key_addrs->v6addrs));
++		key_control->addr_type = FLOW_DISSECTOR_KEY_IPV6_ADDRS;
++	}
++
++	if (dissector_uses_key(flow_dissector, FLOW_DISSECTOR_KEY_PORTS)) {
++		key_ports = skb_flow_dissector_target(flow_dissector,
++						      FLOW_DISSECTOR_KEY_PORTS,
++						      target_container);
++		key_ports->src = flow_keys->sport;
++		key_ports->dst = flow_keys->dport;
++	}
++}
++
+ /**
+  * __skb_flow_dissect - extract the flow_keys struct and return it
+  * @skb: sk_buff to extract the flow from, can be NULL if the rest are specified
+@@ -619,6 +714,7 @@ bool __skb_flow_dissect(const struct sk_buff *skb,
+ 	struct flow_dissector_key_vlan *key_vlan;
+ 	enum flow_dissect_ret fdret;
+ 	enum flow_dissector_key_id dissector_vlan = FLOW_DISSECTOR_KEY_MAX;
++	struct bpf_prog *attached;
+ 	int num_hdrs = 0;
+ 	u8 ip_proto = 0;
+ 	bool ret;
+@@ -658,6 +754,44 @@ bool __skb_flow_dissect(const struct sk_buff *skb,
+ 					      FLOW_DISSECTOR_KEY_BASIC,
+ 					      target_container);
+ 
++	rcu_read_lock();
++	attached = skb ? rcu_dereference(dev_net(skb->dev)->flow_dissector_prog)
++		       : NULL;
++	if (attached) {
++		/* Note that even though the const qualifier is discarded
++		 * throughout the execution of the BPF program, all changes(the
++		 * control block) are reverted after the BPF program returns.
++		 * Therefore, __skb_flow_dissect does not alter the skb.
++		 */
++		struct bpf_flow_keys flow_keys = {};
++		struct bpf_skb_data_end cb_saved;
++		struct bpf_skb_data_end *cb;
++		u32 result;
++
++		cb = (struct bpf_skb_data_end *)skb->cb;
++
++		/* Save Control Block */
++		memcpy(&cb_saved, cb, sizeof(cb_saved));
++		memset(cb, 0, sizeof(cb_saved));
++
++		/* Pass parameters to the BPF program */
++		cb->qdisc_cb.flow_keys = &flow_keys;
++		flow_keys.nhoff = nhoff;
++
++		bpf_compute_data_pointers((struct sk_buff *)skb);
++		result = BPF_PROG_RUN(attached, skb);
++
++		/* Restore state */
++		memcpy(cb, &cb_saved, sizeof(cb_saved));
++
++		__skb_flow_bpf_to_target(&flow_keys, flow_dissector,
++					 target_container);
++		key_control->thoff = min_t(u16, key_control->thoff, skb->len);
++		rcu_read_unlock();
++		return result == BPF_OK;
++	}
++	rcu_read_unlock();
++
+ 	if (dissector_uses_key(flow_dissector,
+ 			       FLOW_DISSECTOR_KEY_ETH_ADDRS)) {
+ 		struct ethhdr *eth = eth_hdr(skb);
+diff --git a/tools/bpf/bpftool/prog.c b/tools/bpf/bpftool/prog.c
+index dce960d22106..b1cd3bc8db70 100644
+--- a/tools/bpf/bpftool/prog.c
++++ b/tools/bpf/bpftool/prog.c
+@@ -74,6 +74,7 @@ static const char * const prog_type_name[] = {
+ 	[BPF_PROG_TYPE_RAW_TRACEPOINT]	= "raw_tracepoint",
+ 	[BPF_PROG_TYPE_CGROUP_SOCK_ADDR] = "cgroup_sock_addr",
+ 	[BPF_PROG_TYPE_LIRC_MODE2]	= "lirc_mode2",
++	[BPF_PROG_TYPE_FLOW_DISSECTOR]	= "flow_dissector",
+ };
+ 
+ static void print_boot_time(__u64 nsecs, char *buf, unsigned int size)
+diff --git a/tools/include/uapi/linux/bpf.h b/tools/include/uapi/linux/bpf.h
+index 66917a4eba27..aa5ccd2385ed 100644
+--- a/tools/include/uapi/linux/bpf.h
++++ b/tools/include/uapi/linux/bpf.h
+@@ -152,6 +152,7 @@ enum bpf_prog_type {
+ 	BPF_PROG_TYPE_LWT_SEG6LOCAL,
+ 	BPF_PROG_TYPE_LIRC_MODE2,
+ 	BPF_PROG_TYPE_SK_REUSEPORT,
++	BPF_PROG_TYPE_FLOW_DISSECTOR,
+ };
+ 
+ enum bpf_attach_type {
+@@ -172,6 +173,7 @@ enum bpf_attach_type {
+ 	BPF_CGROUP_UDP4_SENDMSG,
+ 	BPF_CGROUP_UDP6_SENDMSG,
+ 	BPF_LIRC_MODE2,
++	BPF_FLOW_DISSECTOR,
+ 	__MAX_BPF_ATTACH_TYPE
+ };
+ 
+@@ -2333,6 +2335,7 @@ struct __sk_buff {
+ 	/* ... here. */
+ 
+ 	__u32 data_meta;
++	struct bpf_flow_keys *flow_keys;
+ };
+ 
+ struct bpf_tunnel_key {
+@@ -2778,4 +2781,27 @@ enum bpf_task_fd_type {
+ 	BPF_FD_TYPE_URETPROBE,		/* filename + offset */
+ };
+ 
++struct bpf_flow_keys {
++	__u16	nhoff;
++	__u16	thoff;
++	__u16	addr_proto;			/* ETH_P_* of valid addrs */
++	__u8	is_frag;
++	__u8	is_first_frag;
++	__u8	is_encap;
++	__u8	ip_proto;
++	__be16	n_proto;
++	__be16	sport;
++	__be16	dport;
++	union {
++		struct {
++			__be32	ipv4_src;
++			__be32	ipv4_dst;
++		};
++		struct {
++			__u32	ipv6_src[4];	/* in6_addr; network order */
++			__u32	ipv6_dst[4];	/* in6_addr; network order */
++		};
++	};
++};
++
+ #endif /* _UAPI__LINUX_BPF_H__ */
+diff --git a/tools/lib/bpf/libbpf.c b/tools/lib/bpf/libbpf.c
+index 8476da7f2720..9ca8e0e624d8 100644
+--- a/tools/lib/bpf/libbpf.c
++++ b/tools/lib/bpf/libbpf.c
+@@ -1502,6 +1502,7 @@ static bool bpf_prog_type__needs_kver(enum bpf_prog_type type)
+ 	case BPF_PROG_TYPE_CGROUP_SOCK_ADDR:
+ 	case BPF_PROG_TYPE_LIRC_MODE2:
+ 	case BPF_PROG_TYPE_SK_REUSEPORT:
++	case BPF_PROG_TYPE_FLOW_DISSECTOR:
+ 		return false;
+ 	case BPF_PROG_TYPE_UNSPEC:
+ 	case BPF_PROG_TYPE_KPROBE:
+@@ -2121,6 +2122,7 @@ static const struct {
+ 	BPF_PROG_SEC("sk_skb",		BPF_PROG_TYPE_SK_SKB),
+ 	BPF_PROG_SEC("sk_msg",		BPF_PROG_TYPE_SK_MSG),
+ 	BPF_PROG_SEC("lirc_mode2",	BPF_PROG_TYPE_LIRC_MODE2),
++	BPF_PROG_SEC("flow_dissector",	BPF_PROG_TYPE_FLOW_DISSECTOR),
+ 	BPF_SA_PROG_SEC("cgroup/bind4",	BPF_CGROUP_INET4_BIND),
+ 	BPF_SA_PROG_SEC("cgroup/bind6",	BPF_CGROUP_INET6_BIND),
+ 	BPF_SA_PROG_SEC("cgroup/connect4", BPF_CGROUP_INET4_CONNECT),
+diff --git a/tools/testing/selftests/bpf/.gitignore b/tools/testing/selftests/bpf/.gitignore
+index 4d789c1e5167..8a60c9b9892d 100644
+--- a/tools/testing/selftests/bpf/.gitignore
++++ b/tools/testing/selftests/bpf/.gitignore
+@@ -23,3 +23,5 @@ test_skb_cgroup_id_user
+ test_socket_cookie
+ test_cgroup_storage
+ test_select_reuseport
++test_flow_dissector
++flow_dissector_load
+diff --git a/tools/testing/selftests/bpf/Makefile b/tools/testing/selftests/bpf/Makefile
+index fff7fb1285fc..fd3851d5c079 100644
+--- a/tools/testing/selftests/bpf/Makefile
++++ b/tools/testing/selftests/bpf/Makefile
+@@ -35,7 +35,7 @@ TEST_GEN_FILES = test_pkt_access.o test_xdp.o test_l4lb.o test_tcp_estats.o test
+ 	test_get_stack_rawtp.o test_sockmap_kern.o test_sockhash_kern.o \
+ 	test_lwt_seg6local.o sendmsg4_prog.o sendmsg6_prog.o test_lirc_mode2_kern.o \
+ 	get_cgroup_id_kern.o socket_cookie_prog.o test_select_reuseport_kern.o \
+-	test_skb_cgroup_id_kern.o
++	test_skb_cgroup_id_kern.o bpf_flow.o
+ 
+ # Order correspond to 'make run_tests' order
+ TEST_PROGS := test_kmod.sh \
+@@ -47,10 +47,12 @@ TEST_PROGS := test_kmod.sh \
+ 	test_tunnel.sh \
+ 	test_lwt_seg6local.sh \
+ 	test_lirc_mode2.sh \
+-	test_skb_cgroup_id.sh
++	test_skb_cgroup_id.sh \
++	test_flow_dissector.sh
+ 
+ # Compile but not part of 'make run_tests'
+-TEST_GEN_PROGS_EXTENDED = test_libbpf_open test_sock_addr test_skb_cgroup_id_user
++TEST_GEN_PROGS_EXTENDED = test_libbpf_open test_sock_addr test_skb_cgroup_id_user \
++	flow_dissector_load test_flow_dissector
+ 
+ include ../lib.mk
+ 
+diff --git a/tools/testing/selftests/bpf/config b/tools/testing/selftests/bpf/config
+index b4994a94968b..3655508f95fd 100644
+--- a/tools/testing/selftests/bpf/config
++++ b/tools/testing/selftests/bpf/config
+@@ -18,3 +18,4 @@ CONFIG_CRYPTO_HMAC=m
+ CONFIG_CRYPTO_SHA256=m
+ CONFIG_VXLAN=y
+ CONFIG_GENEVE=y
++CONFIG_NET_CLS_FLOWER=m

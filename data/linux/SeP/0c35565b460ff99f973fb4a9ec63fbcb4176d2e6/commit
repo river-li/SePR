@@ -1,0 +1,31 @@
+commit 0c35565b460ff99f973fb4a9ec63fbcb4176d2e6
+Merge: e21b9d031fa1 b9149729ebdc
+Author: David S. Miller <davem@davemloft.net>
+Commit: David S. Miller <davem@davemloft.net>
+
+    Merge branch 'netback'
+    
+    Ian Campbell says:
+    
+    ====================
+    The Xen netback implementation contains a couple of flaws which can
+    allow a guest to cause a DoS in the backend domain, potentially
+    affecting other domains in the system.
+    
+    CVE-2013-0216 is a failure to sanity check the ring producer/consumer
+    pointers which can allow a guest to cause netback to loop for an
+    extended period preventing other work from occurring.
+    
+    CVE-2013-0217 is a memory leak on an error path which is guest
+    triggerable.
+    
+    The following series contains the fixes for these issues, as previously
+    included in Xen Security Advisory 39:
+    http://lists.xen.org/archives/html/xen-announce/2013-02/msg00001.html
+    
+    Changes in v2:
+     - Typo and block comment format fixes
+     - Added stable Cc
+    ====================
+    
+    Signed-off-by: David S. Miller <davem@davemloft.net>

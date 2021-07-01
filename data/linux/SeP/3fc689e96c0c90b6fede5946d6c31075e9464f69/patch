@@ -1,0 +1,199 @@
+diff --git a/include/linux/audit.h b/include/linux/audit.h
+index 6272a395d43c..8cfb9feb2a05 100644
+--- a/include/linux/audit.h
++++ b/include/linux/audit.h
+@@ -99,6 +99,7 @@
+ #define AUDIT_OBJ_PID		1318	/* ptrace target */
+ #define AUDIT_TTY		1319	/* Input on an administrative TTY */
+ #define AUDIT_EOE		1320	/* End of multi-record event */
++#define AUDIT_BPRM_FCAPS	1321	/* Information about fcaps increasing perms */
+ 
+ #define AUDIT_AVC		1400	/* SE Linux avc denial or grant */
+ #define AUDIT_SELINUX_ERR	1401	/* Internal SE Linux Errors */
+@@ -452,6 +453,7 @@ extern int __audit_mq_timedsend(mqd_t mqdes, size_t msg_len, unsigned int msg_pr
+ extern int __audit_mq_timedreceive(mqd_t mqdes, size_t msg_len, unsigned int __user *u_msg_prio, const struct timespec __user *u_abs_timeout);
+ extern int __audit_mq_notify(mqd_t mqdes, const struct sigevent __user *u_notification);
+ extern int __audit_mq_getsetattr(mqd_t mqdes, struct mq_attr *mqstat);
++extern void __audit_log_bprm_fcaps(struct linux_binprm *bprm, kernel_cap_t *pP, kernel_cap_t *pE);
+ 
+ static inline int audit_ipc_obj(struct kern_ipc_perm *ipcp)
+ {
+@@ -501,6 +503,29 @@ static inline int audit_mq_getsetattr(mqd_t mqdes, struct mq_attr *mqstat)
+ 		return __audit_mq_getsetattr(mqdes, mqstat);
+ 	return 0;
+ }
++
++/*
++ * ieieeeeee, an audit function without a return code!
++ *
++ * This function might fail!  I decided that it didn't matter.  We are too late
++ * to fail the syscall and the information isn't REQUIRED for any purpose.  It's
++ * just nice to have.  We should be able to look at past audit logs to figure
++ * out this process's current cap set along with the fcaps from the PATH record
++ * and use that to come up with the final set.  Yeah, its ugly, but all the info
++ * is still in the audit log.  So I'm not going to bother mentioning we failed
++ * if we couldn't allocate memory.
++ *
++ * If someone changes their mind they could create the aux record earlier and
++ * then search here and use that earlier allocation.  But I don't wanna.
++ *
++ * -Eric
++ */
++static inline void audit_log_bprm_fcaps(struct linux_binprm *bprm, kernel_cap_t *pP, kernel_cap_t *pE)
++{
++	if (unlikely(!audit_dummy_context()))
++		__audit_log_bprm_fcaps(bprm, pP, pE);
++}
++
+ extern int audit_n_rules;
+ extern int audit_signals;
+ #else
+@@ -532,6 +557,7 @@ extern int audit_signals;
+ #define audit_mq_timedreceive(d,l,p,t) ({ 0; })
+ #define audit_mq_notify(d,n) ({ 0; })
+ #define audit_mq_getsetattr(d,s) ({ 0; })
++#define audit_log_bprm_fcaps(b, p, e) do { ; } while (0)
+ #define audit_ptrace(t) ((void)0)
+ #define audit_n_rules 0
+ #define audit_signals 0
+diff --git a/kernel/auditsc.c b/kernel/auditsc.c
+index de7e9bcba9ae..3229cd4206f5 100644
+--- a/kernel/auditsc.c
++++ b/kernel/auditsc.c
+@@ -196,6 +196,14 @@ struct audit_aux_data_pids {
+ 	int			pid_count;
+ };
+ 
++struct audit_aux_data_bprm_fcaps {
++	struct audit_aux_data	d;
++	struct audit_cap_data	fcap;
++	unsigned int		fcap_ver;
++	struct audit_cap_data	old_pcap;
++	struct audit_cap_data	new_pcap;
++};
++
+ struct audit_tree_refs {
+ 	struct audit_tree_refs *next;
+ 	struct audit_chunk *c[31];
+@@ -1375,6 +1383,20 @@ static void audit_log_exit(struct audit_context *context, struct task_struct *ts
+ 			audit_log_format(ab, "fd0=%d fd1=%d", axs->fd[0], axs->fd[1]);
+ 			break; }
+ 
++		case AUDIT_BPRM_FCAPS: {
++			struct audit_aux_data_bprm_fcaps *axs = (void *)aux;
++			audit_log_format(ab, "fver=%x", axs->fcap_ver);
++			audit_log_cap(ab, "fp", &axs->fcap.permitted);
++			audit_log_cap(ab, "fi", &axs->fcap.inheritable);
++			audit_log_format(ab, " fe=%d", axs->fcap.fE);
++			audit_log_cap(ab, "old_pp", &axs->old_pcap.permitted);
++			audit_log_cap(ab, "old_pi", &axs->old_pcap.inheritable);
++			audit_log_cap(ab, "old_pe", &axs->old_pcap.effective);
++			audit_log_cap(ab, "new_pp", &axs->new_pcap.permitted);
++			audit_log_cap(ab, "new_pi", &axs->new_pcap.inheritable);
++			audit_log_cap(ab, "new_pe", &axs->new_pcap.effective);
++			break; }
++
+ 		}
+ 		audit_log_end(ab);
+ 	}
+@@ -2501,6 +2523,52 @@ int __audit_signal_info(int sig, struct task_struct *t)
+ 	return 0;
+ }
+ 
++/**
++ * __audit_log_bprm_fcaps - store information about a loading bprm and relevant fcaps
++ * @bprm pointer to the bprm being processed
++ * @caps the caps read from the disk
++ *
++ * Simply check if the proc already has the caps given by the file and if not
++ * store the priv escalation info for later auditing at the end of the syscall
++ *
++ * this can fail and we don't care.  See the note in audit.h for
++ * audit_log_bprm_fcaps() for my explaination....
++ *
++ * -Eric
++ */
++void __audit_log_bprm_fcaps(struct linux_binprm *bprm, kernel_cap_t *pP, kernel_cap_t *pE)
++{
++	struct audit_aux_data_bprm_fcaps *ax;
++	struct audit_context *context = current->audit_context;
++	struct cpu_vfs_cap_data vcaps;
++	struct dentry *dentry;
++
++	ax = kmalloc(sizeof(*ax), GFP_KERNEL);
++	if (!ax)
++		return;
++
++	ax->d.type = AUDIT_BPRM_FCAPS;
++	ax->d.next = context->aux;
++	context->aux = (void *)ax;
++
++	dentry = dget(bprm->file->f_dentry);
++	get_vfs_caps_from_disk(dentry, &vcaps);
++	dput(dentry);
++
++	ax->fcap.permitted = vcaps.permitted;
++	ax->fcap.inheritable = vcaps.inheritable;
++	ax->fcap.fE = !!(vcaps.magic_etc & VFS_CAP_FLAGS_EFFECTIVE);
++	ax->fcap_ver = (vcaps.magic_etc & VFS_CAP_REVISION_MASK) >> VFS_CAP_REVISION_SHIFT;
++
++	ax->old_pcap.permitted = *pP;
++	ax->old_pcap.inheritable = current->cap_inheritable;
++	ax->old_pcap.effective = *pE;
++
++	ax->new_pcap.permitted = current->cap_permitted;
++	ax->new_pcap.inheritable = current->cap_inheritable;
++	ax->new_pcap.effective = current->cap_effective;
++}
++
+ /**
+  * audit_core_dumps - record information about processes that end abnormally
+  * @signr: signal value
+diff --git a/security/commoncap.c b/security/commoncap.c
+index d7eff5797b91..d45393380997 100644
+--- a/security/commoncap.c
++++ b/security/commoncap.c
+@@ -8,6 +8,7 @@
+  */
+ 
+ #include <linux/capability.h>
++#include <linux/audit.h>
+ #include <linux/module.h>
+ #include <linux/init.h>
+ #include <linux/kernel.h>
+@@ -376,6 +377,9 @@ int cap_bprm_set_security (struct linux_binprm *bprm)
+ 
+ void cap_bprm_apply_creds (struct linux_binprm *bprm, int unsafe)
+ {
++	kernel_cap_t pP = current->cap_permitted;
++	kernel_cap_t pE = current->cap_effective;
++
+ 	if (bprm->e_uid != current->uid || bprm->e_gid != current->gid ||
+ 	    !cap_issubset(bprm->cap_post_exec_permitted,
+ 			  current->cap_permitted)) {
+@@ -409,7 +413,24 @@ void cap_bprm_apply_creds (struct linux_binprm *bprm, int unsafe)
+ 			cap_clear(current->cap_effective);
+ 	}
+ 
+-	/* AUD: Audit candidate if current->cap_effective is set */
++	/*
++	 * Audit candidate if current->cap_effective is set
++	 *
++	 * We do not bother to audit if 3 things are true:
++	 *   1) cap_effective has all caps
++	 *   2) we are root
++	 *   3) root is supposed to have all caps (SECURE_NOROOT)
++	 * Since this is just a normal root execing a process.
++	 *
++	 * Number 1 above might fail if you don't have a full bset, but I think
++	 * that is interesting information to audit.
++	 */
++	if (!cap_isclear(current->cap_effective)) {
++		if (!cap_issubset(CAP_FULL_SET, current->cap_effective) ||
++		    (bprm->e_uid != 0) || (current->uid != 0) ||
++		    issecure(SECURE_NOROOT))
++			audit_log_bprm_fcaps(bprm, &pP, &pE);
++	}
+ 
+ 	current->securebits &= ~issecure_mask(SECURE_KEEP_CAPS);
+ }

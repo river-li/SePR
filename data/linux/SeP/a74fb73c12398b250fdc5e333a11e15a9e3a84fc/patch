@@ -1,0 +1,124 @@
+diff --git a/arch/Kconfig b/arch/Kconfig
+index d397e11d167d..d27efb9bfafd 100644
+--- a/arch/Kconfig
++++ b/arch/Kconfig
+@@ -261,6 +261,9 @@ config ARCH_WANT_OLD_COMPAT_IPC
+ config GENERIC_KERNEL_THREAD
+ 	bool
+ 
++config GENERIC_KERNEL_EXECVE
++	bool
++
+ config HAVE_ARCH_SECCOMP_FILTER
+ 	bool
+ 	help
+diff --git a/include/linux/syscalls.h b/include/linux/syscalls.h
+index 19439c75c5b2..727f0cd73921 100644
+--- a/include/linux/syscalls.h
++++ b/include/linux/syscalls.h
+@@ -827,7 +827,15 @@ asmlinkage long sys_fanotify_mark(int fanotify_fd, unsigned int flags,
+ 				  const char  __user *pathname);
+ asmlinkage long sys_syncfs(int fd);
+ 
++#ifndef CONFIG_GENERIC_KERNEL_EXECVE
+ int kernel_execve(const char *filename, const char *const argv[], const char *const envp[]);
++#else
++#define kernel_execve(filename, argv, envp) \
++	do_execve(filename, \
++		(const char __user *const __user *)argv, \
++		(const char __user *const __user *)envp, \
++		current_pt_regs())
++#endif
+ 
+ 
+ asmlinkage long sys_perf_event_open(
+diff --git a/init/main.c b/init/main.c
+index a490ffecb7b9..02df2ddc5f83 100644
+--- a/init/main.c
++++ b/init/main.c
+@@ -69,6 +69,7 @@
+ #include <linux/slab.h>
+ #include <linux/perf_event.h>
+ #include <linux/file.h>
++#include <linux/ptrace.h>
+ 
+ #include <asm/io.h>
+ #include <asm/bugs.h>
+@@ -788,10 +789,10 @@ static void __init do_pre_smp_initcalls(void)
+ 		do_one_initcall(*fn);
+ }
+ 
+-static void run_init_process(const char *init_filename)
++static int run_init_process(const char *init_filename)
+ {
+ 	argv_init[0] = init_filename;
+-	kernel_execve(init_filename, argv_init, envp_init);
++	return kernel_execve(init_filename, argv_init, envp_init);
+ }
+ 
+ static void __init kernel_init_freeable(void);
+@@ -810,7 +811,8 @@ static int __ref kernel_init(void *unused)
+ 	flush_delayed_fput();
+ 
+ 	if (ramdisk_execute_command) {
+-		run_init_process(ramdisk_execute_command);
++		if (!run_init_process(ramdisk_execute_command))
++			return 0;
+ 		printk(KERN_WARNING "Failed to execute %s\n",
+ 				ramdisk_execute_command);
+ 	}
+@@ -822,14 +824,16 @@ static int __ref kernel_init(void *unused)
+ 	 * trying to recover a really broken machine.
+ 	 */
+ 	if (execute_command) {
+-		run_init_process(execute_command);
++		if (!run_init_process(execute_command))
++			return 0;
+ 		printk(KERN_WARNING "Failed to execute %s.  Attempting "
+ 					"defaults...\n", execute_command);
+ 	}
+-	run_init_process("/sbin/init");
+-	run_init_process("/etc/init");
+-	run_init_process("/bin/init");
+-	run_init_process("/bin/sh");
++	if (!run_init_process("/sbin/init") ||
++	    !run_init_process("/etc/init") ||
++	    !run_init_process("/bin/init") ||
++	    !run_init_process("/bin/sh"))
++		return 0;
+ 
+ 	panic("No init found.  Try passing init= option to kernel. "
+ 	      "See Linux Documentation/init.txt for guidance.");
+diff --git a/kernel/kmod.c b/kernel/kmod.c
+index b6e5ca9c758a..1c317e386831 100644
+--- a/kernel/kmod.c
++++ b/kernel/kmod.c
+@@ -37,6 +37,7 @@
+ #include <linux/notifier.h>
+ #include <linux/suspend.h>
+ #include <linux/rwsem.h>
++#include <linux/ptrace.h>
+ #include <asm/uaccess.h>
+ 
+ #include <trace/events/module.h>
+@@ -221,6 +222,8 @@ static int ____call_usermodehelper(void *data)
+ 	retval = kernel_execve(sub_info->path,
+ 			       (const char *const *)sub_info->argv,
+ 			       (const char *const *)sub_info->envp);
++	if (!retval)
++		return 0;
+ 
+ 	/* Exec failed? */
+ fail:
+diff --git a/kernel/kthread.c b/kernel/kthread.c
+index b579af57ea10..7ba65c1aa6b3 100644
+--- a/kernel/kthread.c
++++ b/kernel/kthread.c
+@@ -16,6 +16,7 @@
+ #include <linux/mutex.h>
+ #include <linux/slab.h>
+ #include <linux/freezer.h>
++#include <linux/ptrace.h>
+ #include <trace/events/sched.h>
+ 
+ static DEFINE_SPINLOCK(kthread_create_lock);

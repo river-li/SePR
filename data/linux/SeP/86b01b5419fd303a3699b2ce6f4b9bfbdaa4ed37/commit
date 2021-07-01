@@ -1,0 +1,23 @@
+commit 86b01b5419fd303a3699b2ce6f4b9bfbdaa4ed37
+Merge: cd3caefb4663 f5527fffff3f
+Author: Linus Torvalds <torvalds@linux-foundation.org>
+Commit: Linus Torvalds <torvalds@linux-foundation.org>
+
+    Merge branch 'for-linus' of git://git.kernel.org/pub/scm/linux/kernel/git/jmorris/linux-security
+    
+    Pull keys fixes from James Morris:
+     "From David:
+    
+       - Fix mpi_powm()'s handling of a number with a zero exponent
+         [CVE-2016-8650].
+    
+         Integrate my and Andrey's patches for mpi_powm() and use
+         mpi_resize() instead of RESIZE_IF_NEEDED() - the latter adds a
+         duplicate check into the execution path of a trivial case we
+         don't normally expect to be taken.
+    
+       - Fix double free in X.509 error handling"
+    
+    * 'for-linus' of git://git.kernel.org/pub/scm/linux/kernel/git/jmorris/linux-security:
+      mpi: Fix NULL ptr dereference in mpi_powm() [ver #3]
+      X.509: Fix double free in x509_cert_parse() [ver #3]
