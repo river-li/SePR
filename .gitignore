@@ -37,3 +37,4 @@ venv/
 # Mac FileSystem
 .DS_Store
 
+log.txt

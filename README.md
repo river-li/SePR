@@ -50,11 +50,18 @@ Each commit will be placed in a directory, which mainly contains four items:
 - commit : fuller text of commit message
 - patch  : diff file between two commits
 
+
 2. **Extract ASTs from codes** 
 
 We use [astminer](https://github.com/JetBrains-Research/astminer) to extract Abstract Syntax Tree(AST) from the patch codes.
 
 The `jar` package version of astminer is in the directory `static`.
+
+```bash
+$ java -jar astminer parse --lang c --project 
+```
+
+
 
 ## TroubleShooting
 
