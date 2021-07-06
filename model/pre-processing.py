@@ -1,5 +1,7 @@
 import os
 import multiprocessing
+import numpy as np
+import pandas as pd
 
 
 def extract_function(input_path):
@@ -51,8 +53,8 @@ def parse_commit(commit_path):
         # we just start from the fifth line
         for line in lines[4:]:
             if line[0]=='+':
-                adds.append(line)
+                adds.append(line[1:])
             elif line[0]=='-':
-                decs.append(line)
+                decs.append(line[1:])
 
         vec = extract_features(adds,decs)
