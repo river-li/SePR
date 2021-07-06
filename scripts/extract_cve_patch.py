@@ -4,7 +4,7 @@ import sh
 import os
 import multiprocessing
 import argparse
-from SePR.util.pretty_print import log,success,error
+from util.pretty_print import log,success,error
 
 def print_help():
     print("This script is used to extract CVE related commits")
@@ -16,9 +16,18 @@ def print_help():
 
 def parse_commit(source, commitID, target):
     log('[+] Parsing ' + commitID, 'CYAN')
-    os.system('mkdir -p ' + os.path.join(target, 'SeP', commitID))
 
     target_git = sh.git.bake("--no-pager", _cwd=source)
+
+    modified_files = target_git.diff("--diff-filter=M", "--name-only", commitID + "^", commitID).split('\n')[:-1]
+    # some patches modifies so many files,
+    # to simplify the problem, we only parse patches that changed no more than 3 files.
+    if len(modified_files)>3:
+        log('[-] Commit contains too much files! ', 'YELLOW')
+        return
+
+    os.system('mkdir -p ' + os.path.join(target, 'SeP', commitID))
+
     patch_path = os.path.join(target, 'SeP', commitID, 'patch')
     commit_path = os.path.join(target, 'SeP', commitID, 'commit')
 
@@ -30,14 +39,23 @@ def parse_commit(source, commitID, target):
     os.system('mkdir -p ' + os.path.join(target, 'SeP', commitID, "before"))
     os.system('mkdir -p ' + os.path.join(target, 'SeP', commitID, "patched"))
 
-    modified_files = target_git.diff("--diff-filter=M", "--name-only", commitID + "^", commitID).split('\n')[:-1]
-    for file in modified_files:
-        # copy each file has been modified, copy them to the target directory
-        file_before = os.path.join(target, 'SeP', commitID, 'before', file.replace('/', '_'))
-        file_patched = os.path.join(target, 'SeP', commitID, 'patched', file.replace('/', '_'))
 
-        target_git.show(commitID + "^:" + file, _out=file_before)
-        target_git.show(commitID + ":" + file, _out=file_patched)
+    for file in modified_files:
+        try:
+            # copy each file has been modified, copy them to the target directory
+            file_before = os.path.join(target, 'SeP', commitID, 'before', file.replace('/', '_'))
+            file_patched = os.path.join(target, 'SeP', commitID, 'patched', file.replace('/', '_'))
+
+            target_git.show(commitID + "^:" + file, _out=file_before)
+            target_git.show(commitID + ":" + file, _out=file_patched)
+
+        except Exception:
+            # The rule above may not match all submodule updates,
+            # In case for bad data, we add a Exception Handler here.
+            error('Parse '+ commitID+'Error!')
+            error('Delete commit folders: ' + commitID)
+            os.system('rm -rf '+os.path.join(target,'SeP',commitID))
+            return
 
     success('Parse ' + commitID + ' Done!')
 

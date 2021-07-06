@@ -4,10 +4,12 @@ import multiprocessing
 
 def extract_function(input_path):
     dirs = os.listdir(input_path)
-    p = multiprocessing.Pool()
-
+    pool = multiprocessing.Pool()
+    pool.map(parse_commit,dirs)
     pass
 
+def extract_features(adds,decs):
+    pass
 
 def parse_commit(commit_path):
     with open(os.path.join(commit_path, 'patch'), 'r') as pf:
@@ -52,3 +54,5 @@ def parse_commit(commit_path):
                 adds.append(line)
             elif line[0]=='-':
                 decs.append(line)
+
+        vec = extract_features(adds,decs)
