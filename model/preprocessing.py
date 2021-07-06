@@ -200,6 +200,7 @@ def parse_commit(commit_path):
     with open(os.path.join(commit_path, 'patch'), 'r') as pf:
         cnt = pf.read()
         vec = parse_patch(cnt)
+        success('Extract vector from '+commit_path+ ' done!')
         return vec
 
 
@@ -249,7 +250,6 @@ def parse_patch(cnt):
     vec = extract_features(adds, decs)
     vec[0] = changed_files
 
-    success('Extract vector from done!')
     return vec
 
 
@@ -261,7 +261,7 @@ if __name__ == '__main__':
         print("OPTIONS:")
         print("  -i/--input <value> Specify the directory of the patches")
         print("  -o/--output <value> Specify the location to write the csv file")
-        print("EXAMPLE:\n  $ python extract_cve_patch.py -i ./data/linux/SeP -o ./feature.csv")
+        print("EXAMPLE:\n  $ python preprocessing.py -i ./data/linux/SeP -o ./feature.csv")
 
 
     parser = argparse.ArgumentParser(description="script to extract features")
