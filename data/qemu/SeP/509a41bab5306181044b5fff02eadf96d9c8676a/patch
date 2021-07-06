@@ -1,0 +1,56 @@
+diff --git a/block/cloop.c b/block/cloop.c
+index f0216637e1..563e916266 100644
+--- a/block/cloop.c
++++ b/block/cloop.c
+@@ -99,6 +99,13 @@ static int cloop_open(BlockDriverState *bs, QDict *options, int flags,
+     s->n_blocks = be32_to_cpu(s->n_blocks);
+ 
+     /* read offsets */
++    if (s->n_blocks > UINT32_MAX / sizeof(uint64_t)) {
++        /* Prevent integer overflow */
++        error_setg(errp, "n_blocks %u must be %zu or less",
++                   s->n_blocks,
++                   UINT32_MAX / sizeof(uint64_t));
++        return -EINVAL;
++    }
+     offsets_size = s->n_blocks * sizeof(uint64_t);
+     s->offsets = g_malloc(offsets_size);
+ 
+diff --git a/tests/qemu-iotests/075 b/tests/qemu-iotests/075
+index 8f54a99b14..9ce6b1fb8c 100755
+--- a/tests/qemu-iotests/075
++++ b/tests/qemu-iotests/075
+@@ -43,6 +43,7 @@ _supported_proto generic
+ _supported_os Linux
+ 
+ block_size_offset=128
++n_blocks_offset=132
+ 
+ echo
+ echo "== check that the first sector can be read =="
+@@ -67,6 +68,12 @@ _use_sample_img simple-pattern.cloop.bz2
+ poke_file "$TEST_IMG" "$block_size_offset" "\xff\xff\xfe\x00"
+ $QEMU_IO -c "read 0 512" $TEST_IMG 2>&1 | _filter_qemu_io | _filter_testdir
+ 
++echo
++echo "== offsets_size overflow ==="
++_use_sample_img simple-pattern.cloop.bz2
++poke_file "$TEST_IMG" "$n_blocks_offset" "\xff\xff\xff\xff"
++$QEMU_IO -c "read 0 512" $TEST_IMG 2>&1 | _filter_qemu_io | _filter_testdir
++
+ # success, all done
+ echo "*** done"
+ rm -f $seq.full
+diff --git a/tests/qemu-iotests/075.out b/tests/qemu-iotests/075.out
+index d362c95182..a771789548 100644
+--- a/tests/qemu-iotests/075.out
++++ b/tests/qemu-iotests/075.out
+@@ -15,4 +15,8 @@ no file open, try 'help open'
+ == huge block_size ===
+ qemu-io: can't open device TEST_DIR/simple-pattern.cloop: block_size 4294966784 must be 64 MB or less
+ no file open, try 'help open'
++
++== offsets_size overflow ===
++qemu-io: can't open device TEST_DIR/simple-pattern.cloop: n_blocks 4294967295 must be 536870911 or less
++no file open, try 'help open'
+ *** done

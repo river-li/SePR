@@ -1,0 +1,25 @@
+commit b76a0d5db25ad9f81346930230092fdf1e88a5a1
+Merge: 007e620a75 737d2b3c41
+Author: Peter Maydell <peter.maydell@linaro.org>
+Commit: Peter Maydell <peter.maydell@linaro.org>
+
+    Merge remote-tracking branch 'remotes/stefanha/tags/net-pull-request' into staging
+    
+    This net pull request contains security fixes for qemu.git/master.  The patches
+    should also be applied to stable trees.
+    
+    The ne2000 NIC model has QEMU memory corruption issue.  Both ne2000 and e1000
+    have an infinite loop.
+    
+    Please see the patches for CVE numbers and details on the bugs.
+    
+    # gpg: Signature made Tue 15 Sep 2015 13:02:21 BST using RSA key ID 81AB73C8
+    # gpg: Good signature from "Stefan Hajnoczi <stefanha@redhat.com>"
+    # gpg:                 aka "Stefan Hajnoczi <stefanha@gmail.com>"
+    
+    * remotes/stefanha/tags/net-pull-request:
+      net: avoid infinite loop when receiving packets(CVE-2015-5278)
+      net: add checks to validate ring buffer pointers(CVE-2015-5279)
+      e1000: Avoid infinite loop in processing transmit descriptor (CVE-2015-6815)
+    
+    Signed-off-by: Peter Maydell <peter.maydell@linaro.org>

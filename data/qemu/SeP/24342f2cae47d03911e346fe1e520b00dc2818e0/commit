@@ -1,0 +1,11 @@
+commit 24342f2cae47d03911e346fe1e520b00dc2818e0
+Author: Kevin Wolf <kwolf@redhat.com>
+Commit: Stefan Hajnoczi <stefanha@redhat.com>
+
+    qcow2: Check header_length (CVE-2014-0144)
+    
+    This fixes an unbounded allocation for s->unknown_header_fields.
+    
+    Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+    Reviewed-by: Max Reitz <mreitz@redhat.com>
+    Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>

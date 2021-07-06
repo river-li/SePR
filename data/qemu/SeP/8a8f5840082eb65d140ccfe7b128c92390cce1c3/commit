@@ -1,0 +1,18 @@
+commit 8a8f5840082eb65d140ccfe7b128c92390cce1c3
+Author: Stefan Hajnoczi <stefanha@redhat.com>
+Commit: Anthony Liguori <anthony@codemonkey.ws>
+
+    block/curl: only restrict protocols with libcurl>=7.19.4
+    
+    The curl_easy_setopt(state->curl, CURLOPT_PROTOCOLS, ...) interface was
+    introduced in libcurl 7.19.4.  Therefore we cannot protect against
+    CVE-2013-0249 when linking against an older libcurl.
+    
+    This fixes the build failure introduced by
+    fb6d1bbd246c7a57ef53d3847ef225cd1349d602.
+    
+    Reported-by: Andreas Färber <afaerber@suse.de>
+    Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>
+    Tested-by: Andreas Färber <andreas.faeber@web.de>
+    Message-id: 1360743934-8337-1-git-send-email-stefanha@redhat.com
+    Signed-off-by: Anthony Liguori <aliguori@us.ibm.com>

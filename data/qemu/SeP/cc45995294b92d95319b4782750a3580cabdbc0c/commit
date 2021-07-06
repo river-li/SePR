@@ -1,0 +1,22 @@
+commit cc45995294b92d95319b4782750a3580cabdbc0c
+Author: Michael S. Tsirkin <mst@redhat.com>
+Commit: Juan Quintela <quintela@redhat.com>
+
+    virtio: out-of-bounds buffer write on invalid state load
+    
+    CVE-2013-4151 QEMU 1.0 out-of-bounds buffer write in
+    virtio_load@hw/virtio/virtio.c
+    
+    So we have this code since way back when:
+    
+        num = qemu_get_be32(f);
+    
+        for (i = 0; i < num; i++) {
+            vdev->vq[i].vring.num = qemu_get_be32(f);
+    
+    array of vqs has size VIRTIO_PCI_QUEUE_MAX, so
+    on invalid input this will write beyond end of buffer.
+    
+    Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+    Reviewed-by: Michael Roth <mdroth@linux.vnet.ibm.com>
+    Signed-off-by: Juan Quintela <quintela@redhat.com>

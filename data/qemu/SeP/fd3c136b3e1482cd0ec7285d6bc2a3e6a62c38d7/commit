@@ -1,0 +1,25 @@
+commit fd3c136b3e1482cd0ec7285d6bc2a3e6a62c38d7
+Author: Gerd Hoffmann <kraxel@redhat.com>
+Commit: Gerd Hoffmann <kraxel@redhat.com>
+
+    vga: make sure vga register setup for vbe stays intact (CVE-2016-3712).
+    
+    Call vbe_update_vgaregs() when the guest touches GFX, SEQ or CRT
+    registers, to make sure the vga registers will always have the
+    values needed by vbe mode.  This makes sure the sanity checks
+    applied by vbe_fixup_regs() are effective.
+    
+    Without this guests can muck with shift_control, can turn on planar
+    vga modes or text mode emulation while VBE is active, making qemu
+    take code paths meant for CGA compatibility, but with the very
+    large display widths and heigts settable using VBE registers.
+    
+    Which is good for one or another buffer overflow.  Not that
+    critical as they typically read overflows happening somewhere
+    in the display code.  So guests can DoS by crashing qemu with a
+    segfault, but it is probably not possible to break out of the VM.
+    
+    Fixes: CVE-2016-3712
+    Reported-by: Zuozhi Fzz <zuozhi.fzz@alibaba-inc.com>
+    Reported-by: P J P <ppandit@redhat.com>
+    Signed-off-by: Gerd Hoffmann <kraxel@redhat.com>

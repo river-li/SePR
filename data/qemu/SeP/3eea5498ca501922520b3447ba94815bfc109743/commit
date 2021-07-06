@@ -1,0 +1,10 @@
+commit 3eea5498ca501922520b3447ba94815bfc109743
+Author: Ian Campbell <ian.campbell@citrix.com>
+Commit: Anthony Liguori <anthony@codemonkey.ws>
+
+    console: bounds check whenever changing the cursor due to an escape code
+    
+    This is XSA-17 / CVE-2012-3515
+    
+    Signed-off-by: Ian Campbell <ian.campbell@citrix.com>
+    Signed-off-by: Anthony Liguori <aliguori@us.ibm.com>

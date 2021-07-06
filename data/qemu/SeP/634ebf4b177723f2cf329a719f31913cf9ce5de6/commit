@@ -1,0 +1,15 @@
+commit 634ebf4b177723f2cf329a719f31913cf9ce5de6
+Merge: c4ca690158 846424350b
+Author: Anthony Liguori <aliguori@amazon.com>
+Commit: Anthony Liguori <aliguori@amazon.com>
+
+    Merge remote-tracking branch 'bonzini/scsi-next' into staging
+    
+    # By Asias He (1) and Peter Lieven (1)
+    # Via Paolo Bonzini
+    * bonzini/scsi-next:
+      scsi: Allocate SCSITargetReq r->buf dynamically [CVE-2013-4344]
+      block/iscsi: reenable iscsi_co_get_block_status
+    
+    Message-id: 1381332391-8781-1-git-send-email-pbonzini@redhat.com
+    Signed-off-by: Anthony Liguori <aliguori@amazon.com>

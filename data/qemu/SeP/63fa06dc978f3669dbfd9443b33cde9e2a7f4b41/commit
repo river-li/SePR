@@ -1,0 +1,17 @@
+commit 63fa06dc978f3669dbfd9443b33cde9e2a7f4b41
+Author: Jeff Cody <jcody@redhat.com>
+Commit: Stefan Hajnoczi <stefanha@redhat.com>
+
+    vdi: add bounds checks for blocks_in_image and disk_size header fields (CVE-2014-0144)
+    
+    The maximum blocks_in_image is 0xffffffff / 4, which also limits the
+    maximum disk_size for a VDI image to 1024TB.  Note that this is the maximum
+    size that QEMU will currently support with this driver, not necessarily the
+    maximum size allowed by the image format.
+    
+    This also fixes an incorrect error message, a bug introduced by commit
+    5b7aa9b56d1bfc79916262f380c3fc7961becb50 (Reported by Stefan Weil)
+    
+    Signed-off-by: Jeff Cody <jcody@redhat.com>
+    Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+    Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>

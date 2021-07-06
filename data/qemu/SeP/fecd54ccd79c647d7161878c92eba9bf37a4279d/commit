@@ -1,0 +1,20 @@
+commit fecd54ccd79c647d7161878c92eba9bf37a4279d
+Merge: f33f43bd86 9d6b207047
+Author: Peter Maydell <peter.maydell@linaro.org>
+Commit: Peter Maydell <peter.maydell@linaro.org>
+
+    Merge remote-tracking branch 'remotes/kraxel/tags/pull-vnc-20141028-1' into staging
+    
+    vnc: return directly if no vnc client connected
+    vnc: sanitize bits_per_pixel from the client (CVE-2014-7815)
+    
+    # gpg: Signature made Tue 28 Oct 2014 10:52:31 GMT using RSA key ID D3E87138
+    # gpg: Good signature from "Gerd Hoffmann (work) <kraxel@redhat.com>"
+    # gpg:                 aka "Gerd Hoffmann <gerd@kraxel.org>"
+    # gpg:                 aka "Gerd Hoffmann (private) <kraxel@gmail.com>"
+    
+    * remotes/kraxel/tags/pull-vnc-20141028-1:
+      vnc: return directly if no vnc client connected
+      vnc: sanitize bits_per_pixel from the client
+    
+    Signed-off-by: Peter Maydell <peter.maydell@linaro.org>

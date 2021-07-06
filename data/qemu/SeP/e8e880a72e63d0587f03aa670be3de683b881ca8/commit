@@ -1,0 +1,13 @@
+commit e8e880a72e63d0587f03aa670be3de683b881ca8
+Author: Aurelien Jarno <aurelien@aurel32.net>
+Commit: Aurelien Jarno <aurelien@aurel32.net>
+
+    slirp: fix CVE 2007-5729
+    
+    The emulated network cards in QEMU allows local users to execute arbitrary
+    code by writing Ethernet frames with a size larger than the slirp's default
+    MTU, which triggers a heap-based buffer overflow in the slirp library.
+    
+    Signed-off-by: Aurelien Jarno <aurelien@aurel32.net>
+    
+    git-svn-id: svn://svn.savannah.nongnu.org/qemu/trunk@5920 c046a42c-6fe2-441c-8c8c-71466251a162

@@ -1,0 +1,16 @@
+commit 31e51d1c15b35dc98b88a301812914b70a2b55dc
+Author: Greg Kurz <groug@kaod.org>
+Commit: Greg Kurz <groug@kaod.org>
+
+    9pfs: local: statfs: don't follow symlinks
+    
+    The local_statfs() callback is vulnerable to symlink attacks because it
+    calls statfs() which follows symbolic links in all path elements.
+    
+    This patch converts local_statfs() to rely on open_nofollow() and fstatfs()
+    instead.
+    
+    This partly fixes CVE-2016-9602.
+    
+    Signed-off-by: Greg Kurz <groug@kaod.org>
+    Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>

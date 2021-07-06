@@ -1,0 +1,15 @@
+commit d19d1f965904a533998739698020ff4ee8a103da
+Author: Daniel P. Berrangé <berrange@redhat.com>
+Commit: Eduardo Habkost <ehabkost@redhat.com>
+
+    i386: define the 'ssbd' CPUID feature bit (CVE-2018-3639)
+    
+    New microcode introduces the "Speculative Store Bypass Disable"
+    CPUID feature bit. This needs to be exposed to guest OS to allow
+    them to protect against CVE-2018-3639.
+    
+    Signed-off-by: Daniel P. Berrangé <berrange@redhat.com>
+    Reviewed-by: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+    Signed-off-by: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+    Message-Id: <20180521215424.13520-2-berrange@redhat.com>
+    Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>

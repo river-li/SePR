@@ -1,0 +1,10 @@
+commit 605def6eeee5e4b6293963aa86be6e637e48bfb3
+Author: Alistair Francis <alistair.francis@wdc.com>
+Commit: Alistair Francis <alistair.francis@wdc.com>
+
+    target/riscv: Use the RISCVException enum for CSR operations
+    
+    Signed-off-by: Alistair Francis <alistair.francis@wdc.com>
+    Reviewed-by: Richard Henderson <richard.henderson@linaro.org>
+    Reviewed-by: Bin Meng <bmeng.cn@gmail.com>
+    Message-id: 8566c4c271723f27f3ae8fc2429f906a459f17ce.1617290165.git.alistair.francis@wdc.com

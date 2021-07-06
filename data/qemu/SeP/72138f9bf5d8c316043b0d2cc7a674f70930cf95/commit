@@ -1,0 +1,20 @@
+commit 72138f9bf5d8c316043b0d2cc7a674f70930cf95
+Merge: b05730a876 1d20398694
+Author: Peter Maydell <peter.maydell@linaro.org>
+Commit: Peter Maydell <peter.maydell@linaro.org>
+
+    Merge remote-tracking branch 'remotes/gkurz/tags/for-upstream' into staging
+    
+    Fixes a QEMU crash triggerable by guest userspace (CVE-2018-19489).
+    
+    # gpg: Signature made Mon 26 Nov 2018 07:25:01 GMT
+    # gpg:                using RSA key 71D4D5E5822F73D6
+    # gpg: Good signature from "Greg Kurz <groug@kaod.org>"
+    # gpg:                 aka "Gregory Kurz <gregory.kurz@free.fr>"
+    # gpg:                 aka "[jpeg image of size 3330]"
+    # Primary key fingerprint: B482 8BAF 9431 40CE F2A3  4910 71D4 D5E5 822F 73D6
+    
+    * remotes/gkurz/tags/for-upstream:
+      9p: fix QEMU crash when renaming files
+    
+    Signed-off-by: Peter Maydell <peter.maydell@linaro.org>

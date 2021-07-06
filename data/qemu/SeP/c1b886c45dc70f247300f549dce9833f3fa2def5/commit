@@ -1,0 +1,40 @@
+commit c1b886c45dc70f247300f549dce9833f3fa2def5
+Author: Gerd Hoffmann <kraxel@redhat.com>
+Commit: Gerd Hoffmann <kraxel@redhat.com>
+
+    vbe: rework sanity checks
+    
+    Plug a bunch of holes in the bochs dispi interface parameter checking.
+    Add a function doing verification on all registers.  Call that
+    unconditionally on every register write.  That way we should catch
+    everything, even changing one register affecting the valid range of
+    another register.
+    
+    Some of the holes have been added by commit
+    e9c6149f6ae6873f14a12eea554925b6aa4c4dec.  Before that commit the
+    maximum possible framebuffer (VBE_DISPI_MAX_XRES * VBE_DISPI_MAX_YRES *
+    32 bpp) has been smaller than the qemu vga memory (8MB) and the checking
+    for VBE_DISPI_MAX_XRES + VBE_DISPI_MAX_YRES + VBE_DISPI_MAX_BPP was ok.
+    
+    Some of the holes have been there forever, such as
+    VBE_DISPI_INDEX_X_OFFSET and VBE_DISPI_INDEX_Y_OFFSET register writes
+    lacking any verification.
+    
+    Security impact:
+    
+    (1) Guest can make the ui (gtk/vnc/...) use memory rages outside the vga
+    frame buffer as source  ->  host memory leak.  Memory isn't leaked to
+    the guest but to the vnc client though.
+    
+    (2) Qemu will segfault in case the memory range happens to include
+    unmapped areas  ->  Guest can DoS itself.
+    
+    The guest can not modify host memory, so I don't think this can be used
+    by the guest to escape.
+    
+    CVE-2014-3615
+    
+    Cc: qemu-stable@nongnu.org
+    Cc: secalert@redhat.com
+    Signed-off-by: Gerd Hoffmann <kraxel@redhat.com>
+    Reviewed-by: Laszlo Ersek <lersek@redhat.com>

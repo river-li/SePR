@@ -1,0 +1,21 @@
+commit 554f802da3f8b09b16b9a84ad5847b2eb0e9ad2b
+Author: Marcel Apfelbaum <marcel.a@redhat.com>
+Commit: Michael S. Tsirkin <mst@redhat.com>
+
+    hw/pcie: better hotplug/hotunplug support
+    
+    The current code is broken: it does surprise removal which crashes guests.
+    
+    Reimplemented the steps:
+     - Hotplug triggers both 'present detect change' and
+       'attention button pressed'.
+    
+     - Hotunplug starts by triggering 'attention button pressed',
+       then waits for the OS to power off the device and only
+       then detaches it.
+    
+    Fixes CVE-2014-3471.
+    
+    Signed-off-by: Marcel Apfelbaum <marcel.a@redhat.com>
+    Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+    Signed-off-by: Michael S. Tsirkin <mst@redhat.com>

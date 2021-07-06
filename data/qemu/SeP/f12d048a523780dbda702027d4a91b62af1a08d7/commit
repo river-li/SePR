@@ -1,0 +1,14 @@
+commit f12d048a523780dbda702027d4a91b62af1a08d7
+Author: Dmitry Fleytman <dmitry@daynix.com>
+Commit: Peter Maydell <peter.maydell@linaro.org>
+
+    vmxnet3: validate queues configuration read on migration
+    
+    CVE-2013-4544
+    
+    Signed-off-by: Dmitry Fleytman <dmitry@daynix.com>
+    Reported-by: Michael S. Tsirkin <mst@redhat.com>
+    Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+    Reviewed-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+    Message-id: 1396604722-11902-5-git-send-email-dmitry@daynix.com
+    Signed-off-by: Peter Maydell <peter.maydell@linaro.org>

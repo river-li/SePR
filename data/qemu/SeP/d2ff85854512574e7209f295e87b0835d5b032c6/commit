@@ -1,0 +1,23 @@
+commit d2ff85854512574e7209f295e87b0835d5b032c6
+Author: Kevin Wolf <kwolf@redhat.com>
+Commit: John Snow <jsnow@redhat.com>
+
+    ide: Check array bounds before writing to io_buffer (CVE-2015-5154)
+    
+    If the end_transfer_func of a command is called because enough data has
+    been read or written for the current PIO transfer, and it fails to
+    correctly call the command completion functions, the DRQ bit in the
+    status register and s->end_transfer_func may remain set. This allows the
+    guest to access further bytes in s->io_buffer beyond s->data_end, and
+    eventually overflowing the io_buffer.
+    
+    One case where this currently happens is emulation of the ATAPI command
+    START STOP UNIT.
+    
+    This patch fixes the problem by adding explicit array bounds checks
+    before accessing the buffer instead of relying on end_transfer_func to
+    function correctly.
+    
+    Cc: qemu-stable@nongnu.org
+    Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+    Reviewed-by: John Snow <jsnow@redhat.com>

@@ -1,0 +1,26 @@
+commit ead7a57df37d2187813a121308213f41591bd811
+Author: Michael S. Tsirkin <mst@redhat.com>
+Commit: Juan Quintela <quintela@redhat.com>
+
+    ssd0323: fix buffer overun on invalid state load
+    
+    CVE-2013-4538
+    
+    s->cmd_len used as index in ssd0323_transfer() to store 32-bit field.
+    Possible this field might then be supplied by guest to overwrite a
+    return addr somewhere. Same for row/col fields, which are indicies into
+    framebuffer array.
+    
+    To fix validate after load.
+    
+    Additionally, validate that the row/col_start/end are within bounds;
+    otherwise the guest can provoke an overrun by either setting the _end
+    field so large that the row++ increments just walk off the end of the
+    array, or by setting the _start value to something bogus and then
+    letting the "we hit end of row" logic reset row to row_start.
+    
+    For completeness, validate mode as well.
+    
+    Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+    Reviewed-by: Peter Maydell <peter.maydell@linaro.org>
+    Signed-off-by: Juan Quintela <quintela@redhat.com>

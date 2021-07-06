@@ -1,0 +1,21 @@
+commit 996a0d76d7e756e4023ef79bc37bfe629b9eaca7
+Author: Greg Kurz <groug@kaod.org>
+Commit: Greg Kurz <groug@kaod.org>
+
+    9pfs: local: open/opendir: don't follow symlinks
+    
+    The local_open() and local_opendir() callbacks are vulnerable to symlink
+    attacks because they call:
+    
+    (1) open(O_NOFOLLOW) which follows symbolic links in all path elements but
+        the rightmost one
+    (2) opendir() which follows symbolic links in all path elements
+    
+    This patch converts both callbacks to use new helpers based on
+    openat_nofollow() to only open files and directories if they are
+    below the virtfs shared folder
+    
+    This partly fixes CVE-2016-9602.
+    
+    Signed-off-by: Greg Kurz <groug@kaod.org>
+    Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>

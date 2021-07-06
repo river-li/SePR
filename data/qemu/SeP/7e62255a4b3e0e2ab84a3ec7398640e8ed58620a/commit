@@ -1,0 +1,16 @@
+commit 7e62255a4b3e0e2ab84a3ec7398640e8ed58620a
+Author: Markus Armbruster <armbru@redhat.com>
+Commit: Anthony Liguori <anthony@codemonkey.ws>
+
+    ccid: Fix buffer overrun in handling of VSC_ATR message
+    
+    ATR size exceeding the limit is diagnosed, but then we merrily use it
+    anyway, overrunning card->atr[].
+    
+    The message is read from a character device.  Obvious security
+    implications unless the other end of the character device is trusted.
+    
+    Spotted by Coverity.  CVE-2011-4111.
+    
+    Signed-off-by: Markus Armbruster <armbru@redhat.com>
+    Signed-off-by: Anthony Liguori <aliguori@us.ibm.com>

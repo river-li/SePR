@@ -1,0 +1,32 @@
+commit 3f3a16990b09e62d787bd2eb2dd51aafbe90019a
+Author: Greg Kurz <groug@kaod.org>
+Commit: Greg Kurz <groug@kaod.org>
+
+    9pfs: local: mkdir: don't follow symlinks
+    
+    The local_mkdir() callback is vulnerable to symlink attacks because it
+    calls:
+    
+    (1) mkdir() which follows symbolic links for all path elements but the
+        rightmost one
+    (2) local_set_xattr()->setxattr() which follows symbolic links for all
+        path elements
+    (3) local_set_mapped_file_attr() which calls in turn local_fopen() and
+        mkdir(), both functions following symbolic links for all path
+        elements but the rightmost one
+    (4) local_post_create_passthrough() which calls in turn lchown() and
+        chmod(), both functions also following symbolic links
+    
+    This patch converts local_mkdir() to rely on opendir_nofollow() and
+    mkdirat() to fix (1), as well as local_set_xattrat(),
+    local_set_mapped_file_attrat() and local_set_cred_passthrough() to
+    fix (2), (3) and (4) respectively.
+    
+    The mapped and mapped-file security modes are supposed to be identical,
+    except for the place where credentials and file modes are stored. While
+    here, we also make that explicit by sharing the call to mkdirat().
+    
+    This partly fixes CVE-2016-9602.
+    
+    Signed-off-by: Greg Kurz <groug@kaod.org>
+    Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>

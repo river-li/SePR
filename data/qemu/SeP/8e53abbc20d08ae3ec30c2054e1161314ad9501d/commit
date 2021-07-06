@@ -1,0 +1,13 @@
+commit 8e53abbc20d08ae3ec30c2054e1161314ad9501d
+Author: Kevin Wolf <kwolf@redhat.com>
+Commit: Stefan Hajnoczi <stefanha@redhat.com>
+
+    bochs: Check extent_size header field (CVE-2014-0142)
+    
+    This fixes two possible division by zero crashes: In bochs_open() and in
+    seek_to_sector().
+    
+    Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+    Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>
+    Reviewed-by: Max Reitz <mreitz@redhat.com>
+    Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>

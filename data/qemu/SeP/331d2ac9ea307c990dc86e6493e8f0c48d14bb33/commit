@@ -1,0 +1,15 @@
+commit 331d2ac9ea307c990dc86e6493e8f0c48d14bb33
+Author: Jason Wang <jasowang@redhat.com>
+Commit: Jason Wang <jasowang@redhat.com>
+
+    dp8393x: switch to use qemu_receive_packet() for loopback packet
+    
+    This patch switches to use qemu_receive_packet() which can detect
+    reentrancy and return early.
+    
+    This is intended to address CVE-2021-3416.
+    
+    Cc: Prasad J Pandit <ppandit@redhat.com>
+    Cc: qemu-stable@nongnu.org
+    Reviewed-by: Philippe Mathieu-Daudé <philmd@redhat.com
+    Signed-off-by: Jason Wang <jasowang@redhat.com>

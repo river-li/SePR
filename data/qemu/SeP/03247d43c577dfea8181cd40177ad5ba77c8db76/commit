@@ -1,0 +1,12 @@
+commit 03247d43c577dfea8181cd40177ad5ba77c8db76
+Author: Stefan Hajnoczi <stefanha@redhat.com>
+Commit: Stefan Hajnoczi <stefanha@redhat.com>
+
+    rtl8139: check IP Header Length field (CVE-2015-5165)
+    
+    The IP Header Length field was only checked in the IP checksum case, but
+    is used in other cases too.
+    
+    Reported-by: 朱东海(启路) <donghai.zdh@alibaba-inc.com>
+    Reviewed-by: Jason Wang <jasowang@redhat.com>
+    Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>

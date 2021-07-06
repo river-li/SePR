@@ -1,0 +1,23 @@
+commit 844496f3e55a2155200fdcf7f6320acef03d4e9f
+Merge: a914f04c23 51ae4f8455
+Author: Peter Maydell <peter.maydell@linaro.org>
+Commit: Peter Maydell <peter.maydell@linaro.org>
+
+    Merge remote-tracking branch 'remotes/ericb/tags/pull-nbd-2017-11-28' into staging
+    
+    nbd patches for 2017-11-28
+    
+    Eric Blake - 0/2 fix two NBD server CVEs
+    
+    # gpg: Signature made Tue 28 Nov 2017 12:58:29 GMT
+    # gpg:                using RSA key 0xA7A16B4A2527436A
+    # gpg: Good signature from "Eric Blake <eblake@redhat.com>"
+    # gpg:                 aka "Eric Blake (Free Software Programmer) <ebb9@byu.net>"
+    # gpg:                 aka "[jpeg image of size 6874]"
+    # Primary key fingerprint: 71C2 CC22 B1C4 6029 27D2  F3AA A7A1 6B4A 2527 436A
+    
+    * remotes/ericb/tags/pull-nbd-2017-11-28:
+      nbd/server: CVE-2017-15118 Stack smash on large export name
+      nbd/server: CVE-2017-15119 Reject options larger than 32M
+    
+    Signed-off-by: Peter Maydell <peter.maydell@linaro.org>

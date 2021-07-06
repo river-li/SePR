@@ -1,0 +1,15 @@
+commit 003e26bc9f7c4f5cd90e046ae112c1d09363b8d1
+Merge: d1ed9f412d 340d51df55
+Author: Anthony Liguori <anthony@codemonkey.ws>
+Commit: Anthony Liguori <anthony@codemonkey.ws>
+
+    Merge remote-tracking branch 'mdroth/qga-pull-2013-7-25' into staging
+    
+    # By Laszlo Ersek
+    # Via Michael Roth
+    * mdroth/qga-pull-2013-7-25:
+      qga: escape cmdline args when registering win32 service (CVE-2013-2231)
+      ga_install_service(): nest error paths more idiomatically
+      qga/service-win32.c: diagnostic output should go to stderr
+    
+    Message-id: 1374784644-29078-1-git-send-email-mdroth@linux.vnet.ibm.com

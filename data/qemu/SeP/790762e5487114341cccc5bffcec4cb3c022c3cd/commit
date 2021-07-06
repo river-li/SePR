@@ -1,0 +1,35 @@
+commit 790762e5487114341cccc5bffcec4cb3c022c3cd
+Author: Philippe Mathieu-Daudé <f4bug@amsat.org>
+Commit: Philippe Mathieu-Daudé <f4bug@amsat.org>
+
+    hw/sd/sdcard: Do not switch to ReceivingData if address is invalid
+    
+    Only move the state machine to ReceivingData if there is no
+    pending error. This avoids later OOB access while processing
+    commands queued.
+    
+      "SD Specifications Part 1 Physical Layer Simplified Spec. v3.01"
+    
+      4.3.3 Data Read
+    
+      Read command is rejected if BLOCK_LEN_ERROR or ADDRESS_ERROR
+      occurred and no data transfer is performed.
+    
+      4.3.4 Data Write
+    
+      Write command is rejected if BLOCK_LEN_ERROR or ADDRESS_ERROR
+      occurred and no data transfer is performed.
+    
+    WP_VIOLATION errors are not modified: the error bit is set, we
+    stay in receive-data state, wait for a stop command. All further
+    data transfer is ignored. See the check on sd->card_status at the
+    beginning of sd_read_data() and sd_write_data().
+    
+    Fixes: CVE-2020-13253
+    Cc: qemu-stable@nongnu.org
+    Reported-by: Alexander Bulekov <alxndr@bu.edu>
+    Buglink: https://bugs.launchpad.net/qemu/+bug/1880822
+    Reviewed-by: Peter Maydell <peter.maydell@linaro.org>
+    Signed-off-by: Philippe Mathieu-Daudé <f4bug@amsat.org>
+    Reviewed-by: Alistair Francis <alistair.francis@wdc.com>
+    Message-Id: <20200630133912.9428-6-f4bug@amsat.org>

@@ -1,0 +1,24 @@
+commit 0be839a2701369f669532ea5884c15bead1c6e08
+Author: Michael S. Tsirkin <mst@redhat.com>
+Commit: Amit Shah <amit.shah@redhat.com>
+
+    migration: fix parameter validation on ram load
+    
+    During migration, the values read from migration stream during ram load
+    are not validated. Especially offset in host_from_stream_offset() and
+    also the length of the writes in the callers of said function.
+    
+    To fix this, we need to make sure that the [offset, offset + length]
+    range fits into one of the allocated memory regions.
+    
+    Validating addr < len should be sufficient since data seems to always be
+    managed in TARGET_PAGE_SIZE chunks.
+    
+    Fixes: CVE-2014-7840
+    
+    Note: follow-up patches add extra checks on each block->host access.
+    
+    Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+    Reviewed-by: Paolo Bonzini <pbonzini@redhat.com>
+    Reviewed-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+    Signed-off-by: Amit Shah <amit.shah@redhat.com>

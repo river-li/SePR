@@ -1,0 +1,12 @@
+commit 2ecea9b8de5cd74df314541b87f712ae77f862ec
+Author: Aurelien Jarno <aurelien@aurel32.net>
+Commit: Aurelien Jarno <aurelien@aurel32.net>
+
+    Add image format option in monitor for removable media
+    
+    (Chris Wright)
+    
+    CVE-2008-1945
+    
+    
+    git-svn-id: svn://svn.savannah.nongnu.org/qemu/trunk@4747 c046a42c-6fe2-441c-8c8c-71466251a162

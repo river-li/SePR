@@ -1,0 +1,15 @@
+commit 9bbdbc66e5765068dce76e9269dce4547afd8ad4
+Author: Prasad J Pandit <pjp@fedoraproject.org>
+Commit: Stefan Hajnoczi <stefanha@redhat.com>
+
+    net: add checks to validate ring buffer pointers(CVE-2015-5279)
+    
+    Ne2000 NIC uses ring buffer of NE2000_MEM_SIZE(49152)
+    bytes to process network packets. While receiving packets
+    via ne2000_receive() routine, a local 'index' variable
+    could exceed the ring buffer size, which could lead to a
+    memory buffer overflow. Added other checks at initialisation.
+    
+    Reported-by: Qinghao Tang <luodalongde@gmail.com>
+    Signed-off-by: P J P <pjp@fedoraproject.org>
+    Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>

@@ -1,0 +1,15 @@
+commit 846424350b292f16b732b573273a5c1f195cd7a3
+Author: Asias He <asias@redhat.com>
+Commit: Paolo Bonzini <pbonzini@redhat.com>
+
+    scsi: Allocate SCSITargetReq r->buf dynamically [CVE-2013-4344]
+    
+    r->buf is hardcoded to 2056 which is (256 + 1) * 8, allowing 256 luns at
+    most. If more than 256 luns are specified by user, we have buffer
+    overflow in scsi_target_emulate_report_luns.
+    
+    To fix, we allocate the buffer dynamically.
+    
+    Signed-off-by: Asias He <asias@redhat.com>
+    Tested-by: Michael Roth <mdroth@linux.vnet.ibm.com>
+    Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>

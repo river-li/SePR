@@ -1,0 +1,10 @@
+commit 340d51df5592c5c11fc3885f7bdedbe581b87366
+Author: Laszlo Ersek <lersek@redhat.com>
+Commit: Michael Roth <mdroth@linux.vnet.ibm.com>
+
+    qga: escape cmdline args when registering win32 service (CVE-2013-2231)
+    
+    Reported-by: Lev Veyde <lveyde@redhat.com>
+    Reviewed-by: Eric Blake <eblake@redhat.com>
+    Signed-off-by: Laszlo Ersek <lersek@redhat.com>
+    Signed-off-by: Michael Roth <mdroth@linux.vnet.ibm.com>

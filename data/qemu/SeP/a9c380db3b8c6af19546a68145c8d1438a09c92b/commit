@@ -1,0 +1,15 @@
+commit a9c380db3b8c6af19546a68145c8d1438a09c92b
+Author: Michael S. Tsirkin <mst@redhat.com>
+Commit: Juan Quintela <quintela@redhat.com>
+
+    ssi-sd: fix buffer overrun on invalid state load
+    
+    CVE-2013-4537
+    
+    s->arglen is taken from wire and used as idx
+    in ssi_sd_transfer().
+    
+    Validate it before access.
+    
+    Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+    Signed-off-by: Juan Quintela <quintela@redhat.com>

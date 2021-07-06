@@ -1,0 +1,17 @@
+commit 83afa38eb20ca27e30683edc7729880e091387fc
+Author: Gerd Hoffmann <kraxel@redhat.com>
+Commit: Gerd Hoffmann <kraxel@redhat.com>
+
+    vmware-vga: CVE-2014-3689: turn off hw accel
+    
+    Quick & easy stopgap for CVE-2014-3689:  We just compile out the
+    hardware acceleration functions which lack sanity checks.  Thankfully
+    we have capability bits for them (SVGA_CAP_RECT_COPY and
+    SVGA_CAP_RECT_FILL), so guests should deal just fine, in theory.
+    
+    Subsequent patches will add the missing checks and re-enable the
+    hardware acceleration emulation.
+    
+    Cc: qemu-stable@nongnu.org
+    Signed-off-by: Gerd Hoffmann <kraxel@redhat.com>
+    Reviewed-by: Don Koch <dkoch@verizon.com>

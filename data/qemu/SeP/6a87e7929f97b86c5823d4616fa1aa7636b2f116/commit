@@ -1,0 +1,37 @@
+commit 6a87e7929f97b86c5823d4616fa1aa7636b2f116
+Author: Greg Kurz <groug@kaod.org>
+Commit: Greg Kurz <groug@kaod.org>
+
+    9pfs: local: fix unlink of alien files in mapped-file mode
+    
+    When trying to remove a file from a directory, both created in non-mapped
+    mode, the file remains and EBADF is returned to the guest.
+    
+    This is a regression introduced by commit "df4938a6651b 9pfs: local:
+    unlinkat: don't follow symlinks" when fixing CVE-2016-9602. It changed the
+    way we unlink the metadata file from
+    
+        ret = remove("$dir/.virtfs_metadata/$name");
+        if (ret < 0 && errno != ENOENT) {
+             /* Error out */
+        }
+        /* Ignore absence of metadata */
+    
+    to
+    
+        fd = openat("$dir/.virtfs_metadata")
+        unlinkat(fd, "$name")
+        if (ret < 0 && errno != ENOENT) {
+             /* Error out */
+        }
+        /* Ignore absence of metadata */
+    
+    If $dir was created in non-mapped mode, openat() fails with ENOENT and
+    we pass -1 to unlinkat(), which fails in turn with EBADF.
+    
+    We just need to check the return of openat() and ignore ENOENT, in order
+    to restore the behaviour we had with remove().
+    
+    Signed-off-by: Greg Kurz <groug@kaod.org>
+    Reviewed-by: Eric Blake <eblake@redhat.com>
+    [groug: rewrote the comments as suggested by Eric]

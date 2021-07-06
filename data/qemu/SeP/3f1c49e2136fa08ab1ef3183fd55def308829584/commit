@@ -1,0 +1,16 @@
+commit 3f1c49e2136fa08ab1ef3183fd55def308829584
+Author: Michael S. Tsirkin <mst@redhat.com>
+Commit: Juan Quintela <quintela@redhat.com>
+
+    hpet: fix buffer overrun on invalid state load
+    
+    CVE-2013-4527 hw/timer/hpet.c buffer overrun
+    
+    hpet is a VARRAY with a uint8 size but static array of 32
+    
+    To fix, make sure num_timers is valid using VMSTATE_VALID hook.
+    
+    Reported-by: Anthony Liguori <anthony@codemonkey.ws>
+    Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+    Reviewed-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+    Signed-off-by: Juan Quintela <quintela@redhat.com>

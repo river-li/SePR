@@ -1,0 +1,35 @@
+commit e3187a45dd02a7490f9191c16527dc28a4ba45b9
+Author: Greg Kurz <groug@kaod.org>
+Commit: Greg Kurz <groug@kaod.org>
+
+    9pfs: local: chmod: don't follow symlinks
+    
+    The local_chmod() callback is vulnerable to symlink attacks because it
+    calls:
+    
+    (1) chmod() which follows symbolic links for all path elements
+    (2) local_set_xattr()->setxattr() which follows symbolic links for all
+        path elements
+    (3) local_set_mapped_file_attr() which calls in turn local_fopen() and
+        mkdir(), both functions following symbolic links for all path
+        elements but the rightmost one
+    
+    We would need fchmodat() to implement AT_SYMLINK_NOFOLLOW to fix (1). This
+    isn't the case on linux unfortunately: the kernel doesn't even have a flags
+    argument to the syscall :-\ It is impossible to fix it in userspace in
+    a race-free manner. This patch hence converts local_chmod() to rely on
+    open_nofollow() and fchmod(). This fixes the vulnerability but introduces
+    a limitation: the target file must readable and/or writable for the call
+    to openat() to succeed.
+    
+    It introduces a local_set_xattrat() replacement to local_set_xattr()
+    based on fsetxattrat() to fix (2), and a local_set_mapped_file_attrat()
+    replacement to local_set_mapped_file_attr() based on local_fopenat()
+    and mkdirat() to fix (3). No effort is made to factor out code because
+    both local_set_xattr() and local_set_mapped_file_attr() will be dropped
+    when all users have been converted to use the "at" versions.
+    
+    This partly fixes CVE-2016-9602.
+    
+    Signed-off-by: Greg Kurz <groug@kaod.org>
+    Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>

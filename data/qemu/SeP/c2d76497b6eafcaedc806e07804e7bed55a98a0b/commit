@@ -1,0 +1,29 @@
+commit c2d76497b6eafcaedc806e07804e7bed55a98a0b
+Author: Jim Meyering <jim@meyering.net>
+Commit: Kevin Wolf <kwolf@redhat.com>
+
+    block: prevent snapshot mode $TMPDIR symlink attack
+    
+    In snapshot mode, bdrv_open creates an empty temporary file without
+    checking for mkstemp or close failure, and ignoring the possibility
+    of a buffer overrun given a surprisingly long $TMPDIR.
+    Change the get_tmp_filename function to return int (not void),
+    so that it can inform its two callers of those failures.
+    Also avoid the risk of buffer overrun and do not ignore mkstemp
+    or close failure.
+    Update both callers (in block.c and vvfat.c) to propagate
+    temp-file-creation failure to their callers.
+    
+    get_tmp_filename creates and closes an empty file, while its
+    callers later open that presumed-existing file with O_CREAT.
+    The problem was that a malicious user could provoke mkstemp failure
+    and race to create a symlink with the selected temporary file name,
+    thus causing the qemu process (usually root owned) to open through
+    the symlink, overwriting an attacker-chosen file.
+    
+    This addresses CVE-2012-2652.
+    http://bugzilla.redhat.com/CVE-2012-2652
+    
+    Signed-off-by: Jim Meyering <meyering@redhat.com>
+    Reviewed-by: Stefan Hajnoczi <stefanha@linux.vnet.ibm.com>
+    Signed-off-by: Kevin Wolf <kwolf@redhat.com>

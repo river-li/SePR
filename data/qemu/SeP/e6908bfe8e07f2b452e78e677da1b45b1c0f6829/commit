@@ -1,0 +1,21 @@
+commit e6908bfe8e07f2b452e78e677da1b45b1c0f6829
+Author: Petr Matousek <pmatouse@redhat.com>
+Commit: Gerd Hoffmann <kraxel@redhat.com>
+
+    vnc: sanitize bits_per_pixel from the client
+    
+    bits_per_pixel that are less than 8 could result in accessing
+    non-initialized buffers later in the code due to the expectation
+    that bytes_per_pixel value that is used to initialize these buffers is
+    never zero.
+    
+    To fix this check that bits_per_pixel from the client is one of the
+    values that the rfb protocol specification allows.
+    
+    This is CVE-2014-7815.
+    
+    Signed-off-by: Petr Matousek <pmatouse@redhat.com>
+    
+    [ kraxel: apply codestyle fix ]
+    
+    Signed-off-by: Gerd Hoffmann <kraxel@redhat.com>

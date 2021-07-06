@@ -1,0 +1,19 @@
+commit fff7111fb90e93b148b2196175fd656b2bfea4cd
+Author: Alexander Bulekov <alxndr@bu.edu>
+Commit: Paolo Bonzini <pbonzini@redhat.com>
+
+    fuzz: add virtio-9p configurations for fuzzing
+    
+    virtio-9p devices are often used to expose a virtual-filesystem to the
+    guest. There have been some bugs reported in this device, such as
+    CVE-2018-19364, and CVE-2021-20181. We should fuzz this device
+    
+    This patch adds two virtio-9p configurations:
+     * One with the widely used -fsdev local driver. This driver leaks some
+       state in the form of files/directories created in the shared dir.
+     * One with the synth driver. While it is not used in the real world, this
+       driver won't leak leak state between fuzz inputs.
+    
+    Signed-off-by: Alexander Bulekov <alxndr@bu.edu>
+    Reviewed-by: Darren Kenny <darren.kenny@oracle.com>
+    Message-Id: <20210117230924.449676-4-alxndr@bu.edu>

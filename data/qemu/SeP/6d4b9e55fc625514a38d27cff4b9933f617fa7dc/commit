@@ -1,0 +1,16 @@
+commit 6d4b9e55fc625514a38d27cff4b9933f617fa7dc
+Author: Fam Zheng <famz@redhat.com>
+Commit: Stefan Hajnoczi <stefanha@redhat.com>
+
+    curl: check data size before memcpy to local buffer. (CVE-2014-0144)
+    
+    curl_read_cb is callback function for libcurl when data arrives. The
+    data size passed in here is not guaranteed to be within the range of
+    request we submitted, so we may overflow the guest IO buffer. Check the
+    real size we have before memcpy to buffer to avoid overflow.
+    
+    Signed-off-by: Fam Zheng <famz@redhat.com>
+    Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>
+    Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+    Reviewed-by: Max Reitz <mreitz@redhat.com>
+    Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>

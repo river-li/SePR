@@ -1,0 +1,15 @@
+commit 8c552542b81e56ff532dd27ec6e5328954bdda73
+Author: Jason Wang <jasowang@redhat.com>
+Commit: Jason Wang <jasowang@redhat.com>
+
+    tx_pkt: switch to use qemu_receive_packet_iov() for loopback
+    
+    This patch switches to use qemu_receive_receive_iov() which can detect
+    reentrancy and return early.
+    
+    This is intended to address CVE-2021-3416.
+    
+    Cc: Prasad J Pandit <ppandit@redhat.com>
+    Cc: qemu-stable@nongnu.org
+    Reviewed-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+    Signed-off-by: Jason Wang <jasowang@redhat.com>

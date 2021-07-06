@@ -1,0 +1,17 @@
+commit d65f97a82c4ed48374a764c769d4ba1ea9724e97
+Author: Stefan Hajnoczi <stefanha@redhat.com>
+Commit: Stefan Hajnoczi <stefanha@redhat.com>
+
+    block/cloop: validate block_size header field (CVE-2014-0144)
+    
+    Avoid unbounded s->uncompressed_block memory allocation by checking that
+    the block_size header field has a reasonable value.  Also enforce the
+    assumption that the value is a non-zero multiple of 512.
+    
+    These constraints conform to cloop 2.639's code so we accept existing
+    image files.
+    
+    Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>
+    Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+    Reviewed-by: Max Reitz <mreitz@redhat.com>
+    Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>

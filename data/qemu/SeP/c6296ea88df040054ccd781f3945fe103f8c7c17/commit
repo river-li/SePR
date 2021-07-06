@@ -1,0 +1,12 @@
+commit c6296ea88df040054ccd781f3945fe103f8c7c17
+Author: Stefan Hajnoczi <stefanha@redhat.com>
+Commit: Stefan Hajnoczi <stefanha@redhat.com>
+
+    rtl8139: check IP Total Length field (CVE-2015-5165)
+    
+    The IP Total Length field includes the IP header and data.  Make sure it
+    is valid and does not exceed the Ethernet payload size.
+    
+    Reported-by: 朱东海(启路) <donghai.zdh@alibaba-inc.com>
+    Reviewed-by: Jason Wang <jasowang@redhat.com>
+    Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>

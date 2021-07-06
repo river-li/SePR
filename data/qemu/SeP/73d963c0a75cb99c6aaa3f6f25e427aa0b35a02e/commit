@@ -1,0 +1,20 @@
+commit 73d963c0a75cb99c6aaa3f6f25e427aa0b35a02e
+Author: Michael Roth <mdroth@linux.vnet.ibm.com>
+Commit: Juan Quintela <quintela@redhat.com>
+
+    openpic: avoid buffer overrun on incoming migration
+    
+    CVE-2013-4534
+    
+    opp->nb_cpus is read from the wire and used to determine how many
+    IRQDest elements to read into opp->dst[]. If the value exceeds the
+    length of opp->dst[], MAX_CPU, opp->dst[] can be overrun with arbitrary
+    data from the wire.
+    
+    Fix this by failing migration if the value read from the wire exceeds
+    MAX_CPU.
+    
+    Signed-off-by: Michael Roth <mdroth@linux.vnet.ibm.com>
+    Reviewed-by: Alexander Graf <agraf@suse.de>
+    Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+    Signed-off-by: Juan Quintela <quintela@redhat.com>

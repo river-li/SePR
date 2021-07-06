@@ -1,0 +1,23 @@
+commit 94ef4f337fb614f18b765a8e0e878a4c23cdedcd
+Author: Gerd Hoffmann <kraxel@redhat.com>
+Commit: Gerd Hoffmann <kraxel@redhat.com>
+
+    vga: add sr_vbe register set
+    
+    Commit "fd3c136 vga: make sure vga register setup for vbe stays intact
+    (CVE-2016-3712)." causes a regression.  The win7 installer is unhappy
+    because it can't freely modify vga registers any more while in vbe mode.
+    
+    This patch introduces a new sr_vbe register set.  The vbe_update_vgaregs
+    will fill sr_vbe[] instead of sr[].  Normal vga register reads and
+    writes go to sr[].  Any sr register read access happens through a new
+    sr() helper function which will read from sr_vbe[] with vbe active and
+    from sr[] otherwise.
+    
+    This way we can allow guests update sr[] registers as they want, without
+    allowing them disrupt vbe video modes that way.
+    
+    Cc: qemu-stable@nongnu.org
+    Reported-by: Thomas Lamprecht <thomas@lamprecht.org>
+    Signed-off-by: Gerd Hoffmann <kraxel@redhat.com>
+    Message-id: 1463475294-14119-1-git-send-email-kraxel@redhat.com

@@ -1,0 +1,60 @@
+commit 38f3ef574b48afc507c6f636ae4393fd36bda072
+Author: Kevin Wolf <kwolf@redhat.com>
+Commit: Kevin Wolf <kwolf@redhat.com>
+
+    raw: Prohibit dangerous writes for probed images
+    
+    If the user neglects to specify the image format, QEMU probes the
+    image to guess it automatically, for convenience.
+    
+    Relying on format probing is insecure for raw images (CVE-2008-2004).
+    If the guest writes a suitable header to the device, the next probe
+    will recognize a format chosen by the guest.  A malicious guest can
+    abuse this to gain access to host files, e.g. by crafting a QCOW2
+    header with backing file /etc/shadow.
+    
+    Commit 1e72d3b (April 2008) provided -drive parameter format to let
+    users disable probing.  Commit f965509 (March 2009) extended QCOW2 to
+    optionally store the backing file format, to let users disable backing
+    file probing.  QED has had a flag to suppress probing since the
+    beginning (2010), set whenever a raw backing file is assigned.
+    
+    All of these additions that allow to avoid format probing have to be
+    specified explicitly. The default still allows the attack.
+    
+    In order to fix this, commit 79368c8 (July 2010) put probed raw images
+    in a restricted mode, in which they wouldn't be able to overwrite the
+    first few bytes of the image so that they would identify as a different
+    image. If a write to the first sector would write one of the signatures
+    of another driver, qemu would instead zero out the first four bytes.
+    This patch was later reverted in commit 8b33d9e (September 2010) because
+    it didn't get the handling of unaligned qiov members right.
+    
+    Today's block layer that is based on coroutines and has qiov utility
+    functions makes it much easier to get this functionality right, so this
+    patch implements it.
+    
+    The other differences of this patch to the old one are that it doesn't
+    silently write something different than the guest requested by zeroing
+    out some bytes (it fails the request instead) and that it doesn't
+    maintain a list of signatures in the raw driver (it calls the usual
+    probe function instead).
+    
+    Note that this change doesn't introduce new breakage for false positive
+    cases where the guest legitimately writes data into the first sector
+    that matches the signatures of an image format (e.g. for nested virt):
+    These cases were broken before, only the failure mode changes from
+    corruption after the next restart (when the wrong format is probed) to
+    failing the problematic write request.
+    
+    Also note that like in the original patch, the restrictions only apply
+    if the image format has been guessed by probing. Explicitly specifying a
+    format allows guests to write anything they like.
+    
+    Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+    Reviewed-by: Eric Blake <eblake@redhat.com>
+    Reviewed-by: Max Reitz <mreitz@redhat.com>
+    Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>
+    Message-id: 1416497234-29880-8-git-send-email-kwolf@redhat.com
+    Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>
+    Signed-off-by: Kevin Wolf <kwolf@redhat.com>

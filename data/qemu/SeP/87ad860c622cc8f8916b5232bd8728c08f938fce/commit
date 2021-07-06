@@ -1,0 +1,25 @@
+commit 87ad860c622cc8f8916b5232bd8728c08f938fce
+Author: Paolo Bonzini <pbonzini@redhat.com>
+Commit: Kevin Wolf <kwolf@redhat.com>
+
+    nvme: fix out-of-bounds access to the CMB
+    
+    Because the CMB BAR has a min_access_size of 2, if you read the last
+    byte it will try to memcpy *2* bytes from n->cmbuf, causing an off-by-one
+    error.  This is CVE-2018-16847.
+    
+    Another way to fix this might be to register the CMB as a RAM memory
+    region, which would also be more efficient.  However, that might be a
+    change for big-endian machines; I didn't think this through and I don't
+    know how real hardware works.  Add a basic testcase for the CMB in case
+    somebody does this change later on.
+    
+    Cc: Keith Busch <keith.busch@intel.com>
+    Cc: qemu-block@nongnu.org
+    Reported-by: Li Qiang <liq3ea@gmail.com>
+    Reviewed-by: Li Qiang <liq3ea@gmail.com>
+    Tested-by: Li Qiang <liq3ea@gmail.com>
+    Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+    Reviewed-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+    Tested-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+    Signed-off-by: Kevin Wolf <kwolf@redhat.com>

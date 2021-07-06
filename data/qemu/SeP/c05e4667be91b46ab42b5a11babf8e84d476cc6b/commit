@@ -1,0 +1,14 @@
+commit c05e4667be91b46ab42b5a11babf8e84d476cc6b
+Author: Kevin Wolf <kwolf@redhat.com>
+Commit: Stefan Hajnoczi <stefanha@redhat.com>
+
+    qcow2: Fix L1 allocation size in qcow2_snapshot_load_tmp() (CVE-2014-0145)
+    
+    For the L1 table to loaded for an internal snapshot, the code allocated
+    only enough memory to hold the currently active L1 table. If the
+    snapshot's L1 table is actually larger than the current one, this leads
+    to a buffer overflow.
+    
+    Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+    Reviewed-by: Max Reitz <mreitz@redhat.com>
+    Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>

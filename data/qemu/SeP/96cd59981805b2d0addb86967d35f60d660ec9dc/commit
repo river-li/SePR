@@ -1,0 +1,26 @@
+commit 96cd59981805b2d0addb86967d35f60d660ec9dc
+Merge: 6a8d834986 7a95434e0c
+Author: Stefan Hajnoczi <stefanha@redhat.com>
+Commit: Stefan Hajnoczi <stefanha@redhat.com>
+
+    Merge remote-tracking branch 'gkurz/tags/security-fix-for-2.10' into staging
+    
+    Fix for CVE-2017-7493.
+    
+    # gpg: Signature made Mon 15 May 2017 07:48:20 PM BST
+    # gpg:                using DSA key 0x02FC3AEB0101DBC2
+    # gpg: Good signature from "Greg Kurz <groug@kaod.org>"
+    # gpg:                 aka "Greg Kurz <groug@free.fr>"
+    # gpg:                 aka "Greg Kurz <gkurz@fr.ibm.com>"
+    # gpg:                 aka "Greg Kurz <gkurz@linux.vnet.ibm.com>"
+    # gpg:                 aka "Gregory Kurz (Groug) <groug@free.fr>"
+    # gpg:                 aka "Gregory Kurz (Cimai Technology) <gkurz@cimai.com>"
+    # gpg:                 aka "Gregory Kurz (Meiosys Technology) <gkurz@meiosys.com>"
+    # gpg: WARNING: This key is not certified with a trusted signature!
+    # gpg:          There is no indication that the signature belongs to the owner.
+    # Primary key fingerprint: 2BD4 3B44 535E C0A7 9894  DBA2 02FC 3AEB 0101 DBC2
+    
+    * gkurz/tags/security-fix-for-2.10:
+      9pfs: local: forbid client access to metadata (CVE-2017-7493)
+    
+    Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>

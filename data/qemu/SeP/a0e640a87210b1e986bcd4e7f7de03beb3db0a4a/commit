@@ -1,0 +1,21 @@
+commit a0e640a87210b1e986bcd4e7f7de03beb3db0a4a
+Author: Greg Kurz <groug@kaod.org>
+Commit: Greg Kurz <groug@kaod.org>
+
+    9pfs: local: remove: don't follow symlinks
+    
+    The local_remove() callback is vulnerable to symlink attacks because it
+    calls:
+    
+    (1) lstat() which follows symbolic links in all path elements but the
+        rightmost one
+    (2) remove() which follows symbolic links in all path elements but the
+        rightmost one
+    
+    This patch converts local_remove() to rely on opendir_nofollow(),
+    fstatat(AT_SYMLINK_NOFOLLOW) to fix (1) and unlinkat() to fix (2).
+    
+    This partly fixes CVE-2016-9602.
+    
+    Signed-off-by: Greg Kurz <groug@kaod.org>
+    Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>

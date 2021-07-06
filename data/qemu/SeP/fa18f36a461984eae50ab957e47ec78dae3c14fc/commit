@@ -1,0 +1,17 @@
+commit fa18f36a461984eae50ab957e47ec78dae3c14fc
+Author: Gerd Hoffmann <kraxel@redhat.com>
+Commit: Gerd Hoffmann <kraxel@redhat.com>
+
+    input: limit kbd queue depth
+    
+    Apply a limit to the number of items we accept into the keyboard queue.
+    
+    Impact: Without this limit vnc clients can exhaust host memory by
+    sending keyboard events faster than qemu feeds them to the guest.
+    
+    Fixes: CVE-2017-8379
+    Cc: P J P <ppandit@redhat.com>
+    Cc: Huawei PSIRT <PSIRT@huawei.com>
+    Reported-by: jiangxin1@huawei.com
+    Signed-off-by: Gerd Hoffmann <kraxel@redhat.com>
+    Message-id: 20170428084237.23960-1-kraxel@redhat.com

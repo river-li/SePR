@@ -1,0 +1,17 @@
+commit 66ae37d8cc313f89272e711174a846a229bcdbd3
+Author: Marcel Apfelbaum <marcel.apfelbaum@gmail.com>
+Commit: Marcel Apfelbaum <marcel.apfelbaum@gmail.com>
+
+    pvrdma: Fix the ring init error flow (CVE-2021-3608)
+    
+    Do not unmap uninitialized dma addresses.
+    
+    Fixes: CVE-2021-3608
+    Reviewed-by: VictorV (Kunlun Lab) <vv474172261@gmail.com>
+    Tested-by: VictorV (Kunlun Lab) <vv474172261@gmail.com>
+    Signed-off-by: Marcel Apfelbaum <marcel@redhat.com>
+    Message-Id: <20210630115246.2178219-1-marcel@redhat.com>
+    Tested-by: Yuval Shaia <yuval.shaia.ml@gmail.com>
+    Reviewed-by: Yuval Shaia <yuval.shaia.ml@gmail.com>
+    Reviewed-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+    Signed-off-by: Marcel Apfelbaum <marcel.apfelbaum@gmail.com>

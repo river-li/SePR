@@ -1,0 +1,21 @@
+commit caa881abe0e01f9931125a0977ec33c5343e4aa7
+Author: Michael S. Tsirkin <mst@redhat.com>
+Commit: Juan Quintela <quintela@redhat.com>
+
+    pxa2xx: avoid buffer overrun on incoming migration
+    
+    CVE-2013-4533
+    
+    s->rx_level is read from the wire and used to determine how many bytes
+    to subsequently read into s->rx_fifo[]. If s->rx_level exceeds the
+    length of s->rx_fifo[] the buffer can be overrun with arbitrary data
+    from the wire.
+    
+    Fix this by validating rx_level against the size of s->rx_fifo.
+    
+    Cc: Don Koch <dkoch@verizon.com>
+    Reported-by: Michael Roth <mdroth@linux.vnet.ibm.com>
+    Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+    Reviewed-by: Peter Maydell <peter.maydell@linaro.org>
+    Reviewed-by: Don Koch <dkoch@verizon.com>
+    Signed-off-by: Juan Quintela <quintela@redhat.com>

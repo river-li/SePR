@@ -1,0 +1,19 @@
+commit b946434f2659a182afc17e155be6791ebfb302eb
+Author: Gerd Hoffmann <kraxel@redhat.com>
+Commit: Gerd Hoffmann <kraxel@redhat.com>
+
+    usb: fix setup_len init (CVE-2020-14364)
+    
+    Store calculated setup_len in a local variable, verify it, and only
+    write it to the struct (USBDevice->setup_len) in case it passed the
+    sanity checks.
+    
+    This prevents other code (do_token_{in,out} functions specifically)
+    from working with invalid USBDevice->setup_len values and overrunning
+    the USBDevice->setup_buf[] buffer.
+    
+    Fixes: CVE-2020-14364
+    Signed-off-by: Gerd Hoffmann <kraxel@redhat.com>
+    Tested-by: Gonglei <arei.gonglei@huawei.com>
+    Reviewed-by: Li Qiang <liq3ea@gmail.com>
+    Message-id: 20200825053636.29648-1-kraxel@redhat.com

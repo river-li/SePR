@@ -1,0 +1,17 @@
+commit 31fb4444a485a348f8e2699d7c3dd15e1819ad2c
+Author: Gerd Hoffmann <kraxel@redhat.com>
+Commit: Gerd Hoffmann <kraxel@redhat.com>
+
+    usb-ccid: add check message size checks
+    
+    Check message size too when figuring whenever we should expect more data.
+    Fix debug message to show useful data, p->iov.size is fixed anyway if we
+    land there, print how much we got meanwhile instead.
+    
+    Also check announced message size against actual message size.  That
+    is a more general fix for CVE-2017-5898 than commit "c7dfbf3 usb: ccid:
+    check ccid apdu length".
+    
+    Signed-off-by: Gerd Hoffmann <kraxel@redhat.com>
+    Reviewed-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+    Message-id: 1487250819-23764-4-git-send-email-kraxel@redhat.com

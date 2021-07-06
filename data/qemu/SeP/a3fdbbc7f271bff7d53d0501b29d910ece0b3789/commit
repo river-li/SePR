@@ -1,0 +1,35 @@
+commit a3fdbbc7f271bff7d53d0501b29d910ece0b3789
+Author: Stefan Hajnoczi <stefanha@redhat.com>
+Commit: Dr. David Alan Gilbert <dgilbert@redhat.com>
+
+    virtiofsd: prevent opening of special files (CVE-2020-35517)
+    
+    A well-behaved FUSE client does not attempt to open special files with
+    FUSE_OPEN because they are handled on the client side (e.g. device nodes
+    are handled by client-side device drivers).
+    
+    The check to prevent virtiofsd from opening special files is missing in
+    a few cases, most notably FUSE_OPEN. A malicious client can cause
+    virtiofsd to open a device node, potentially allowing the guest to
+    escape. This can be exploited by a modified guest device driver. It is
+    not exploitable from guest userspace since the guest kernel will handle
+    special files inside the guest instead of sending FUSE requests.
+    
+    This patch fixes this issue by introducing the lo_inode_open() function
+    to check the file type before opening it. This is a short-term solution
+    because it does not prevent a compromised virtiofsd process from opening
+    device nodes on the host.
+    
+    Restructure lo_create() to try O_CREAT | O_EXCL first. Note that O_CREAT
+    | O_EXCL does not follow symlinks, so O_NOFOLLOW masking is not
+    necessary here. If the file exists and the user did not specify O_EXCL,
+    open it via lo_do_open().
+    
+    Reported-by: Alex Xu <alex@alxu.ca>
+    Fixes: CVE-2020-35517
+    Reviewed-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+    Reviewed-by: Vivek Goyal <vgoyal@redhat.com>
+    Reviewed-by: Greg Kurz <groug@kaod.org>
+    Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>
+    Message-Id: <20210204150208.367837-4-stefanha@redhat.com>
+    Signed-off-by: Dr. David Alan Gilbert <dgilbert@redhat.com>

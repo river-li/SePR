@@ -1,0 +1,19 @@
+commit 6c1fef6b59563cc415f21e03f81539ed4b33ad90
+Author: Prasad J Pandit <pjp@fedoraproject.org>
+Commit: Paolo Bonzini <pbonzini@redhat.com>
+
+    esp: check dma length before reading scsi command(CVE-2016-4441)
+    
+    The 53C9X Fast SCSI Controller(FSC) comes with an internal 16-byte
+    FIFO buffer. It is used to handle command and data transfer.
+    Routine get_cmd() uses DMA to read scsi commands into this buffer.
+    Add check to validate DMA length against buffer size to avoid any
+    overrun.
+    
+    Fixes CVE-2016-4441.
+    
+    Reported-by: Li Qiang <liqiang6-s@360.cn>
+    Cc: qemu-stable@nongnu.org
+    Signed-off-by: Prasad J Pandit <pjp@fedoraproject.org>
+    Message-Id: <1463654371-11169-3-git-send-email-ppandit@redhat.com>
+    Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>

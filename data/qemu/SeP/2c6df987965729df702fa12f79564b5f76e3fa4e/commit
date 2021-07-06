@@ -1,0 +1,27 @@
+commit 2c6df987965729df702fa12f79564b5f76e3fa4e
+Merge: 1ba089f225 cf269ff803
+Author: Peter Maydell <peter.maydell@linaro.org>
+Commit: Peter Maydell <peter.maydell@linaro.org>
+
+    Merge remote-tracking branch 'remotes/dgilbert-gitlab/tags/pull-virtiofs-20210204' into staging
+    
+    virtiofs: Security pull 2021-02-04
+    
+    This contains an important CVE fix for virtiofsd,
+    together with two fixes for over-eager seccomp rules.
+    
+    Signed-off-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+    
+    # gpg: Signature made Thu 04 Feb 2021 18:30:37 GMT
+    # gpg:                using RSA key 45F5C71B4A0CB7FB977A9FA90516331EBC5BFDE7
+    # gpg: Good signature from "Dr. David Alan Gilbert (RH2) <dgilbert@redhat.com>" [full]
+    # Primary key fingerprint: 45F5 C71B 4A0C B7FB 977A  9FA9 0516 331E BC5B FDE7
+    
+    * remotes/dgilbert-gitlab/tags/pull-virtiofs-20210204:
+      virtiofsd: Add restart_syscall to the seccomp whitelist
+      virtiofsd: Add _llseek to the seccomp whitelist
+      virtiofsd: prevent opening of special files (CVE-2020-35517)
+      virtiofsd: optionally return inode pointer from lo_do_lookup()
+      virtiofsd: extract lo_do_open() from lo_open()
+    
+    Signed-off-by: Peter Maydell <peter.maydell@linaro.org>

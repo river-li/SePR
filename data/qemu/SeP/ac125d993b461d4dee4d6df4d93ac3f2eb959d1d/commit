@@ -1,0 +1,16 @@
+commit ac125d993b461d4dee4d6df4d93ac3f2eb959d1d
+Author: Greg Kurz <groug@kaod.org>
+Commit: Greg Kurz <groug@kaod.org>
+
+    9pfs: local: truncate: don't follow symlinks
+    
+    The local_truncate() callback is vulnerable to symlink attacks because
+    it calls truncate() which follows symbolic links in all path elements.
+    
+    This patch converts local_truncate() to rely on open_nofollow() and
+    ftruncate() instead.
+    
+    This partly fixes CVE-2016-9602.
+    
+    Signed-off-by: Greg Kurz <groug@kaod.org>
+    Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>

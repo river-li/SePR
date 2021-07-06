@@ -1,0 +1,17 @@
+commit 5193be3be35f29a35bc465036cd64ad60d43385f
+Author: Michael S. Tsirkin <mst@redhat.com>
+Commit: Juan Quintela <quintela@redhat.com>
+
+    tsc210x: fix buffer overrun on invalid state load
+    
+    CVE-2013-4539
+    
+    s->precision, nextprecision, function and nextfunction
+    come from wire and are used
+    as idx into resolution[] in TSC_CUT_RESOLUTION.
+    
+    Validate after load to avoid buffer overrun.
+    
+    Cc: Andreas Färber <afaerber@suse.de>
+    Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+    Signed-off-by: Juan Quintela <quintela@redhat.com>

@@ -1,7 +1,0 @@
-commit 1e7bfb2134dfec37ce04fb3a4ca89299e892d10c
-Author: Heiko Carstens <hca@linux.ibm.com>
-Commit: Heiko Carstens <hca@linux.ibm.com>
-
-    [CVE-2009-0029] System call wrappers part 27
-    
-    Signed-off-by: Heiko Carstens <heiko.carstens@de.ibm.com>

@@ -1,0 +1,114 @@
+diff --git a/hw/9pfs/9p-local.c b/hw/9pfs/9p-local.c
+index 6e478f4765..efb0b79a74 100644
+--- a/hw/9pfs/9p-local.c
++++ b/hw/9pfs/9p-local.c
+@@ -333,17 +333,27 @@ update_map_file:
+ 
+ static int fchmodat_nofollow(int dirfd, const char *name, mode_t mode)
+ {
++    struct stat stbuf;
+     int fd, ret;
+ 
+     /* FIXME: this should be handled with fchmodat(AT_SYMLINK_NOFOLLOW).
+-     * Unfortunately, the linux kernel doesn't implement it yet. As an
+-     * alternative, let's open the file and use fchmod() instead. This
+-     * may fail depending on the permissions of the file, but it is the
+-     * best we can do to avoid TOCTTOU. We first try to open read-only
+-     * in case name points to a directory. If that fails, we try write-only
+-     * in case name doesn't point to a directory.
++     * Unfortunately, the linux kernel doesn't implement it yet.
+      */
+-    fd = openat_file(dirfd, name, O_RDONLY, 0);
++
++     /* First, we clear non-racing symlinks out of the way. */
++    if (fstatat(dirfd, name, &stbuf, AT_SYMLINK_NOFOLLOW)) {
++        return -1;
++    }
++    if (S_ISLNK(stbuf.st_mode)) {
++        errno = ELOOP;
++        return -1;
++    }
++
++    /* Access modes are ignored when O_PATH is supported. We try O_RDONLY and
++     * O_WRONLY for old-systems that don't support O_PATH.
++     */
++    fd = openat_file(dirfd, name, O_RDONLY | O_PATH_9P_UTIL, 0);
++#if O_PATH_9P_UTIL == 0
+     if (fd == -1) {
+         /* In case the file is writable-only and isn't a directory. */
+         if (errno == EACCES) {
+@@ -357,6 +367,24 @@ static int fchmodat_nofollow(int dirfd, const char *name, mode_t mode)
+         return -1;
+     }
+     ret = fchmod(fd, mode);
++#else
++    if (fd == -1) {
++        return -1;
++    }
++
++    /* Now we handle racing symlinks. */
++    ret = fstat(fd, &stbuf);
++    if (!ret) {
++        if (S_ISLNK(stbuf.st_mode)) {
++            errno = ELOOP;
++            ret = -1;
++        } else {
++            char *proc_path = g_strdup_printf("/proc/self/fd/%d", fd);
++            ret = chmod(proc_path, mode);
++            g_free(proc_path);
++        }
++    }
++#endif
+     close_preserve_errno(fd);
+     return ret;
+ }
+diff --git a/hw/9pfs/9p-util.h b/hw/9pfs/9p-util.h
+index 91299a24b8..dc0d2e29aa 100644
+--- a/hw/9pfs/9p-util.h
++++ b/hw/9pfs/9p-util.h
+@@ -13,6 +13,12 @@
+ #ifndef QEMU_9P_UTIL_H
+ #define QEMU_9P_UTIL_H
+ 
++#ifdef O_PATH
++#define O_PATH_9P_UTIL O_PATH
++#else
++#define O_PATH_9P_UTIL 0
++#endif
++
+ static inline void close_preserve_errno(int fd)
+ {
+     int serrno = errno;
+@@ -22,13 +28,8 @@ static inline void close_preserve_errno(int fd)
+ 
+ static inline int openat_dir(int dirfd, const char *name)
+ {
+-#ifdef O_PATH
+-#define OPENAT_DIR_O_PATH O_PATH
+-#else
+-#define OPENAT_DIR_O_PATH 0
+-#endif
+     return openat(dirfd, name,
+-                  O_DIRECTORY | O_RDONLY | O_NOFOLLOW | OPENAT_DIR_O_PATH);
++                  O_DIRECTORY | O_RDONLY | O_NOFOLLOW | O_PATH_9P_UTIL);
+ }
+ 
+ static inline int openat_file(int dirfd, const char *name, int flags,
+@@ -43,9 +44,14 @@ static inline int openat_file(int dirfd, const char *name, int flags,
+     }
+ 
+     serrno = errno;
+-    /* O_NONBLOCK was only needed to open the file. Let's drop it. */
+-    ret = fcntl(fd, F_SETFL, flags);
+-    assert(!ret);
++    /* O_NONBLOCK was only needed to open the file. Let's drop it. We don't
++     * do that with O_PATH since fcntl(F_SETFL) isn't supported, and openat()
++     * ignored it anyway.
++     */
++    if (!(flags & O_PATH_9P_UTIL)) {
++        ret = fcntl(fd, F_SETFL, flags);
++        assert(!ret);
++    }
+     errno = serrno;
+     return fd;
+ }

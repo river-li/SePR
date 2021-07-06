@@ -1,0 +1,22 @@
+commit a890a2f9137ac3cf5b607649e66a6f3a5512d8dc
+Author: Michael S. Tsirkin <mst@redhat.com>
+Commit: Juan Quintela <quintela@redhat.com>
+
+    virtio: validate config_len on load
+    
+    Malformed input can have config_len in migration stream
+    exceed the array size allocated on destination, the
+    result will be heap overflow.
+    
+    To fix, that config_len matches on both sides.
+    
+    CVE-2014-0182
+    
+    Reported-by: "Dr. David Alan Gilbert" <dgilbert@redhat.com>
+    Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+    Signed-off-by: Juan Quintela <quintela@redhat.com>
+    
+    --
+    
+    v2: use %ix and %zx to print config_len values
+    Signed-off-by: Juan Quintela <quintela@redhat.com>

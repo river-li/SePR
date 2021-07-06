@@ -1,0 +1,17 @@
+commit b003fc0d8aa5e7060dbf7e5862b8013c73857c7f
+Author: Greg Kurz <groug@kaod.org>
+Commit: Greg Kurz <groug@kaod.org>
+
+    9pfs: fix vulnerability in openat_dir() and local_unlinkat_common()
+    
+    We should pass O_NOFOLLOW otherwise openat() will follow symlinks and make
+    QEMU vulnerable.
+    
+    While here, we also fix local_unlinkat_common() to use openat_dir() for
+    the same reasons (it was a leftover in the original patchset actually).
+    
+    This fixes CVE-2016-9602.
+    
+    Signed-off-by: Greg Kurz <groug@kaod.org>
+    Reviewed-by: Daniel P. Berrange <berrange@redhat.com>
+    Reviewed-by: Eric Blake <eblake@redhat.com>

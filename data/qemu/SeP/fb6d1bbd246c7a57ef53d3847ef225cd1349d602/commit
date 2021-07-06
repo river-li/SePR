@@ -1,0 +1,18 @@
+commit fb6d1bbd246c7a57ef53d3847ef225cd1349d602
+Author: Stefan Hajnoczi <stefanha@redhat.com>
+Commit: Anthony Liguori <anthony@codemonkey.ws>
+
+    block/curl: disable extra protocols to prevent CVE-2013-0249
+    
+    There is a buffer overflow in libcurl POP3/SMTP/IMAP.  The workaround is
+    simple: disable extra protocols so that they cannot be exploited.  Full
+    details here:
+    
+      http://curl.haxx.se/docs/adv_20130206.html
+    
+    QEMU only cares about HTTP, HTTPS, FTP, FTPS, and TFTP.  I have tested
+    that this fix prevents the exploit on my host with
+    libcurl-7.27.0-5.fc18.
+    
+    Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>
+    Signed-off-by: Anthony Liguori <aliguori@us.ibm.com>

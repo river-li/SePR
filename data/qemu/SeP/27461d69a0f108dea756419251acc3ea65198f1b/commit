@@ -1,0 +1,24 @@
+commit 27461d69a0f108dea756419251acc3ea65198f1b
+Author: Prasad J Pandit <pjp@fedoraproject.org>
+Commit: David Gibson <david@gibson.dropbear.id.au>
+
+    ppc: add host-serial and host-model machine attributes (CVE-2019-8934)
+    
+    On ppc hosts, hypervisor shares following system attributes
+    
+      - /proc/device-tree/system-id
+      - /proc/device-tree/model
+    
+    with a guest. This could lead to information leakage and misuse.[*]
+    Add machine attributes to control such system information exposure
+    to a guest.
+    
+    [*] https://wiki.openstack.org/wiki/OSSN/OSSN-0028
+    
+    Reported-by: Daniel P. Berrangé <berrange@redhat.com>
+    Fix-suggested-by: Daniel P. Berrangé <berrange@redhat.com>
+    Signed-off-by: Prasad J Pandit <pjp@fedoraproject.org>
+    Message-Id: <20190218181349.23885-1-ppandit@redhat.com>
+    Reviewed-by: Daniel P. Berrangé <berrange@redhat.com>
+    Reviewed-by: Greg Kurz <groug@kaod.org>
+    Signed-off-by: David Gibson <david@gibson.dropbear.id.au>

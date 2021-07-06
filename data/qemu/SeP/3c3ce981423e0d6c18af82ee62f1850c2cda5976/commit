@@ -1,0 +1,40 @@
+commit 3c3ce981423e0d6c18af82ee62f1850c2cda5976
+Author: Michael S. Tsirkin <mst@redhat.com>
+Commit: Juan Quintela <quintela@redhat.com>
+
+    virtio-scsi: fix buffer overrun on invalid state load
+    
+    CVE-2013-4542
+    
+    hw/scsi/scsi-bus.c invokes load_request.
+    
+     virtio_scsi_load_request does:
+        qemu_get_buffer(f, (unsigned char *)&req->elem, sizeof(req->elem));
+    
+    this probably can make elem invalid, for example,
+    make in_num or out_num huge, then:
+    
+        virtio_scsi_parse_req(s, vs->cmd_vqs[n], req);
+    
+    will do:
+    
+        if (req->elem.out_num > 1) {
+            qemu_sgl_init_external(req, &req->elem.out_sg[1],
+                                   &req->elem.out_addr[1],
+                                   req->elem.out_num - 1);
+        } else {
+            qemu_sgl_init_external(req, &req->elem.in_sg[1],
+                                   &req->elem.in_addr[1],
+                                   req->elem.in_num - 1);
+        }
+    
+    and this will access out of array bounds.
+    
+    Note: this adds security checks within assert calls since
+    SCSIBusInfo's load_request cannot fail.
+    For now simply disable builds with NDEBUG - there seems
+    to be little value in supporting these.
+    
+    Cc: Andreas Färber <afaerber@suse.de>
+    Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+    Signed-off-by: Juan Quintela <quintela@redhat.com>

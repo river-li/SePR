@@ -1,0 +1,21 @@
+commit 8c1d353d107b4fc344e27f2f08ea7fa25de2eea2
+Author: Stefan Hajnoczi <stefanha@redhat.com>
+Commit: Dr. David Alan Gilbert <dgilbert@redhat.com>
+
+    virtiofsd: stay below fs.file-max sysctl value (CVE-2020-10717)
+    
+    The system-wide fs.file-max sysctl value determines how many files can
+    be open.  It defaults to a value calculated based on the machine's RAM
+    size.  Previously virtiofsd would try to set RLIMIT_NOFILE to 1,000,000
+    and this allowed the FUSE client to exhaust the number of open files
+    system-wide on Linux hosts with less than 10 GB of RAM!
+    
+    Take fs.file-max into account when choosing the default RLIMIT_NOFILE
+    value.
+    
+    Fixes: CVE-2020-10717
+    Reported-by: Yuval Avrahami <yavrahami@paloaltonetworks.com>
+    Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>
+    Reviewed-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+    Message-Id: <20200501140644.220940-3-stefanha@redhat.com>
+    Signed-off-by: Dr. David Alan Gilbert <dgilbert@redhat.com>

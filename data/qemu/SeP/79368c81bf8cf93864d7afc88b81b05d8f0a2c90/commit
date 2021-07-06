@@ -1,0 +1,37 @@
+commit 79368c81bf8cf93864d7afc88b81b05d8f0a2c90
+Author: Anthony Liguori <anthony@codemonkey.ws>
+Commit: Anthony Liguori <anthony@codemonkey.ws>
+
+    Make default invocation of block drivers safer (v3)
+    
+    CVE-2008-2004 described a vulnerability in QEMU whereas a malicious user could
+    trick the block probing code into accessing arbitrary files in a guest.  To
+    mitigate this, we added an explicit format parameter to -drive which disabling
+    block probing.
+    
+    Fast forward to today, and the vast majority of users do not use this parameter.
+    libvirt does not use this by default nor does virt-manager.
+    
+    Most users want block probing so we should try to make it safer.
+    
+    This patch adds some logic to the raw device which attempts to detect a write
+    operation to the beginning of a raw device.  If the first 4 bytes happen to
+    match an image file that has a backing file that we support, it scrubs the
+    signature to all zeros.  If a user specifies an explicit format parameter, this
+    behavior is disabled.
+    
+    I contend that while a legitimate guest could write such a signature to the
+    header, we would behave incorrectly anyway upon the next invocation of QEMU.
+    This simply changes the incorrect behavior to not involve a security
+    vulnerability.
+    
+    I've tested this pretty extensively both in the positive and negative case.  I'm
+    not 100% confident in the block layer's ability to deal with zero sized writes
+    particularly with respect to the aio functions so some additional eyes would be
+    appreciated.
+    
+    Even in the case of a single sector write, we have to make sure to invoked the
+    completion from a bottom half so just removing the zero sized write is not an
+    option.
+    
+    Signed-off-by: Anthony Liguori <aliguori@us.ibm.com>

@@ -1,0 +1,25 @@
+commit 473a321122fd3c2c327a5a5d01a9a41f26f1734c
+Merge: b38df311c1 4751fd5328
+Author: Peter Maydell <peter.maydell@linaro.org>
+Commit: Peter Maydell <peter.maydell@linaro.org>
+
+    Merge remote-tracking branch 'remotes/gkurz/tags/for-upstream' into staging
+    
+    Just a single fix for an annoying regression introduced in 2.9 when fixing
+    CVE-2016-9602.
+    
+    # gpg: Signature made Thu 10 Aug 2017 13:40:28 BST
+    # gpg:                using DSA key 0x02FC3AEB0101DBC2
+    # gpg: Good signature from "Greg Kurz <groug@kaod.org>"
+    # gpg:                 aka "Greg Kurz <groug@free.fr>"
+    # gpg:                 aka "Greg Kurz <gkurz@linux.vnet.ibm.com>"
+    # gpg:                 aka "Gregory Kurz (Groug) <groug@free.fr>"
+    # gpg:                 aka "[jpeg image of size 3330]"
+    # gpg: WARNING: This key is not certified with a trusted signature!
+    # gpg:          There is no indication that the signature belongs to the owner.
+    # Primary key fingerprint: 2BD4 3B44 535E C0A7 9894  DBA2 02FC 3AEB 0101 DBC2
+    
+    * remotes/gkurz/tags/for-upstream:
+      9pfs: local: fix fchmodat_nofollow() limitations
+    
+    Signed-off-by: Peter Maydell <peter.maydell@linaro.org>

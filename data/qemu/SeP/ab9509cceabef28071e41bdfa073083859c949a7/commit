@@ -1,0 +1,25 @@
+commit ab9509cceabef28071e41bdfa073083859c949a7
+Author: Gerd Hoffmann <kraxel@redhat.com>
+Commit: Gerd Hoffmann <kraxel@redhat.com>
+
+    spice: make sure we don't overflow ssd->buf
+    
+    Related spice-only bug.  We have a fixed 16 MB buffer here, being
+    presented to the spice-server as qxl video memory in case spice is
+    used with a non-qxl card.  It's also used with qxl in vga mode.
+    
+    When using display resolutions requiring more than 16 MB of memory we
+    are going to overflow that buffer.  In theory the guest can write,
+    indirectly via spice-server.  The spice-server clears the memory after
+    setting a new video mode though, triggering a segfault in the overflow
+    case, so qemu crashes before the guest has a chance to do something
+    evil.
+    
+    Fix that by switching to dynamic allocation for the buffer.
+    
+    CVE-2014-3615
+    
+    Cc: qemu-stable@nongnu.org
+    Cc: secalert@redhat.com
+    Signed-off-by: Gerd Hoffmann <kraxel@redhat.com>
+    Reviewed-by: Laszlo Ersek <lersek@redhat.com>

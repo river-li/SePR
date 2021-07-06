@@ -1,0 +1,16 @@
+commit 39b8e7dcaf04cbdb926b478f825b160d852752b5
+Author: Stefan Hajnoczi <stefanha@redhat.com>
+Commit: Stefan Hajnoczi <stefanha@redhat.com>
+
+    rtl8139: avoid nested ifs in IP header parsing (CVE-2015-5165)
+    
+    Transmit offload needs to parse packet headers.  If header fields have
+    unexpected values the offload processing is skipped.
+    
+    The code currently uses nested ifs because there is relatively little
+    input validation.  The next patches will add missing input validation
+    and a goto label is more appropriate to avoid deep if statement nesting.
+    
+    Reported-by: 朱东海(启路) <donghai.zdh@alibaba-inc.com>
+    Reviewed-by: Jason Wang <jasowang@redhat.com>
+    Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>

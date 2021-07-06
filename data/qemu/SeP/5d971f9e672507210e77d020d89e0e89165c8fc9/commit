@@ -1,0 +1,30 @@
+commit 5d971f9e672507210e77d020d89e0e89165c8fc9
+Author: Michael S. Tsirkin <mst@redhat.com>
+Commit: Paolo Bonzini <pbonzini@redhat.com>
+
+    memory: Revert "memory: accept mismatching sizes in memory_region_access_valid"
+    
+    Memory API documentation documents valid .min_access_size and .max_access_size
+    fields and explains that any access outside these boundaries is blocked.
+    
+    This is what devices seem to assume.
+    
+    However this is not what the implementation does: it simply
+    ignores the boundaries unless there's an "accepts" callback.
+    
+    Naturally, this breaks a bunch of devices.
+    
+    Revert to the documented behaviour.
+    
+    Devices that want to allow any access can just drop the valid field,
+    or add the impl field to have accesses converted to appropriate
+    length.
+    
+    Cc: qemu-stable@nongnu.org
+    Reviewed-by: Richard Henderson <rth@twiddle.net>
+    Fixes: CVE-2020-13754
+    Fixes: https://bugzilla.redhat.com/show_bug.cgi?id=1842363
+    Fixes: a014ed07bd5a ("memory: accept mismatching sizes in memory_region_access_valid")
+    Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+    Message-Id: <20200610134731.1514409-1-mst@redhat.com>
+    Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>

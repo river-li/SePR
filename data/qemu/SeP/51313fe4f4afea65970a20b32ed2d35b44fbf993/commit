@@ -1,0 +1,17 @@
+commit 51313fe4f4afea65970a20b32ed2d35b44fbf993
+Merge: df5c50a208 afd9096eb1
+Author: Peter Maydell <peter.maydell@linaro.org>
+Commit: Peter Maydell <peter.maydell@linaro.org>
+
+    Merge remote-tracking branch 'remotes/stefanha/tags/CVE-2016-5403-virtio-unbounded-allocation-pull-request' into staging
+    
+    # gpg: Signature made Wed 27 Jul 2016 16:13:02 BST
+    # gpg:                using RSA key 0x9CA4ABB381AB73C8
+    # gpg: Good signature from "Stefan Hajnoczi <stefanha@redhat.com>"
+    # gpg:                 aka "Stefan Hajnoczi <stefanha@gmail.com>"
+    # Primary key fingerprint: 8695 A8BF D3F9 7CDA AC35  775A 9CA4 ABB3 81AB 73C8
+    
+    * remotes/stefanha/tags/CVE-2016-5403-virtio-unbounded-allocation-pull-request:
+      virtio: error out if guest exceeds virtqueue size
+    
+    Signed-off-by: Peter Maydell <peter.maydell@linaro.org>

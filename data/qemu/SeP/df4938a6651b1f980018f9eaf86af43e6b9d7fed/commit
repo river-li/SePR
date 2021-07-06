@@ -1,0 +1,22 @@
+commit df4938a6651b1f980018f9eaf86af43e6b9d7fed
+Author: Greg Kurz <groug@kaod.org>
+Commit: Greg Kurz <groug@kaod.org>
+
+    9pfs: local: unlinkat: don't follow symlinks
+    
+    The local_unlinkat() callback is vulnerable to symlink attacks because it
+    calls remove() which follows symbolic links in all path elements but the
+    rightmost one.
+    
+    This patch converts local_unlinkat() to rely on opendir_nofollow() and
+    unlinkat() instead.
+    
+    Most of the code is moved to a separate local_unlinkat_common() helper
+    which will be reused in a subsequent patch to fix the same issue in
+    local_remove().
+    
+    This partly fixes CVE-2016-9602.
+    
+    Signed-off-by: Greg Kurz <groug@kaod.org>
+    Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>
+    Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>

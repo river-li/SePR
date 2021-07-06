@@ -1,0 +1,35 @@
+commit d815e7219036d6911fce12efe3e59906264c8536
+Author: Greg Kurz <groug@kaod.org>
+Commit: Greg Kurz <groug@kaod.org>
+
+    9pfs: local: mknod: don't follow symlinks
+    
+    The local_mknod() callback is vulnerable to symlink attacks because it
+    calls:
+    
+    (1) mknod() which follows symbolic links for all path elements but the
+        rightmost one
+    (2) local_set_xattr()->setxattr() which follows symbolic links for all
+        path elements
+    (3) local_set_mapped_file_attr() which calls in turn local_fopen() and
+        mkdir(), both functions following symbolic links for all path
+        elements but the rightmost one
+    (4) local_post_create_passthrough() which calls in turn lchown() and
+        chmod(), both functions also following symbolic links
+    
+    This patch converts local_mknod() to rely on opendir_nofollow() and
+    mknodat() to fix (1), as well as local_set_xattrat() and
+    local_set_mapped_file_attrat() to fix (2) and (3) respectively.
+    
+    A new local_set_cred_passthrough() helper based on fchownat() and
+    fchmodat_nofollow() is introduced as a replacement to
+    local_post_create_passthrough() to fix (4).
+    
+    The mapped and mapped-file security modes are supposed to be identical,
+    except for the place where credentials and file modes are stored. While
+    here, we also make that explicit by sharing the call to mknodat().
+    
+    This partly fixes CVE-2016-9602.
+    
+    Signed-off-by: Greg Kurz <groug@kaod.org>
+    Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>

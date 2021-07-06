@@ -1,0 +1,20 @@
+commit ac96c41354b7e4c70b756342d9b686e31ab87458
+Author: Eduardo Habkost <ehabkost@redhat.com>
+Commit: Eduardo Habkost <ehabkost@redhat.com>
+
+    i386: Add new -IBRS versions of Intel CPU models
+    
+    The new MSR IA32_SPEC_CTRL MSR was introduced by a recent Intel
+    microcode updated and can be used by OSes to mitigate
+    CVE-2017-5715.  Unfortunately we can't change the existing CPU
+    models without breaking existing setups, so users need to
+    explicitly update their VM configuration to use the new *-IBRS
+    CPU model if they want to expose IBRS to guests.
+    
+    The new CPU models are simple copies of the existing CPU models,
+    with just CPUID_7_0_EDX_SPEC_CTRL added and model_id updated.
+    
+    Cc: Jiri Denemark <jdenemar@redhat.com>
+    Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+    Message-Id: <20180109154519.25634-6-ehabkost@redhat.com>
+    Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>

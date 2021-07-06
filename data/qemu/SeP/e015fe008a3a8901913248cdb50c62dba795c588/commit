@@ -1,0 +1,15 @@
+commit e015fe008a3a8901913248cdb50c62dba795c588
+Merge: b0411142f4 9f7c594c00
+Author: Peter Maydell <peter.maydell@linaro.org>
+Commit: Peter Maydell <peter.maydell@linaro.org>
+
+    Merge remote-tracking branch 'remotes/stefanha/tags/CVE-2015-3209-pcnet-tx-buffer-fix-pull-request' into staging
+    
+    # gpg: Signature made Wed Jun 10 15:04:11 2015 BST using RSA key ID 81AB73C8
+    # gpg: Good signature from "Stefan Hajnoczi <stefanha@redhat.com>"
+    # gpg:                 aka "Stefan Hajnoczi <stefanha@gmail.com>"
+    
+    * remotes/stefanha/tags/CVE-2015-3209-pcnet-tx-buffer-fix-pull-request:
+      pcnet: force the buffer access to be in bounds during tx
+    
+    Signed-off-by: Peter Maydell <peter.maydell@linaro.org>

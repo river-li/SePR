@@ -1,0 +1,41 @@
+commit f887cf165db20f405cb8805c716bd363aaadf815
+Author: Daniel P. Berrangé <berrange@redhat.com>
+Commit: Gerd Hoffmann <kraxel@redhat.com>
+
+    ui: place a hard cap on VNC server output buffer size
+    
+    The previous patches fix problems with throttling of forced framebuffer updates
+    and audio data capture that would cause the QEMU output buffer size to grow
+    without bound. Those fixes are graceful in that once the client catches up with
+    reading data from the server, everything continues operating normally.
+    
+    There is some data which the server sends to the client that is impractical to
+    throttle. Specifically there are various pseudo framebuffer update encodings to
+    inform the client of things like desktop resizes, pointer changes, audio
+    playback start/stop, LED state and so on. These generally only involve sending
+    a very small amount of data to the client, but a malicious guest might be able
+    to do things that trigger these changes at a very high rate. Throttling them is
+    not practical as missed or delayed events would cause broken behaviour for the
+    client.
+    
+    This patch thus takes a more forceful approach of setting an absolute upper
+    bound on the amount of data we permit to be present in the output buffer at
+    any time. The previous patch set a threshold for throttling the output buffer
+    by allowing an amount of data equivalent to one complete framebuffer update and
+    one seconds worth of audio data. On top of this it allowed for one further
+    forced framebuffer update to be queued.
+    
+    To be conservative, we thus take that throttling threshold and multiply it by
+    5 to form an absolute upper bound. If this bound is hit during vnc_write() we
+    forceably disconnect the client, refusing to queue further data. This limit is
+    high enough that it should never be hit unless a malicious client is trying to
+    exploit the sever, or the network is completely saturated preventing any sending
+    of data on the socket.
+    
+    This completes the fix for CVE-2017-15124 started in the previous patches.
+    
+    Signed-off-by: Daniel P. Berrange <berrange@redhat.com>
+    Reviewed-by: Darren Kenny <darren.kenny@oracle.com>
+    Reviewed-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+    Message-id: 20171218191228.31018-12-berrange@redhat.com
+    Signed-off-by: Gerd Hoffmann <kraxel@redhat.com>

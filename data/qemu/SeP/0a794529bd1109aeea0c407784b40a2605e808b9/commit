@@ -1,0 +1,48 @@
+commit 0a794529bd1109aeea0c407784b40a2605e808b9
+Author: David Gibson <david@gibson.dropbear.id.au>
+Commit: David Gibson <david@gibson.dropbear.id.au>
+
+    spapr: Simplify handling of host-serial and host-model values
+    
+    27461d69a0f "ppc: add host-serial and host-model machine attributes
+    (CVE-2019-8934)" introduced 'host-serial' and 'host-model' machine
+    properties for spapr to explicitly control the values advertised to the
+    guest in device tree properties with the same names.
+    
+    The previous behaviour on KVM was to unconditionally populate the device
+    tree with the real host serial number and model, which leaks possibly
+    sensitive information about the host to the guest.
+    
+    To maintain compatibility for old machine types, we allowed those props
+    to be set to "passthrough" to take the value from the host as before.  Or
+    they could be set to "none" to explicitly omit the device tree items.
+    
+    Special casing specific values on what's otherwise a user supplied string
+    is very ugly.  So, this patch simplifies things by implementing the
+    backwards compatibility in a different way: we have a machine class flag
+    set for the older machines, and we only load the host values into the
+    device tree if A) they're not set by the user and B) we have that flag set.
+    
+    This does mean that the "passthrough" functionality is no longer available
+    with the current machine type.  That's ok though: if a user or management
+    layer really wants the information passed through they can read it
+    themselves (OpenStack Nova already does something similar for x86).
+    
+    It also means the user can't explicitly ask for the values to be omitted
+    on the old machine types.  I think that's an acceptable trade-off: if you
+    care enough about not leaking the host information you can either move to
+    the new machine type, or use a dummy value for the properties.
+    
+    For the new machine type, this also removes an odd inconsistency
+    between running on a POWER and non-POWER (or non-Linux) hosts: if the
+    host information couldn't be read from where we expect (in the host's
+    device tree as exposed by Linux), we'd fallback to omitting the guest
+    device tree items.
+    
+    While we're there, improve some poorly worded comments, and the help text
+    for the properties.
+    
+    Signed-off-by: David Gibson <david@gibson.dropbear.id.au>
+    Reviewed-by: Daniel P. Berrangé <berrange@redhat.com>
+    Reviewed-by: Greg Kurz <groug@kaod.org>
+    Tested-by: Greg Kurz <groug@kaod.org>

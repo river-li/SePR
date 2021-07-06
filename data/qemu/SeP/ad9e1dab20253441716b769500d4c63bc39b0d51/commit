@@ -1,0 +1,17 @@
+commit ad9e1dab20253441716b769500d4c63bc39b0d51
+Merge: c65db7705b 64ffbe04ea
+Author: Peter Maydell <peter.maydell@linaro.org>
+Commit: Peter Maydell <peter.maydell@linaro.org>
+
+    Merge remote-tracking branch 'remotes/armbru/tags/pull-monitor-2016-02-03' into staging
+    
+    Monitor patches for 2016-02-03
+    
+    # gpg: Signature made Wed 03 Feb 2016 09:13:48 GMT using RSA key ID EB918653
+    # gpg: Good signature from "Markus Armbruster <armbru@redhat.com>"
+    # gpg:                 aka "Markus Armbruster <armbru@pond.sub.org>"
+    
+    * remotes/armbru/tags/pull-monitor-2016-02-03:
+      hmp: fix sendkey out of bounds write (CVE-2015-8619)
+    
+    Signed-off-by: Peter Maydell <peter.maydell@linaro.org>

@@ -1,0 +1,17 @@
+commit b2eb849d4b1fdb6f35d5c46958c7f703cf64cfef
+Author: Aurelien Jarno <aurelien@aurel32.net>
+Commit: Aurelien Jarno <aurelien@aurel32.net>
+
+    CVE-2007-1320 - Cirrus LGD-54XX "bitblt" heap overflow
+    
+    I have just noticed that patch for CVE-2007-1320 has never been applied
+    to the QEMU CVS. Please find it below.
+    
+    | Multiple heap-based buffer overflows in the cirrus_invalidate_region
+    | function in the Cirrus VGA extension in QEMU 0.8.2, as used in Xen and
+    | possibly other products, might allow local users to execute arbitrary
+    | code via unspecified vectors related to "attempting to mark
+    | non-existent regions as dirty," aka the "bitblt" heap overflow.
+    
+    
+    git-svn-id: svn://svn.savannah.nongnu.org/qemu/trunk@4340 c046a42c-6fe2-441c-8c8c-71466251a162

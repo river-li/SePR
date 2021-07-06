@@ -1,0 +1,18 @@
+commit 1ba1f2e319afdcb485963cd3f426fdffd1b725f2
+Author: Paolo Bonzini <pbonzini@redhat.com>
+Commit: Anthony Liguori <anthony@codemonkey.ws>
+
+    virtio-blk: refuse SG_IO requests with scsi=off
+    
+    QEMU does have a "scsi" option (to be used like -device
+    virtio-blk-pci,drive=foo,scsi=off).  However, it only
+    masks the feature bit, and does not reject the command
+    if a malicious guest disregards the feature bits and
+    issues a request.
+    
+    Without this patch, using scsi=off does not protect you
+    from CVE-2011-4127.
+    
+    Reviewed-by: Stefan Hajnoczi <stefanha@linux.vnet.ibm.com>
+    Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+    Signed-off-by: Anthony Liguori <aliguori@us.ibm.com>

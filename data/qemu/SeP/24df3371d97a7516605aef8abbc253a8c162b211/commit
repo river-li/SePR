@@ -1,0 +1,12 @@
+commit 24df3371d97a7516605aef8abbc253a8c162b211
+Author: Greg Kurz <groug@kaod.org>
+Commit: Greg Kurz <groug@kaod.org>
+
+    9pfs: assume utimensat() and futimens() are present
+    
+    The utimensat() and futimens() syscalls have been around for ages (ie,
+    glibc 2.6 and linux 2.6.22), and the decision was already taken to
+    switch to utimensat() anyway when fixing CVE-2016-9602 in 2.9.
+    
+    Signed-off-by: Greg Kurz <groug@kaod.org>
+    Reviewed-by: Eric Blake <eblake@redhat.com>

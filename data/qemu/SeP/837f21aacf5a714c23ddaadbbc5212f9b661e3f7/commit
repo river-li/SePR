@@ -1,0 +1,16 @@
+commit 837f21aacf5a714c23ddaadbbc5212f9b661e3f7
+Author: Prasad J Pandit <pjp@fedoraproject.org>
+Commit: Jason Wang <jasowang@redhat.com>
+
+    net: pcnet: add check to validate receive data size(CVE-2015-7504)
+    
+    In loopback mode, pcnet_receive routine appends CRC code to the
+    receive buffer. If the data size given is same as the buffer size,
+    the appended CRC code overwrites 4 bytes after s->buffer. Added a
+    check to avoid that.
+    
+    Reported by: Qinghao Tang <luodalongde@gmail.com>
+    Cc: qemu-stable@nongnu.org
+    Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+    Signed-off-by: Prasad J Pandit <pjp@fedoraproject.org>
+    Signed-off-by: Jason Wang <jasowang@redhat.com>

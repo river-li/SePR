@@ -1,0 +1,17 @@
+commit 7cdc61becd095b64a786b2625f321624e7111f3d
+Author: Gerd Hoffmann <kraxel@redhat.com>
+Commit: Gerd Hoffmann <kraxel@redhat.com>
+
+    vga: fix region calculation
+    
+    Typically the scanline length and the line offset are identical.  But
+    in case they are not our calculation for region_end is incorrect.  Using
+    line_offset is fine for all scanlines, except the last one where we have
+    to use the actual scanline length.
+    
+    Fixes: CVE-2018-7550
+    Reported-by: Ross Lagerwall <ross.lagerwall@citrix.com>
+    Signed-off-by: Gerd Hoffmann <kraxel@redhat.com>
+    Reviewed-by: Prasad J Pandit <pjp@fedoraproject.org>
+    Tested-by: Ross Lagerwall <ross.lagerwall@citrix.com>
+    Message-id: 20180309143704.13420-1-kraxel@redhat.com

@@ -1,0 +1,19 @@
+commit 97f1c45c6f456572e5b504b8614e4a69e23b8e3a
+Author: Jeff Cody <jcody@redhat.com>
+Commit: Stefan Hajnoczi <stefanha@redhat.com>
+
+    vpc/vhd: add bounds check for max_table_entries and block_size (CVE-2014-0144)
+    
+    This adds checks to make sure that max_table_entries and block_size
+    are in sane ranges.  Memory is allocated based on max_table_entries,
+    and block_size is used to calculate indices into that allocated
+    memory, so if these values are incorrect that can lead to potential
+    unbounded memory allocation, or invalid memory accesses.
+    
+    Also, the allocation of the pagetable is changed from g_malloc0()
+    to qemu_blockalign().
+    
+    Signed-off-by: Jeff Cody <jcody@redhat.com>
+    Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+    Reviewed-by: Max Reitz <mreitz@redhat.com>
+    Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>

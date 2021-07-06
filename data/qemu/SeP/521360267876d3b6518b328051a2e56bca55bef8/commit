@@ -1,0 +1,18 @@
+commit 521360267876d3b6518b328051a2e56bca55bef8
+Author: Gerd Hoffmann <kraxel@redhat.com>
+Commit: Gerd Hoffmann <kraxel@redhat.com>
+
+    vmsvga: move fifo sanity checks to vmsvga_fifo_length
+    
+    Sanity checks are applied when the fifo is enabled by the guest
+    (SVGA_REG_CONFIG_DONE write).  Which doesn't help much if the guest
+    changes the fifo registers afterwards.  Move the checks to
+    vmsvga_fifo_length so they are done each time qemu is about to read
+    from the fifo.
+    
+    Fixes: CVE-2016-4454
+    Cc: qemu-stable@nongnu.org
+    Cc: P J P <ppandit@redhat.com>
+    Reported-by: 李强 <liqiang6-s@360.cn>
+    Signed-off-by: Gerd Hoffmann <kraxel@redhat.com>
+    Message-id: 1464592161-18348-2-git-send-email-kraxel@redhat.com

@@ -1,0 +1,20 @@
+commit a968a38005bf2568605cac7f86b9fba7fc089726
+Merge: 256af05f52 89fbea8737
+Author: Peter Maydell <peter.maydell@linaro.org>
+Commit: Peter Maydell <peter.maydell@linaro.org>
+
+    Merge remote-tracking branch 'remotes/gkurz-gitlab/tags/9p-next-2021-01-15' into staging
+    
+    Fix for CVE-2021-20181
+    
+    # gpg: Signature made Fri 15 Jan 2021 08:52:19 GMT
+    # gpg:                using RSA key B4828BAF943140CEF2A3491071D4D5E5822F73D6
+    # gpg: Good signature from "Greg Kurz <groug@kaod.org>" [full]
+    # gpg:                 aka "Gregory Kurz <gregory.kurz@free.fr>" [full]
+    # gpg:                 aka "[jpeg image of size 3330]" [full]
+    # Primary key fingerprint: B482 8BAF 9431 40CE F2A3  4910 71D4 D5E5 822F 73D6
+    
+    * remotes/gkurz-gitlab/tags/9p-next-2021-01-15:
+      9pfs: Fully restart unreclaim loop (CVE-2021-20181)
+    
+    Signed-off-by: Peter Maydell <peter.maydell@linaro.org>

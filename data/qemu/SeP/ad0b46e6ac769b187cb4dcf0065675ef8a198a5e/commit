@@ -1,0 +1,20 @@
+commit ad0b46e6ac769b187cb4dcf0065675ef8a198a5e
+Author: Greg Kurz <groug@kaod.org>
+Commit: Greg Kurz <groug@kaod.org>
+
+    9pfs: local: link: don't follow symlinks
+    
+    The local_link() callback is vulnerable to symlink attacks because it calls:
+    
+    (1) link() which follows symbolic links for all path elements but the
+        rightmost one
+    (2) local_create_mapped_attr_dir()->mkdir() which follows symbolic links
+        for all path elements but the rightmost one
+    
+    This patch converts local_link() to rely on opendir_nofollow() and linkat()
+    to fix (1), mkdirat() to fix (2).
+    
+    This partly fixes CVE-2016-9602.
+    
+    Signed-off-by: Greg Kurz <groug@kaod.org>
+    Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>

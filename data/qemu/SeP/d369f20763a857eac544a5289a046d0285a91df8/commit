@@ -1,0 +1,25 @@
+commit d369f20763a857eac544a5289a046d0285a91df8
+Author: Greg Kurz <groug@kaod.org>
+Commit: Greg Kurz <groug@kaod.org>
+
+    9pfs: local: chown: don't follow symlinks
+    
+    The local_chown() callback is vulnerable to symlink attacks because it
+    calls:
+    
+    (1) lchown() which follows symbolic links for all path elements but the
+        rightmost one
+    (2) local_set_xattr()->setxattr() which follows symbolic links for all
+        path elements
+    (3) local_set_mapped_file_attr() which calls in turn local_fopen() and
+        mkdir(), both functions following symbolic links for all path
+        elements but the rightmost one
+    
+    This patch converts local_chown() to rely on open_nofollow() and
+    fchownat() to fix (1), as well as local_set_xattrat() and
+    local_set_mapped_file_attrat() to fix (2) and (3) respectively.
+    
+    This partly fixes CVE-2016-9602.
+    
+    Signed-off-by: Greg Kurz <groug@kaod.org>
+    Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>

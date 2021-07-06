@@ -1,0 +1,64 @@
+commit e2b72cb6e0443d90d7ab037858cb6834b6cca852
+Author: Daniel P. Berrangé <berrange@redhat.com>
+Commit: Gerd Hoffmann <kraxel@redhat.com>
+
+    ui: fix VNC client throttling when audio capture is active
+    
+    The VNC server must throttle data sent to the client to prevent the 'output'
+    buffer size growing without bound, if the client stops reading data off the
+    socket (either maliciously or due to stalled/slow network connection).
+    
+    The current throttling is very crude because it simply checks whether the
+    output buffer offset is zero. This check must be disabled if audio capture is
+    enabled, because when streaming audio the output buffer offset will rarely be
+    zero due to queued audio data, and so this would starve framebuffer updates.
+    
+    As a result, the VNC client can cause QEMU to allocate arbitrary amounts of RAM.
+    They can first start something in the guest that triggers lots of framebuffer
+    updates eg play a youtube video. Then enable audio capture, and simply never
+    read data back from the server. This can easily make QEMU's VNC server send
+    buffer consume 100MB of RAM per second, until the OOM killer starts reaping
+    processes (hopefully the rogue QEMU process, but it might pick others...).
+    
+    To address this we make the throttling more intelligent, so we can throttle
+    when audio capture is active too. To determine how to throttle incremental
+    updates or audio data, we calculate a size threshold. Normally the threshold is
+    the approximate number of bytes associated with a single complete framebuffer
+    update. ie width * height * bytes per pixel. We'll send incremental updates
+    until we hit this threshold, at which point we'll stop sending updates until
+    data has been written to the wire, causing the output buffer offset to fall
+    back below the threshold.
+    
+    If audio capture is enabled, we increase the size of the threshold to also
+    allow for upto 1 seconds worth of audio data samples. ie nchannels * bytes
+    per sample * frequency. This allows the output buffer to have a mixture of
+    incremental framebuffer updates and audio data queued, but once the threshold
+    is exceeded, audio data will be dropped and incremental updates will be
+    throttled.
+    
+    This unbounded memory growth affects all VNC server configurations supported by
+    QEMU, with no workaround possible. The mitigating factor is that it can only be
+    triggered by a client that has authenticated with the VNC server, and who is
+    able to trigger a large quantity of framebuffer updates or audio samples from
+    the guest OS. Mostly they'll just succeed in getting the OOM killer to kill
+    their own QEMU process, but its possible other processes can get taken out as
+    collateral damage.
+    
+    This is a more general variant of the similar unbounded memory usage flaw in
+    the websockets server, that was previously assigned CVE-2017-15268, and fixed
+    in 2.11 by:
+    
+      commit a7b20a8efa28e5f22c26c06cd06c2f12bc863493
+      Author: Daniel P. Berrange <berrange@redhat.com>
+      Date:   Mon Oct 9 14:43:42 2017 +0100
+    
+        io: monitor encoutput buffer size from websocket GSource
+    
+    This new general memory usage flaw has been assigned CVE-2017-15124, and is
+    partially fixed by this patch.
+    
+    Signed-off-by: Daniel P. Berrange <berrange@redhat.com>
+    Reviewed-by: Darren Kenny <darren.kenny@oracle.com>
+    Reviewed-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+    Message-id: 20171218191228.31018-10-berrange@redhat.com
+    Signed-off-by: Gerd Hoffmann <kraxel@redhat.com>

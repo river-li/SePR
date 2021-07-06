@@ -1,0 +1,20 @@
+commit afbcc40bee4ef51731102d7d4b499ee12fc182e1
+Author: Kevin Wolf <kwolf@redhat.com>
+Commit: Stefan Hajnoczi <stefanha@redhat.com>
+
+    parallels: Fix catalog size integer overflow (CVE-2014-0143)
+    
+    The first test case would cause a huge memory allocation, leading to a
+    qemu abort; the second one to a too small malloc() for the catalog
+    (smaller than s->catalog_size), which causes a read-only out-of-bounds
+    array access and on big endian hosts an endianess conversion for an
+    undefined memory area.
+    
+    The sample image used here is not an original Parallels image. It was
+    created using an hexeditor on the basis of the struct that qemu uses.
+    Good enough for trying to crash the driver, but not for ensuring
+    compatibility.
+    
+    Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+    Reviewed-by: Max Reitz <mreitz@redhat.com>
+    Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>

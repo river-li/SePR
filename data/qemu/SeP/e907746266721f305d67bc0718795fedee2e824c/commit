@@ -1,0 +1,19 @@
+commit e907746266721f305d67bc0718795fedee2e824c
+Author: Petr Matousek <pmatouse@redhat.com>
+Commit: John Snow <jsnow@redhat.com>
+
+    fdc: force the fifo access to be in bounds of the allocated buffer
+    
+    During processing of certain commands such as FD_CMD_READ_ID and
+    FD_CMD_DRIVE_SPECIFICATION_COMMAND the fifo memory access could
+    get out of bounds leading to memory corruption with values coming
+    from the guest.
+    
+    Fix this by making sure that the index is always bounded by the
+    allocated memory.
+    
+    This is CVE-2015-3456.
+    
+    Signed-off-by: Petr Matousek <pmatouse@redhat.com>
+    Reviewed-by: John Snow <jsnow@redhat.com>
+    Signed-off-by: John Snow <jsnow@redhat.com>

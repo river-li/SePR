@@ -1,0 +1,27 @@
+commit 46cabfb41e9cb269affc14c8188f0c8745f8cd55
+Merge: 3c035a41dc 5b3c77aa58
+Author: Peter Maydell <peter.maydell@linaro.org>
+Commit: Peter Maydell <peter.maydell@linaro.org>
+
+    Merge remote-tracking branch 'remotes/gkurz/tags/for-upstream' into staging
+    
+    Fixes yet another use-after-free issue that could be triggered by a
+    misbehaving guest. This is a follow-up to commit:
+    
+    commit 5b76ef50f62079a2389ba28cacaf6cce68b1a0ed
+    Author: Greg Kurz <groug@kaod.org>
+    Date:   Wed Nov 7 01:00:04 2018 +0100
+    
+        9p: write lock path in v9fs_co_open2()
+    
+    # gpg: Signature made Tue 20 Nov 2018 12:01:07 GMT
+    # gpg:                using RSA key 71D4D5E5822F73D6
+    # gpg: Good signature from "Greg Kurz <groug@kaod.org>"
+    # gpg:                 aka "Gregory Kurz <gregory.kurz@free.fr>"
+    # gpg:                 aka "[jpeg image of size 3330]"
+    # Primary key fingerprint: B482 8BAF 9431 40CE F2A3  4910 71D4 D5E5 822F 73D6
+    
+    * remotes/gkurz/tags/for-upstream:
+      9p: take write lock on fid path updates (CVE-2018-19364)
+    
+    Signed-off-by: Peter Maydell <peter.maydell@linaro.org>

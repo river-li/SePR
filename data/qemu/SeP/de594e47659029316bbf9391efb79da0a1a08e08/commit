@@ -1,0 +1,16 @@
+commit de594e47659029316bbf9391efb79da0a1a08e08
+Author: Paolo Bonzini <pbonzini@redhat.com>
+Commit: Paolo Bonzini <pbonzini@redhat.com>
+
+    scsi: lsi: exit infinite loop while executing script (CVE-2019-12068)
+    
+    When executing script in lsi_execute_script(), the LSI scsi adapter
+    emulator advances 's->dsp' index to read next opcode. This can lead
+    to an infinite loop if the next opcode is empty. Move the existing
+    loop exit after 10k iterations so that it covers no-op opcodes as
+    well.
+    
+    Reported-by: Bugs SysSec <bugs-syssec@rub.de>
+    Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+    Signed-off-by: Prasad J Pandit <pjp@fedoraproject.org>
+    Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>

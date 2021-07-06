@@ -1,0 +1,19 @@
+commit 81b23ef82cd1be29ca3d69ab7e98b5b5e55926ce
+Author: Jan Beulich <jbeulich@suse.com>
+Commit: Peter Maydell <peter.maydell@linaro.org>
+
+    xen: limit guest control of PCI command register
+    
+    Otherwise the guest can abuse that control to cause e.g. PCIe
+    Unsupported Request responses (by disabling memory and/or I/O decoding
+    and subsequently causing [CPU side] accesses to the respective address
+    ranges), which (depending on system configuration) may be fatal to the
+    host.
+    
+    This is CVE-2015-2756 / XSA-126.
+    
+    Signed-off-by: Jan Beulich <jbeulich@suse.com>
+    Reviewed-by: Stefano Stabellini <stefano.stabellini@eu.citrix.com>
+    Acked-by: Ian Campbell <ian.campbell@citrix.com>
+    Message-id: alpine.DEB.2.02.1503311510300.7690@kaball.uk.xensource.com
+    Signed-off-by: Peter Maydell <peter.maydell@linaro.org>

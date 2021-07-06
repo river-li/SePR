@@ -1,0 +1,17 @@
+commit f56b9bc3ae20fc93815b34aa022be919941406ce
+Author: Stefan Hajnoczi <stefanha@redhat.com>
+Commit: Stefan Hajnoczi <stefanha@redhat.com>
+
+    block/cloop: refuse images with bogus offsets (CVE-2014-0144)
+    
+    The offsets[] array allows efficient seeking and tells us the maximum
+    compressed data size.  If the offsets are bogus the maximum compressed
+    data size will be unrealistic.
+    
+    This could cause g_malloc() to abort and bogus offsets mean the image is
+    broken anyway.  Therefore we should refuse such images.
+    
+    Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>
+    Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+    Reviewed-by: Max Reitz <mreitz@redhat.com>
+    Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>

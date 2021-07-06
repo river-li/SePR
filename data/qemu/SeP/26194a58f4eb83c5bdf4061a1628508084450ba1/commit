@@ -1,0 +1,15 @@
+commit 26194a58f4eb83c5bdf4061a1628508084450ba1
+Author: Jason Wang <jasowang@redhat.com>
+Commit: Jason Wang <jasowang@redhat.com>
+
+    msf2-mac: switch to use qemu_receive_packet() for loopback
+    
+    This patch switches to use qemu_receive_packet() which can detect
+    reentrancy and return early.
+    
+    This is intended to address CVE-2021-3416.
+    
+    Cc: Prasad J Pandit <ppandit@redhat.com>
+    Cc: qemu-stable@nongnu.org
+    Reviewed-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+    Signed-off-by: Jason Wang <jasowang@redhat.com>

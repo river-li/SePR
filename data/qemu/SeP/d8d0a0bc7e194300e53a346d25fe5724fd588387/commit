@@ -1,0 +1,16 @@
+commit d8d0a0bc7e194300e53a346d25fe5724fd588387
+Author: Michael S. Tsirkin <mst@redhat.com>
+Commit: Juan Quintela <quintela@redhat.com>
+
+    pl022: fix buffer overun on invalid state load
+    
+    CVE-2013-4530
+    
+    pl022.c did not bounds check tx_fifo_head and
+    rx_fifo_head after loading them from file and
+    before they are used to dereference array.
+    
+    Reported-by: Michael S. Tsirkin <mst@redhat.com
+    Reported-by: Anthony Liguori <anthony@codemonkey.ws>
+    Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+    Signed-off-by: Juan Quintela <quintela@redhat.com>

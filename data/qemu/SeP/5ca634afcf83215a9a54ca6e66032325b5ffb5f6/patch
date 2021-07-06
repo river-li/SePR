@@ -1,0 +1,163 @@
+diff --git a/hw/sd/sd.c b/hw/sd/sd.c
+index 8b397effbc..282d39a704 100644
+--- a/hw/sd/sd.c
++++ b/hw/sd/sd.c
+@@ -47,6 +47,7 @@
+ #include "qemu/timer.h"
+ #include "qemu/log.h"
+ #include "qemu/module.h"
++#include "qemu-common.h"
+ #include "sdmmc-internal.h"
+ #include "trace.h"
+ 
+@@ -762,10 +763,12 @@ static void sd_blk_write(SDState *sd, uint64_t addr, uint32_t len)
+ 
+ static void sd_erase(SDState *sd)
+ {
+-    int i;
+     uint64_t erase_start = sd->erase_start;
+     uint64_t erase_end = sd->erase_end;
+     bool sdsc = true;
++    uint64_t wpnum;
++    uint64_t erase_addr;
++    int erase_len = 1 << HWBLOCK_SHIFT;
+ 
+     trace_sdcard_erase(sd->erase_start, sd->erase_end);
+     if (sd->erase_start == INVALID_ADDRESS
+@@ -794,17 +797,19 @@ static void sd_erase(SDState *sd)
+     sd->erase_end = INVALID_ADDRESS;
+     sd->csd[14] |= 0x40;
+ 
+-    /* Only SDSC cards support write protect groups */
+-    if (sdsc) {
+-        erase_start = sd_addr_to_wpnum(erase_start);
+-        erase_end = sd_addr_to_wpnum(erase_end);
+-
+-        for (i = erase_start; i <= erase_end; i++) {
+-            assert(i < sd->wpgrps_size);
+-            if (test_bit(i, sd->wp_groups)) {
++    memset(sd->data, 0xff, erase_len);
++    for (erase_addr = erase_start; erase_addr <= erase_end;
++         erase_addr += erase_len) {
++        if (sdsc) {
++            /* Only SDSC cards support write protect groups */
++            wpnum = sd_addr_to_wpnum(erase_addr);
++            assert(wpnum < sd->wpgrps_size);
++            if (test_bit(wpnum, sd->wp_groups)) {
+                 sd->card_status |= WP_ERASE_SKIP;
++                continue;
+             }
+         }
++        BLK_WRITE_BLOCK(erase_addr, erase_len);
+     }
+ }
+ 
+diff --git a/hw/sd/sdhci.c b/hw/sd/sdhci.c
+index 9acf4467a3..5b8678110b 100644
+--- a/hw/sd/sdhci.c
++++ b/hw/sd/sdhci.c
+@@ -326,6 +326,7 @@ static void sdhci_send_command(SDHCIState *s)
+     SDRequest request;
+     uint8_t response[16];
+     int rlen;
++    bool timeout = false;
+ 
+     s->errintsts = 0;
+     s->acmd12errsts = 0;
+@@ -349,6 +350,7 @@ static void sdhci_send_command(SDHCIState *s)
+             trace_sdhci_response16(s->rspreg[3], s->rspreg[2],
+                                    s->rspreg[1], s->rspreg[0]);
+         } else {
++            timeout = true;
+             trace_sdhci_error("timeout waiting for command response");
+             if (s->errintstsen & SDHC_EISEN_CMDTIMEOUT) {
+                 s->errintsts |= SDHC_EIS_CMDTIMEOUT;
+@@ -369,7 +371,7 @@ static void sdhci_send_command(SDHCIState *s)
+ 
+     sdhci_update_irq(s);
+ 
+-    if (s->blksize && (s->cmdreg & SDHC_CMD_DATA_PRESENT)) {
++    if (!timeout && s->blksize && (s->cmdreg & SDHC_CMD_DATA_PRESENT)) {
+         s->data_count = 0;
+         sdhci_data_transfer(s);
+     }
+@@ -766,7 +768,9 @@ static void sdhci_do_adma(SDHCIState *s)
+ 
+         switch (dscr.attr & SDHC_ADMA_ATTR_ACT_MASK) {
+         case SDHC_ADMA_ATTR_ACT_TRAN:  /* data transfer */
++            s->prnsts |= SDHC_DATA_INHIBIT | SDHC_DAT_LINE_ACTIVE;
+             if (s->trnmod & SDHC_TRNS_READ) {
++                s->prnsts |= SDHC_DOING_READ;
+                 while (length) {
+                     if (s->data_count == 0) {
+                         sdbus_read_data(&s->sdbus, s->fifo_buffer, block_size);
+@@ -794,6 +798,7 @@ static void sdhci_do_adma(SDHCIState *s)
+                     }
+                 }
+             } else {
++                s->prnsts |= SDHC_DOING_WRITE;
+                 while (length) {
+                     begin = s->data_count;
+                     if ((length + begin) < block_size) {
+@@ -1119,31 +1124,45 @@ sdhci_write(void *opaque, hwaddr offset, uint64_t val, unsigned size)
+ 
+     switch (offset & ~0x3) {
+     case SDHC_SYSAD:
+-        s->sdmasysad = (s->sdmasysad & mask) | value;
+-        MASKED_WRITE(s->sdmasysad, mask, value);
+-        /* Writing to last byte of sdmasysad might trigger transfer */
+-        if (!(mask & 0xFF000000) && TRANSFERRING_DATA(s->prnsts) && s->blkcnt &&
+-                s->blksize && SDHC_DMA_TYPE(s->hostctl1) == SDHC_CTRL_SDMA) {
+-            if (s->trnmod & SDHC_TRNS_MULTI) {
+-                sdhci_sdma_transfer_multi_blocks(s);
+-            } else {
+-                sdhci_sdma_transfer_single_block(s);
++        if (!TRANSFERRING_DATA(s->prnsts)) {
++            s->sdmasysad = (s->sdmasysad & mask) | value;
++            MASKED_WRITE(s->sdmasysad, mask, value);
++            /* Writing to last byte of sdmasysad might trigger transfer */
++            if (!(mask & 0xFF000000) && s->blkcnt && s->blksize &&
++                SDHC_DMA_TYPE(s->hostctl1) == SDHC_CTRL_SDMA) {
++                if (s->trnmod & SDHC_TRNS_MULTI) {
++                    sdhci_sdma_transfer_multi_blocks(s);
++                } else {
++                    sdhci_sdma_transfer_single_block(s);
++                }
+             }
+         }
+         break;
+     case SDHC_BLKSIZE:
+         if (!TRANSFERRING_DATA(s->prnsts)) {
++            uint16_t blksize = s->blksize;
++
+             MASKED_WRITE(s->blksize, mask, extract32(value, 0, 12));
+             MASKED_WRITE(s->blkcnt, mask >> 16, value >> 16);
+-        }
+ 
+-        /* Limit block size to the maximum buffer size */
+-        if (extract32(s->blksize, 0, 12) > s->buf_maxsz) {
+-            qemu_log_mask(LOG_GUEST_ERROR, "%s: Size 0x%x is larger than "
+-                          "the maximum buffer 0x%x\n", __func__, s->blksize,
+-                          s->buf_maxsz);
++            /* Limit block size to the maximum buffer size */
++            if (extract32(s->blksize, 0, 12) > s->buf_maxsz) {
++                qemu_log_mask(LOG_GUEST_ERROR, "%s: Size 0x%x is larger than "
++                              "the maximum buffer 0x%x\n", __func__, s->blksize,
++                              s->buf_maxsz);
++
++                s->blksize = deposit32(s->blksize, 0, 12, s->buf_maxsz);
++            }
+ 
+-            s->blksize = deposit32(s->blksize, 0, 12, s->buf_maxsz);
++            /*
++             * If the block size is programmed to a different value from
++             * the previous one, reset the data pointer of s->fifo_buffer[]
++             * so that s->fifo_buffer[] can be filled in using the new block
++             * size in the next transfer.
++             */
++            if (blksize != s->blksize) {
++                s->data_count = 0;
++            }
+         }
+ 
+         break;

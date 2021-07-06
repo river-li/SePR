@@ -1,0 +1,19 @@
+commit ea5b201a0acfb4c3029afd4e7999b4278e1351d4
+Merge: 444b1996cb 0be839a270
+Author: Peter Maydell <peter.maydell@linaro.org>
+Commit: Peter Maydell <peter.maydell@linaro.org>
+
+    Merge remote-tracking branch 'remotes/amit-migration/tags/for-2.2' into staging
+    
+    Fix for CVE-2014-7840, avoiding arbitrary qemu memory overwrite for
+    migration by Michael S. Tsirkin.
+    
+    # gpg: Signature made Tue 18 Nov 2014 11:23:00 GMT using RSA key ID 854083B6
+    # gpg: Good signature from "Amit Shah <amit@amitshah.net>"
+    # gpg:                 aka "Amit Shah <amit@kernel.org>"
+    # gpg:                 aka "Amit Shah <amitshah@gmx.net>"
+    
+    * remotes/amit-migration/tags/for-2.2:
+      migration: fix parameter validation on ram load
+    
+    Signed-off-by: Peter Maydell <peter.maydell@linaro.org>

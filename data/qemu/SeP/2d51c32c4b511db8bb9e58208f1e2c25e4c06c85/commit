@@ -1,0 +1,11 @@
+commit 2d51c32c4b511db8bb9e58208f1e2c25e4c06c85
+Author: Kevin Wolf <kwolf@redhat.com>
+Commit: Stefan Hajnoczi <stefanha@redhat.com>
+
+    qcow2: Validate active L1 table offset and size (CVE-2014-0144)
+    
+    This avoids an unbounded allocation.
+    
+    Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+    Reviewed-by: Max Reitz <mreitz@redhat.com>
+    Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>

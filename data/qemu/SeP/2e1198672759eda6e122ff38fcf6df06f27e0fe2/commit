@@ -1,0 +1,18 @@
+commit 2e1198672759eda6e122ff38fcf6df06f27e0fe2
+Author: Peter Maydell <peter.maydell@linaro.org>
+Commit: Peter Maydell <peter.maydell@linaro.org>
+
+    hw/net/stellaris_enet: Convert to vmstate
+    
+    Convert this device to use vmstate for its save/load, including
+    providing a post_load function that sanitizes inbound data to
+    avoid possible buffer overflows if it is malicious.
+    
+    The sanitizing fixes CVE-2013-4532 (though nobody should be
+    relying on the security properties of most of the unmaintained
+    ARM board models anyway, and migration doesn't actually
+    work on this board due to issues in other device models).
+    
+    Signed-off-by: Peter Maydell <peter.maydell@linaro.org>
+    Reviewed-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+    Reviewed-by: Michael S. Tsirkin <mst@redhat.com>

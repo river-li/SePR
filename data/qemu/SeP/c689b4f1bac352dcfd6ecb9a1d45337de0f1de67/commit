@@ -1,0 +1,26 @@
+commit c689b4f1bac352dcfd6ecb9a1d45337de0f1de67
+Author: Laszlo Ersek <lersek@redhat.com>
+Commit: Anthony Liguori <anthony@codemonkey.ws>
+
+    qga: set umask 0077 when daemonizing (CVE-2013-2007)
+    
+    The qemu guest agent creates a bunch of files with insecure permissions
+    when started in daemon mode. For example:
+    
+      -rw-rw-rw- 1 root root /var/log/qemu-ga.log
+      -rw-rw-rw- 1 root root /var/run/qga.state
+      -rw-rw-rw- 1 root root /var/log/qga-fsfreeze-hook.log
+    
+    In addition, at least all files created with the "guest-file-open" QMP
+    command, and all files created with shell output redirection (or
+    otherwise) by utilities invoked by the fsfreeze hook script are affected.
+    
+    For now mask all file mode bits for "group" and "others" in
+    become_daemon().
+    
+    Temporarily, for compatibility reasons, stick with the 0666 file-mode in
+    case of files newly created by the "guest-file-open" QMP call. Do so
+    without changing the umask temporarily.
+    
+    Signed-off-by: Laszlo Ersek <lersek@redhat.com>
+    Signed-off-by: Anthony Liguori <aliguori@us.ibm.com>

@@ -1,7 +1,0 @@
-commit bdc480e3bef6eb0e7071770834cbdda7e30a5436
-Author: Heiko Carstens <hca@linux.ibm.com>
-Commit: Heiko Carstens <hca@linux.ibm.com>
-
-    [CVE-2009-0029] System call wrappers part 10
-    
-    Signed-off-by: Heiko Carstens <heiko.carstens@de.ibm.com>

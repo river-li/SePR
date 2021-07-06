@@ -1,0 +1,11 @@
+commit 5e71dfad763d67bb64be79e20e93411c0c30ad25
+Author: Kevin Wolf <kwolf@redhat.com>
+Commit: Stefan Hajnoczi <stefanha@redhat.com>
+
+    vpc: Validate block size (CVE-2014-0142)
+    
+    This fixes some cases of division by zero crashes.
+    
+    Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+    Reviewed-by: Max Reitz <mreitz@redhat.com>
+    Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>

@@ -1,0 +1,26 @@
+commit 4fb2820854a796ab75ffb2ec896b67268281ecde
+Merge: 711c0418c8 66ae37d8cc
+Author: Peter Maydell <peter.maydell@linaro.org>
+Commit: Peter Maydell <peter.maydell@linaro.org>
+
+    Merge remote-tracking branch 'remotes/marcel/tags/pvrdma-04-07-2021-v2' into staging
+    
+    PVRDMA queue
+    
+    Several CVE fixes for the PVRDMA device.
+    
+    # gpg: Signature made Sun 04 Jul 2021 20:56:05 BST
+    # gpg:                using RSA key 36D4C0F0CF2FE46D
+    # gpg: Good signature from "Marcel Apfelbaum <marcel.apfelbaum@zoho.com>" [marginal]
+    # gpg:                 aka "Marcel Apfelbaum <marcel@redhat.com>" [marginal]
+    # gpg:                 aka "Marcel Apfelbaum <marcel.apfelbaum@gmail.com>" [marginal]
+    # gpg: WARNING: This key is not certified with sufficiently trusted signatures!
+    # gpg:          It is not certain that the signature belongs to the owner.
+    # Primary key fingerprint: B1C6 3A57 F92E 08F2 640F  31F5 36D4 C0F0 CF2F E46D
+    
+    * remotes/marcel/tags/pvrdma-04-07-2021-v2:
+      pvrdma: Fix the ring init error flow (CVE-2021-3608)
+      pvrdma: Ensure correct input on ring init (CVE-2021-3607)
+      hw/rdma: Fix possible mremap overflow in the pvrdma device (CVE-2021-3582)
+    
+    Signed-off-by: Peter Maydell <peter.maydell@linaro.org>

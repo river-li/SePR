@@ -1,0 +1,20 @@
+commit e40db4c6d391419c0039fe274c74df32a6ca1a28
+Merge: f793d97e45 cb72cba830
+Author: Peter Maydell <peter.maydell@linaro.org>
+Commit: Peter Maydell <peter.maydell@linaro.org>
+
+    Merge remote-tracking branch 'remotes/jnsnow/tags/cve-2015-5154-pull-request' into staging
+    
+    # gpg: Signature made Mon Jul 27 13:01:10 2015 BST using RSA key ID AAFC390E
+    # gpg: Good signature from "John Snow (John Huston) <jsnow@redhat.com>"
+    # gpg: WARNING: This key is not certified with sufficiently trusted signatures!
+    # gpg:          It is not certain that the signature belongs to the owner.
+    # Primary key fingerprint: FAEB 9711 A12C F475 812F  18F2 88A9 064D 1835 61EB
+    #      Subkey fingerprint: F9B7 ABDB BCAC DF95 BE76  CBD0 7DEF 8106 AAFC 390E
+    
+    * remotes/jnsnow/tags/cve-2015-5154-pull-request:
+      ide: Clear DRQ after handling all expected accesses
+      ide/atapi: Fix START STOP UNIT command completion
+      ide: Check array bounds before writing to io_buffer (CVE-2015-5154)
+    
+    Signed-off-by: Peter Maydell <peter.maydell@linaro.org>

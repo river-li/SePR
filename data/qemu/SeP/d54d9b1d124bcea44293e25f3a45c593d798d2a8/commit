@@ -1,0 +1,16 @@
+commit d54d9b1d124bcea44293e25f3a45c593d798d2a8
+Author: Alexander Bulekov <alxndr@bu.edu>
+Commit: Paolo Bonzini <pbonzini@redhat.com>
+
+    fuzz: refine the ide/ahci fuzzer configs
+    
+    Disks work differently depending on the x86 machine type (SATA vs PATA).
+    Additionally, we should fuzz the atapi code paths, which might contain
+    vulnerabilities such as CVE-2020-29443. This patch adds hard-disk and
+    cdrom generic-fuzzer configs for both the pc (PATA) and q35 (SATA)
+    machine types.
+    
+    Signed-off-by: Alexander Bulekov <alxndr@bu.edu>
+    Acked-by: Thomas Huth <thuth@redhat.com>
+    Reviewed-by: Darren Kenny <darren.kenny@oracle.com>
+    Message-Id: <20210120152211.109782-1-alxndr@bu.edu>

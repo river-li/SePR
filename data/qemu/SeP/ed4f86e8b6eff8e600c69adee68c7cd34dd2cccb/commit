@@ -1,0 +1,18 @@
+commit ed4f86e8b6eff8e600c69adee68c7cd34dd2cccb
+Author: Prasad J Pandit <pjp@fedoraproject.org>
+Commit: Paolo Bonzini <pbonzini@redhat.com>
+
+    multiboot: validate multiboot header address values
+    
+    While loading kernel via multiboot-v1 image, (flags & 0x00010000)
+    indicates that multiboot header contains valid addresses to load
+    the kernel image. These addresses are used to compute kernel
+    size and kernel text offset in the OS image. Validate these
+    address values to avoid an OOB access issue.
+    
+    This is CVE-2017-14167.
+    
+    Reported-by: Thomas Garnier <thgarnie@google.com>
+    Signed-off-by: Prasad J Pandit <pjp@fedoraproject.org>
+    Message-Id: <20170907063256.7418-1-ppandit@redhat.com>
+    Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>

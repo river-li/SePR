@@ -1,0 +1,17 @@
+commit b8d7f1bc59276fec85e4d09f1567613a3e14d31e
+Author: Prasad J Pandit <pjp@fedoraproject.org>
+Commit: Paolo Bonzini <pbonzini@redhat.com>
+
+    ide: atapi: check logical block address and read size (CVE-2020-29443)
+    
+    While processing ATAPI cmd_read/cmd_read_cd commands,
+    Logical Block Address (LBA) maybe invalid OR closer to the last block,
+    leading to an OOB access issues. Add range check to avoid it.
+    
+    Fixes: CVE-2020-29443
+    Reported-by: Wenxiang Qian <leonwxqian@gmail.com>
+    Suggested-by: Paolo Bonzini <pbonzini@redhat.com>
+    Reviewed-by: Paolo Bonzini <pbonzini@redhat.com>
+    Signed-off-by: Prasad J Pandit <pjp@fedoraproject.org>
+    Message-Id: <20210118115130.457044-1-ppandit@redhat.com>
+    Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>

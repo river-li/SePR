@@ -1,0 +1,20 @@
+commit b3bbe959b5dc3bf07041946455cc8e8d562bfd1f
+Merge: 0f79bfe38a 191f59dc17
+Author: Peter Maydell <peter.maydell@linaro.org>
+Commit: Peter Maydell <peter.maydell@linaro.org>
+
+    Merge remote-tracking branch 'remotes/kraxel/tags/vga-20180125-pull-request' into staging
+    
+    vga: fix for CVE-2018-5683
+    
+    # gpg: Signature made Thu 25 Jan 2018 09:33:23 GMT
+    # gpg:                using RSA key 0x4CB6D8EED3E87138
+    # gpg: Good signature from "Gerd Hoffmann (work) <kraxel@redhat.com>"
+    # gpg:                 aka "Gerd Hoffmann <gerd@kraxel.org>"
+    # gpg:                 aka "Gerd Hoffmann (private) <kraxel@gmail.com>"
+    # Primary key fingerprint: A032 8CFF B93A 17A7 9901  FE7D 4CB6 D8EE D3E8 7138
+    
+    * remotes/kraxel/tags/vga-20180125-pull-request:
+      vga: check the validation of memory addr when draw text
+    
+    Signed-off-by: Peter Maydell <peter.maydell@linaro.org>

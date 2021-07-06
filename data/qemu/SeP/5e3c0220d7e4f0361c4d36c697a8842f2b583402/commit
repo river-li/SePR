@@ -1,0 +1,16 @@
+commit 5e3c0220d7e4f0361c4d36c697a8842f2b583402
+Author: Li Qiang <liq3ea@gmail.com>
+Commit: Kevin Wolf <kwolf@redhat.com>
+
+    nvme: fix oob access issue(CVE-2018-16847)
+    
+    Currently, the nvme_cmb_ops mr doesn't check the addr and size.
+    This can lead an oob access issue. This is triggerable in the guest.
+    Add check to avoid this issue.
+    
+    Fixes CVE-2018-16847.
+    
+    Reported-by: Li Qiang <liq3ea@gmail.com>
+    Reviewed-by: Paolo Bonzini <pbonzini@redhat.com>
+    Signed-off-by: Li Qiang <liq3ea@gmail.com>
+    Signed-off-by: Kevin Wolf <kwolf@redhat.com>

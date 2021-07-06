@@ -1,0 +1,15 @@
+commit b85f9dfdb156ae2a2a52f39a36e9f1f270614cd2
+Author: Jan Beulich <JBeulich@suse.com>
+Commit: Stefano Stabellini <sstabellini@kernel.org>
+
+    xen: fix ioreq handling
+    
+    Avoid double fetches and bounds check size to avoid overflowing
+    internal variables.
+    
+    This is CVE-2016-9381 / XSA-197.
+    
+    Reported-by: yanghongke <yanghongke@huawei.com>
+    Signed-off-by: Jan Beulich <jbeulich@suse.com>
+    Reviewed-by: Stefano Stabellini <sstabellini@kernel.org>
+    Signed-off-by: Stefano Stabellini <sstabellini@kernel.org>

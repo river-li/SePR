@@ -1,0 +1,35 @@
+commit eea750a5623ddac7a61982eec8f1c93481857578
+Author: Michael S. Tsirkin <mst@redhat.com>
+Commit: Juan Quintela <quintela@redhat.com>
+
+    virtio-net: out-of-bounds buffer write on invalid state load
+    
+    CVE-2013-4150 QEMU 1.5.0 out-of-bounds buffer write in
+    virtio_net_load()@hw/net/virtio-net.c
+    
+    This code is in hw/net/virtio-net.c:
+    
+        if (n->max_queues > 1) {
+            if (n->max_queues != qemu_get_be16(f)) {
+                error_report("virtio-net: different max_queues ");
+                return -1;
+            }
+    
+            n->curr_queues = qemu_get_be16(f);
+            for (i = 1; i < n->curr_queues; i++) {
+                n->vqs[i].tx_waiting = qemu_get_be32(f);
+            }
+        }
+    
+    Number of vqs is max_queues, so if we get invalid input here,
+    for example if max_queues = 2, curr_queues = 3, we get
+    write beyond end of the buffer, with data that comes from
+    wire.
+    
+    This might be used to corrupt qemu memory in hard to predict ways.
+    Since we have lots of function pointers around, RCE might be possible.
+    
+    Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+    Acked-by: Jason Wang <jasowang@redhat.com>
+    Reviewed-by: Michael Roth <mdroth@linux.vnet.ibm.com>
+    Signed-off-by: Juan Quintela <quintela@redhat.com>

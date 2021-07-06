@@ -1,0 +1,11 @@
+commit 334c0241c006533d1f4ed7e07239ec00b46c6efd
+Author: Aurelien Jarno <aurelien@aurel32.net>
+Commit: Aurelien Jarno <aurelien@aurel32.net>
+
+    Add image format option for USB mass-storage devices
+    
+    (fix CVE-2008-1945)
+    
+    Signed-off-by: Aurelien Jarno <aurelien@aurel32.net>
+    
+    git-svn-id: svn://svn.savannah.nongnu.org/qemu/trunk@5059 c046a42c-6fe2-441c-8c8c-71466251a162

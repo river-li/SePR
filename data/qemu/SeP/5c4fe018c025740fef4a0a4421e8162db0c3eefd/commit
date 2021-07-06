@@ -1,0 +1,54 @@
+commit 5c4fe018c025740fef4a0a4421e8162db0c3eefd
+Author: Eric Blake <eblake@redhat.com>
+Commit: Eric Blake <eblake@redhat.com>
+
+    nbd/server: Avoid long error message assertions CVE-2020-10761
+    
+    Ever since commit 36683283 (v2.8), the server code asserts that error
+    strings sent to the client are well-formed per the protocol by not
+    exceeding the maximum string length of 4096.  At the time the server
+    first started sending error messages, the assertion could not be
+    triggered, because messages were completely under our control.
+    However, over the years, we have added latent scenarios where a client
+    could trigger the server to attempt an error message that would
+    include the client's information if it passed other checks first:
+    
+    - requesting NBD_OPT_INFO/GO on an export name that is not present
+      (commit 0cfae925 in v2.12 echoes the name)
+    
+    - requesting NBD_OPT_LIST/SET_META_CONTEXT on an export name that is
+      not present (commit e7b1948d in v2.12 echoes the name)
+    
+    At the time, those were still safe because we flagged names larger
+    than 256 bytes with a different message; but that changed in commit
+    93676c88 (v4.2) when we raised the name limit to 4096 to match the NBD
+    string limit.  (That commit also failed to change the magic number
+    4096 in nbd_negotiate_send_rep_err to the just-introduced named
+    constant.)  So with that commit, long client names appended to server
+    text can now trigger the assertion, and thus be used as a denial of
+    service attack against a server.  As a mitigating factor, if the
+    server requires TLS, the client cannot trigger the problematic paths
+    unless it first supplies TLS credentials, and such trusted clients are
+    less likely to try to intentionally crash the server.
+    
+    We may later want to further sanitize the user-supplied strings we
+    place into our error messages, such as scrubbing out control
+    characters, but that is less important to the CVE fix, so it can be a
+    later patch to the new nbd_sanitize_name.
+    
+    Consideration was given to changing the assertion in
+    nbd_negotiate_send_rep_verr to instead merely log a server error and
+    truncate the message, to avoid leaving a latent path that could
+    trigger a future CVE DoS on any new error message.  However, this
+    merely complicates the code for something that is already (correctly)
+    flagging coding errors, and now that we are aware of the long message
+    pitfall, we are less likely to introduce such errors in the future,
+    which would make such error handling dead code.
+    
+    Reported-by: Xueqiang Wei <xuwei@redhat.com>
+    CC: qemu-stable@nongnu.org
+    Fixes: https://bugzilla.redhat.com/1843684 CVE-2020-10761
+    Fixes: 93676c88d7
+    Signed-off-by: Eric Blake <eblake@redhat.com>
+    Message-Id: <20200610163741.3745251-2-eblake@redhat.com>
+    Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>

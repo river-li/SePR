@@ -1,0 +1,47 @@
+commit 6897541d902218b31eef2e8eabc74fa56618f9b3
+Merge: 1c47613588 66502bbca3
+Author: Peter Maydell <peter.maydell@linaro.org>
+Commit: Peter Maydell <peter.maydell@linaro.org>
+
+    Merge remote-tracking branch 'remotes/dgilbert-gitlab/tags/pull-virtiofs-20200501' into staging
+    
+    virtiofsd: Pull 2020-05-01 (includes CVE fix)
+    
+    This set includes a security fix, other fixes and improvements.
+    
+    Security fix:
+    The security fix is for CVE-2020-10717 where, on low RAM hosts,
+    the guest can potentially exceed the maximum fd limit.
+    This fix adds some more configuration so that the user
+    can explicitly set the limit.
+    
+    Fixes:
+    
+    Recursive mounting of the exported directory is now used in
+    the sandbox, such that if there was a mount underneath present at
+    the time the virtiofsd was started, that mount is also
+    visible to the guest; in the existing code, only mounts that
+    happened after startup were visible.
+    
+    Security improvements:
+    
+    The jailing for /proc/self/fd is improved - but it's something
+    that shouldn't be accessible anyway.
+    
+    Most capabilities are now dropped at startup; again this shouldn't
+    change any behaviour but is extra protection.
+    
+    # gpg: Signature made Fri 01 May 2020 20:06:46 BST
+    # gpg:                using RSA key 45F5C71B4A0CB7FB977A9FA90516331EBC5BFDE7
+    # gpg: Good signature from "Dr. David Alan Gilbert (RH2) <dgilbert@redhat.com>" [full]
+    # Primary key fingerprint: 45F5 C71B 4A0C B7FB 977A  9FA9 0516 331E BC5B FDE7
+    
+    * remotes/dgilbert-gitlab/tags/pull-virtiofs-20200501:
+      virtiofsd: drop all capabilities in the wait parent process
+      virtiofsd: only retain file system capabilities
+      virtiofsd: Show submounts
+      virtiofsd: jail lo->proc_self_fd
+      virtiofsd: stay below fs.file-max sysctl value (CVE-2020-10717)
+      virtiofsd: add --rlimit-nofile=NUM option
+    
+    Signed-off-by: Peter Maydell <peter.maydell@linaro.org>

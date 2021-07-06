@@ -1,0 +1,22 @@
+commit 53db932604dfa7bb9241d132e0173894cf54261c
+Merge: 975eb6a547 fd3c136b3e
+Author: Peter Maydell <peter.maydell@linaro.org>
+Commit: Peter Maydell <peter.maydell@linaro.org>
+
+    Merge remote-tracking branch 'remotes/kraxel/tags/pull-vga-20160509-1' into staging
+    
+    vga security fixes (CVE-2016-3710, CVE-2016-3712)
+    
+    # gpg: Signature made Mon 09 May 2016 13:39:30 BST using RSA key ID D3E87138
+    # gpg: Good signature from "Gerd Hoffmann (work) <kraxel@redhat.com>"
+    # gpg:                 aka "Gerd Hoffmann <gerd@kraxel.org>"
+    # gpg:                 aka "Gerd Hoffmann (private) <kraxel@gmail.com>"
+    
+    * remotes/kraxel/tags/pull-vga-20160509-1:
+      vga: make sure vga register setup for vbe stays intact (CVE-2016-3712).
+      vga: update vga register setup on vbe changes
+      vga: factor out vga register setup
+      vga: add vbe_enabled() helper
+      vga: fix banked access bounds checking (CVE-2016-3710)
+    
+    Signed-off-by: Peter Maydell <peter.maydell@linaro.org>

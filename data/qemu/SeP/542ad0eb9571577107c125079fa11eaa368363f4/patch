@@ -1,0 +1,45 @@
+diff --git a/docs/qemu-cpu-models.texi b/docs/qemu-cpu-models.texi
+index 23c11dc86f..ad040cfc98 100644
+--- a/docs/qemu-cpu-models.texi
++++ b/docs/qemu-cpu-models.texi
+@@ -200,6 +200,18 @@ Not included by default in any Intel CPU model.
+ Should be explicitly turned on for all Intel CPU models.
+ 
+ Note that not all CPU hardware will support this feature.
++
++@item @code{md-clear}
++
++Required to confirm the MDS (CVE-2018-12126, CVE-2018-12127, CVE-2018-12130,
++CVE-2019-11091) fixes.
++
++Not included by default in any Intel CPU model.
++
++Must be explicitly turned on for all Intel CPU models.
++
++Requires the host CPU microcode to support this feature before it
++can be used for guest CPUs.
+ @end table
+ 
+ 
+diff --git a/target/i386/cpu.c b/target/i386/cpu.c
+index 2df56fa977..2f151dad8c 100644
+--- a/target/i386/cpu.c
++++ b/target/i386/cpu.c
+@@ -1077,7 +1077,7 @@ static FeatureWordInfo feature_word_info[FEATURE_WORDS] = {
+         .feat_names = {
+             NULL, NULL, "avx512-4vnniw", "avx512-4fmaps",
+             NULL, NULL, NULL, NULL,
+-            NULL, NULL, NULL, NULL,
++            NULL, NULL, "md-clear", NULL,
+             NULL, NULL, NULL, NULL,
+             NULL, NULL, NULL, NULL,
+             NULL, NULL, NULL, NULL,
+@@ -1184,7 +1184,7 @@ static FeatureWordInfo feature_word_info[FEATURE_WORDS] = {
+         .type = MSR_FEATURE_WORD,
+         .feat_names = {
+             "rdctl-no", "ibrs-all", "rsba", "skip-l1dfl-vmentry",
+-            "ssb-no", NULL, NULL, NULL,
++            "ssb-no", "mds-no", NULL, NULL,
+             NULL, NULL, NULL, NULL,
+             NULL, NULL, NULL, NULL,
+             NULL, NULL, NULL, NULL,

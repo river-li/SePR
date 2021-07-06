@@ -1,0 +1,36 @@
+commit 7a95434e0ca8a037fd8aa1a2e2461f92585eb77b
+Author: Greg Kurz <groug@kaod.org>
+Commit: Greg Kurz <groug@kaod.org>
+
+    9pfs: local: forbid client access to metadata (CVE-2017-7493)
+    
+    When using the mapped-file security mode, we shouldn't let the client mess
+    with the metadata. The current code already tries to hide the metadata dir
+    from the client by skipping it in local_readdir(). But the client can still
+    access or modify it through several other operations. This can be used to
+    escalate privileges in the guest.
+    
+    Affected backend operations are:
+    - local_mknod()
+    - local_mkdir()
+    - local_open2()
+    - local_symlink()
+    - local_link()
+    - local_unlinkat()
+    - local_renameat()
+    - local_rename()
+    - local_name_to_path()
+    
+    Other operations are safe because they are only passed a fid path, which
+    is computed internally in local_name_to_path().
+    
+    This patch converts all the functions listed above to fail and return
+    EINVAL when being passed the name of the metadata dir. This may look
+    like a poor choice for errno, but there's no such thing as an illegal
+    path name on Linux and I could not think of anything better.
+    
+    This fixes CVE-2017-7493.
+    
+    Reported-by: Leo Gaspard <leo@gaspard.io>
+    Signed-off-by: Greg Kurz <groug@kaod.org>
+    Reviewed-by: Eric Blake <eblake@redhat.com>

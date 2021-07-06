@@ -1,0 +1,18 @@
+diff --git a/MAINTAINERS b/MAINTAINERS
+index b287ef8939..3f1ad121df 100644
+--- a/MAINTAINERS
++++ b/MAINTAINERS
+@@ -52,6 +52,13 @@ General Project Administration
+ ------------------------------
+ M: Anthony Liguori <aliguori@amazon.com>
+ 
++Responsible Disclosure, Reporting Security Issues
++------------------------------
++W: http://wiki.qemu.org/SecurityProcess
++M: Michael S. Tsirkin <mst@redhat.com>
++M: Anthony Liguori <aliguori@amazon.com>
++L: secalert@redhat.com
++
+ Guest CPU cores (TCG):
+ ----------------------
+ Alpha

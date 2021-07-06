@@ -1,0 +1,39 @@
+commit 4f24430821c568936aeda417bbb00e989a9e1984
+Author: Daniel P. Berrangé <berrange@redhat.com>
+Commit: Daniel P. Berrangé <berrange@redhat.com>
+
+    doc: document that the monitor console is a privileged control interface
+    
+    A supposed exploit of QEMU was recently announced as CVE-2019-12928
+    claiming that the monitor console was insecure because the "migrate"
+    command enabled arbitrary command execution for a remote attacker.
+    
+    To be a security risk the user launching QEMU must have configured
+    the monitor in a way that allows for other users to access it. The
+    exploit report quoted use of the "tcp" character device backend for
+    QMP.
+    
+    This would indeed allow any network user to connect to QEMU and
+    execute arbitrary commands, however, this is not a flaw in QEMU.
+    It is the normal expected behaviour of the monitor console and the
+    commands it supports. Given a monitor connection, there are many
+    ways to access host file system content besides the migrate command.
+    
+    The reality is that the monitor console (whether QMP or HMP) is
+    considered a privileged interface to QEMU and as such must only
+    be made available to trusted users. IOW, making it available with
+    no authentication over TCP is simply a, very serious, user
+    configuration error not a security flaw in QEMU itself.
+    
+    The one thing this bogus security report highlights though is that
+    we have not clearly documented the security implications around the
+    use of the monitor. Add a few paragraphs of text to the security
+    docs explaining why the monitor is a privileged interface and making
+    a recommendation to only use the UNIX socket character device backend.
+    
+    Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>
+    Reviewed-by: Alex Bennée <alex.bennee@linaro.org>
+    Reviewed-by: Markus Armbruster <armbru@redhat.com>
+    Reviewed-by: Prasad J Pandit <pjp@fedoraproject.org>
+    Reviewed-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+    Signed-off-by: Daniel P. Berrangé <berrange@redhat.com>

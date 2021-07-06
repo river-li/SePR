@@ -1,0 +1,6 @@
+commit aa29141d84d58171c2d219f0a4b599bd76fb2e37
+Merge: 6093d3d4ec 505597e447
+Author: Anthony Liguori <anthony@codemonkey.ws>
+Commit: Anthony Liguori <anthony@codemonkey.ws>
+
+    Merge remote-tracking branch 'kraxel/CVE-2011-1751' into staging

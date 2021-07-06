@@ -1,0 +1,15 @@
+commit 46485de0cb357b57373e1ca895adedf1f3ed46ec
+Author: Kevin Wolf <kwolf@redhat.com>
+Commit: Kevin Wolf <kwolf@redhat.com>
+
+    qcow1: Validate image size (CVE-2014-0223)
+    
+    A huge image size could cause s->l1_size to overflow. Make sure that
+    images never require a L1 table larger than what fits in s->l1_size.
+    
+    This cannot only cause unbounded allocations, but also the allocation of
+    a too small L1 table, resulting in out-of-bounds array accesses (both
+    reads and writes).
+    
+    Cc: qemu-stable@nongnu.org
+    Signed-off-by: Kevin Wolf <kwolf@redhat.com>

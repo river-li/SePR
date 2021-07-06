@@ -1,0 +1,43 @@
+commit afd9096eb1882f23929f5b5c177898ed231bac66
+Author: Stefan Hajnoczi <stefanha@redhat.com>
+Commit: Stefan Hajnoczi <stefanha@redhat.com>
+
+    virtio: error out if guest exceeds virtqueue size
+    
+    A broken or malicious guest can submit more requests than the virtqueue
+    size permits, causing unbounded memory allocation in QEMU.
+    
+    The guest can submit requests without bothering to wait for completion
+    and is therefore not bound by virtqueue size.  This requires reusing
+    vring descriptors in more than one request, which is not allowed by the
+    VIRTIO 1.0 specification.
+    
+    In "3.2.1 Supplying Buffers to The Device", the VIRTIO 1.0 specification
+    says:
+    
+      1. The driver places the buffer into free descriptor(s) in the
+         descriptor table, chaining as necessary
+    
+    and
+    
+      Note that the above code does not take precautions against the
+      available ring buffer wrapping around: this is not possible since the
+      ring buffer is the same size as the descriptor table, so step (1) will
+      prevent such a condition.
+    
+    This implies that placing more buffers into the virtqueue than the
+    descriptor table size is not allowed.
+    
+    QEMU is missing the check to prevent this case.  Processing a request
+    allocates a VirtQueueElement leading to unbounded memory allocation
+    controlled by the guest.
+    
+    Exit with an error if the guest provides more requests than the
+    virtqueue size permits.  This bounds memory allocation and makes the
+    buggy guest visible to the user.
+    
+    This patch fixes CVE-2016-5403 and was reported by Zhenhao Hong from 360
+    Marvel Team, China.
+    
+    Reported-by: Zhenhao Hong <hongzhenhao@360.cn>
+    Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>

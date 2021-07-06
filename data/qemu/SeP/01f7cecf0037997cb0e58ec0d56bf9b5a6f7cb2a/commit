@@ -1,0 +1,23 @@
+commit 01f7cecf0037997cb0e58ec0d56bf9b5a6f7cb2a
+Author: Petr Matousek <pmatouse@redhat.com>
+Commit: Peter Maydell <peter.maydell@linaro.org>
+
+    slirp: udp: fix NULL pointer dereference because of uninitialized socket
+    
+    When guest sends udp packet with source port and source addr 0,
+    uninitialized socket is picked up when looking for matching and already
+    created udp sockets, and later passed to sosendto() where NULL pointer
+    dereference is hit during so->slirp->vnetwork_mask.s_addr access.
+    
+    Fix this by checking that the socket is not just a socket stub.
+    
+    This is CVE-2014-3640.
+    
+    Signed-off-by: Petr Matousek <pmatouse@redhat.com>
+    Reported-by: Xavier Mehrenberger <xavier.mehrenberger@airbus.com>
+    Reported-by: Stephane Duverger <stephane.duverger@eads.net>
+    Reviewed-by: Jan Kiszka <jan.kiszka@siemens.com>
+    Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+    Reviewed-by: Michael Tokarev <mjt@tls.msk.ru>
+    Message-id: 20140918063537.GX9321@dhcp-25-225.brq.redhat.com
+    Signed-off-by: Peter Maydell <peter.maydell@linaro.org>

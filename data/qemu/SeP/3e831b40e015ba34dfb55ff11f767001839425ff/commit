@@ -1,0 +1,18 @@
+commit 3e831b40e015ba34dfb55ff11f767001839425ff
+Author: Prasad J Pandit <pjp@fedoraproject.org>
+Commit: Paolo Bonzini <pbonzini@redhat.com>
+
+    scsi: pvscsi: check command descriptor ring buffer size (CVE-2016-4952)
+    
+    Vmware Paravirtual SCSI emulation uses command descriptors to
+    process SCSI commands. These descriptors come with their ring
+    buffers. A guest could set the ring buffer size to an arbitrary
+    value leading to OOB access issue. Add check to avoid it.
+    
+    Reported-by: Li Qiang <liqiang6-s@360.cn>
+    Signed-off-by: Prasad J Pandit <pjp@fedoraproject.org>
+    Cc: qemu-stable@nongnu.org
+    Message-Id: <1464000485-27041-1-git-send-email-ppandit@redhat.com>
+    Reviewed-by: Shmulik Ladkani <shmulik.ladkani@ravellosystems.com>
+    Reviewed-by: Dmitry Fleytman <dmitry@daynix.com>
+    Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>

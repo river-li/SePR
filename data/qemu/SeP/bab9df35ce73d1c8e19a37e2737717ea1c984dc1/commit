@@ -1,0 +1,23 @@
+commit bab9df35ce73d1c8e19a37e2737717ea1c984dc1
+Author: Gerd Hoffmann <kraxel@redhat.com>
+Commit: Gerd Hoffmann <kraxel@redhat.com>
+
+    usb-mtp: use O_NOFOLLOW and O_CLOEXEC.
+    
+    Open files and directories with O_NOFOLLOW to avoid symlinks attacks.
+    While being at it also add O_CLOEXEC.
+    
+    usb-mtp only handles regular files and directories and ignores
+    everything else, so users should not see a difference.
+    
+    Because qemu ignores symlinks, carrying out a successful symlink attack
+    requires swapping an existing file or directory below rootdir for a
+    symlink and winning the race against the inotify notification to qemu.
+    
+    Fixes: CVE-2018-16872
+    Cc: Prasad J Pandit <ppandit@redhat.com>
+    Cc: Bandan Das <bsd@redhat.com>
+    Reported-by: Michael Hanselmann <public@hansmi.ch>
+    Signed-off-by: Gerd Hoffmann <kraxel@redhat.com>
+    Reviewed-by: Michael Hanselmann <public@hansmi.ch>
+    Message-id: 20181213122511.13853-1-kraxel@redhat.com

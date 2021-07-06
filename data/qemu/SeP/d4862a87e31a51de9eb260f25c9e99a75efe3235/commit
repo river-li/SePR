@@ -1,0 +1,20 @@
+commit d4862a87e31a51de9eb260f25c9e99a75efe3235
+Author: Petr Matousek <pmatouse@redhat.com>
+Commit: Paolo Bonzini <pbonzini@redhat.com>
+
+    i8254: fix out-of-bounds memory access in pit_ioport_read()
+    
+    Due converting PIO to the new memory read/write api we no longer provide
+    separate I/O region lenghts for read and write operations. As a result,
+    reading from PIT Mode/Command register will end with accessing
+    pit->channels with invalid index.
+    
+    Fix this by ignoring read from the Mode/Command register.
+    
+    This is CVE-2015-3214.
+    
+    Reported-by: Matt Tait <matttait@google.com>
+    Fixes: 0505bcdec8228d8de39ab1a02644e71999e7c052
+    Cc: qemu-stable@nongnu.org
+    Signed-off-by: Petr Matousek <pmatouse@redhat.com>
+    Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>

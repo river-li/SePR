@@ -1,0 +1,15 @@
+commit 11b128f4062dd7f89b14abc8877ff20d41b28be9
+Author: Kevin Wolf <kwolf@redhat.com>
+Commit: Stefan Hajnoczi <stefanha@redhat.com>
+
+    qcow2: Fix NULL dereference in qcow2_open() error path (CVE-2014-0146)
+    
+    The qcow2 code assumes that s->snapshots is non-NULL if s->nb_snapshots
+    != 0. By having the initialisation of both fields separated in
+    qcow2_open(), any error occuring in between would cause the error path
+    to dereference NULL in qcow2_free_snapshots() if the image had any
+    snapshots.
+    
+    Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+    Reviewed-by: Max Reitz <mreitz@redhat.com>
+    Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>

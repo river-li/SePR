@@ -1,0 +1,15 @@
+commit 737d2b3c41d59eb8f94ab7eb419b957938f24943
+Author: Prasad J Pandit <pjp@fedoraproject.org>
+Commit: Stefan Hajnoczi <stefanha@redhat.com>
+
+    net: avoid infinite loop when receiving packets(CVE-2015-5278)
+    
+    Ne2000 NIC uses ring buffer of NE2000_MEM_SIZE(49152)
+    bytes to process network packets. While receiving packets
+    via ne2000_receive() routine, a local 'index' variable
+    could exceed the ring buffer size, leading to an infinite
+    loop situation.
+    
+    Reported-by: Qinghao Tang <luodalongde@gmail.com>
+    Signed-off-by: P J P <pjp@fedoraproject.org>
+    Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>

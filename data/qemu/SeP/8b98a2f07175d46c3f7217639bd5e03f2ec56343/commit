@@ -1,0 +1,14 @@
+commit 8b98a2f07175d46c3f7217639bd5e03f2ec56343
+Author: Jason Wang <jasowang@redhat.com>
+Commit: Jason Wang <jasowang@redhat.com>
+
+    pcnet: fix rx buffer overflow(CVE-2015-7512)
+    
+    Backends could provide a packet whose length is greater than buffer
+    size. Check for this and truncate the packet to avoid rx buffer
+    overflow in this case.
+    
+    Cc: Prasad J Pandit <pjp@fedoraproject.org>
+    Cc: qemu-stable@nongnu.org
+    Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+    Signed-off-by: Jason Wang <jasowang@redhat.com>

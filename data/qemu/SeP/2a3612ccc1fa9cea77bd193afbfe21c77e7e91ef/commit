@@ -1,0 +1,23 @@
+commit 2a3612ccc1fa9cea77bd193afbfe21c77e7e91ef
+Merge: bd80b5963f 8357946b15
+Author: Peter Maydell <peter.maydell@linaro.org>
+Commit: Peter Maydell <peter.maydell@linaro.org>
+
+    Merge remote-tracking branch 'remotes/stefanha/tags/rtl8139-cplus-tx-input-validation-pull-request' into staging
+    
+    Pull request
+    
+    # gpg: Signature made Mon Aug  3 13:08:25 2015 BST using RSA key ID 81AB73C8
+    # gpg: Good signature from "Stefan Hajnoczi <stefanha@redhat.com>"
+    # gpg:                 aka "Stefan Hajnoczi <stefanha@gmail.com>"
+    
+    * remotes/stefanha/tags/rtl8139-cplus-tx-input-validation-pull-request:
+      rtl8139: check TCP Data Offset field (CVE-2015-5165)
+      rtl8139: skip offload on short TCP header (CVE-2015-5165)
+      rtl8139: check IP Total Length field (CVE-2015-5165)
+      rtl8139: check IP Header Length field (CVE-2015-5165)
+      rtl8139: skip offload on short Ethernet/IP header (CVE-2015-5165)
+      rtl8139: drop tautologous if (ip) {...} statement (CVE-2015-5165)
+      rtl8139: avoid nested ifs in IP header parsing (CVE-2015-5165)
+    
+    Signed-off-by: Peter Maydell <peter.maydell@linaro.org>

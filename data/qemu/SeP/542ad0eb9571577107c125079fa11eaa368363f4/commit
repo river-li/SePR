@@ -1,0 +1,24 @@
+commit 542ad0eb9571577107c125079fa11eaa368363f4
+Merge: a4f667b671 20140a82c6
+Author: Peter Maydell <peter.maydell@linaro.org>
+Commit: Peter Maydell <peter.maydell@linaro.org>
+
+    Merge remote-tracking branch 'remotes/ehabkost/tags/x86-next-pull-request' into staging
+    
+    x86 MDS feature flags
+    
+    md-clear and mds-no feature flags, for detection and mitigation
+    of MDS vulnerabilities (CVE-2018-12126, CVE-2018-12127,
+    CVE-2018-12130, CVE-2019-11091).
+    
+    # gpg: Signature made Tue 21 May 2019 19:42:43 BST
+    # gpg:                using RSA key 2807936F984DC5A6
+    # gpg: Good signature from "Eduardo Habkost <ehabkost@redhat.com>" [full]
+    # Primary key fingerprint: 5A32 2FD5 ABC4 D3DB ACCF  D1AA 2807 936F 984D C5A6
+    
+    * remotes/ehabkost/tags/x86-next-pull-request:
+      target/i386: add MDS-NO feature
+      docs: recommend use of md-clear feature on all Intel CPUs
+      target/i386: define md-clear bit
+    
+    Signed-off-by: Peter Maydell <peter.maydell@linaro.org>

@@ -1,0 +1,24 @@
+commit 9f7c594c006289ad41169b854d70f5da6e400a2a
+Author: Petr Matousek <pmatouse@redhat.com>
+Commit: Stefan Hajnoczi <stefanha@redhat.com>
+
+    pcnet: force the buffer access to be in bounds during tx
+    
+    4096 is the maximum length per TMD and it is also currently the size of
+    the relay buffer pcnet driver uses for sending the packet data to QEMU
+    for further processing. With packet spanning multiple TMDs it can
+    happen that the overall packet size will be bigger than sizeof(buffer),
+    which results in memory corruption.
+    
+    Fix this by only allowing to queue maximum sizeof(buffer) bytes.
+    
+    This is CVE-2015-3209.
+    
+    [Fixed 3-space indentation to QEMU's 4-space coding standard.
+    --Stefan]
+    
+    Signed-off-by: Petr Matousek <pmatouse@redhat.com>
+    Reported-by: Matt Tait <matttait@google.com>
+    Reviewed-by: Peter Maydell <peter.maydell@linaro.org>
+    Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>
+    Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>

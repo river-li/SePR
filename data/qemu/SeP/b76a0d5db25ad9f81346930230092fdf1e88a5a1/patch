@@ -1,0 +1,71 @@
+diff --git a/hw/net/e1000.c b/hw/net/e1000.c
+index 5c6bcd0014..09c9e9d53b 100644
+--- a/hw/net/e1000.c
++++ b/hw/net/e1000.c
+@@ -740,7 +740,8 @@ process_tx_desc(E1000State *s, struct e1000_tx_desc *dp)
+                 memmove(tp->data, tp->header, tp->hdr_len);
+                 tp->size = tp->hdr_len;
+             }
+-        } while (split_size -= bytes);
++            split_size -= bytes;
++        } while (bytes && split_size);
+     } else if (!tp->tse && tp->cptse) {
+         // context descriptor TSE is not set, while data descriptor TSE is set
+         DBGOUT(TXERR, "TCP segmentation error\n");
+diff --git a/hw/net/ne2000.c b/hw/net/ne2000.c
+index 53c704ad41..010f9efccd 100644
+--- a/hw/net/ne2000.c
++++ b/hw/net/ne2000.c
+@@ -221,6 +221,9 @@ ssize_t ne2000_receive(NetClientState *nc, const uint8_t *buf, size_t size_)
+     }
+ 
+     index = s->curpag << 8;
++    if (index >= NE2000_PMEM_END) {
++        index = s->start;
++    }
+     /* 4 bytes for header */
+     total_len = size + 4;
+     /* address for next packet (4 bytes for CRC) */
+@@ -244,7 +247,7 @@ ssize_t ne2000_receive(NetClientState *nc, const uint8_t *buf, size_t size_)
+         if (index <= s->stop)
+             avail = s->stop - index;
+         else
+-            avail = 0;
++            break;
+         len = size;
+         if (len > avail)
+             len = avail;
+@@ -306,13 +309,19 @@ static void ne2000_ioport_write(void *opaque, uint32_t addr, uint32_t val)
+         offset = addr | (page << 4);
+         switch(offset) {
+         case EN0_STARTPG:
+-            s->start = val << 8;
++            if (val << 8 <= NE2000_PMEM_END) {
++                s->start = val << 8;
++            }
+             break;
+         case EN0_STOPPG:
+-            s->stop = val << 8;
++            if (val << 8 <= NE2000_PMEM_END) {
++                s->stop = val << 8;
++            }
+             break;
+         case EN0_BOUNDARY:
+-            s->boundary = val;
++            if (val << 8 < NE2000_PMEM_END) {
++                s->boundary = val;
++            }
+             break;
+         case EN0_IMR:
+             s->imr = val;
+@@ -353,7 +362,9 @@ static void ne2000_ioport_write(void *opaque, uint32_t addr, uint32_t val)
+             s->phys[offset - EN1_PHYS] = val;
+             break;
+         case EN1_CURPAG:
+-            s->curpag = val;
++            if (val << 8 < NE2000_PMEM_END) {
++                s->curpag = val;
++            }
+             break;
+         case EN1_MULT ... EN1_MULT + 7:
+             s->mult[offset - EN1_MULT] = val;

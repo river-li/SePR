@@ -1,0 +1,25 @@
+diff --git a/block/vpc.c b/block/vpc.c
+index ba82d4869b..2e25f57230 100644
+--- a/block/vpc.c
++++ b/block/vpc.c
+@@ -245,6 +245,11 @@ static int vpc_open(BlockDriverState *bs, QDict *options, int flags,
+         }
+ 
+         s->block_size = be32_to_cpu(dyndisk_header->block_size);
++        if (!is_power_of_2(s->block_size) || s->block_size < BDRV_SECTOR_SIZE) {
++            error_setg(errp, "Invalid block size %" PRIu32, s->block_size);
++            ret = -EINVAL;
++            goto fail;
++        }
+         s->bitmap_size = ((s->block_size / (8 * 512)) + 511) & ~511;
+ 
+         s->max_table_entries = be32_to_cpu(dyndisk_header->max_table_entries);
+diff --git a/tests/qemu-iotests/group b/tests/qemu-iotests/group
+index ecba432057..9c99edc449 100644
+--- a/tests/qemu-iotests/group
++++ b/tests/qemu-iotests/group
+@@ -91,3 +91,4 @@
+ 085 rw auto
+ 086 rw auto quick
+ 087 rw auto
++088 rw auto

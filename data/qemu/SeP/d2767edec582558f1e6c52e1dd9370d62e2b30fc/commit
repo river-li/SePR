@@ -1,0 +1,17 @@
+commit d2767edec582558f1e6c52e1dd9370d62e2b30fc
+Author: Greg Kurz <groug@kaod.org>
+Commit: Greg Kurz <groug@kaod.org>
+
+    9pfs: local: rename: use renameat
+    
+    The local_rename() callback is vulnerable to symlink attacks because it
+    uses rename() which follows symbolic links in all path elements but the
+    rightmost one.
+    
+    This patch simply transforms local_rename() into a wrapper around
+    local_renameat() which is symlink-attack safe.
+    
+    This partly fixes CVE-2016-9602.
+    
+    Signed-off-by: Greg Kurz <groug@kaod.org>
+    Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>

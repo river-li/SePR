@@ -1,0 +1,21 @@
+commit bec1e9546e03b9e7f5152cf3e8c95cf8acff5e12
+Author: Greg Kurz <groug@kaod.org>
+Commit: Greg Kurz <groug@kaod.org>
+
+    9pfs: local: readlink: don't follow symlinks
+    
+    The local_readlink() callback is vulnerable to symlink attacks because it
+    calls:
+    
+    (1) open(O_NOFOLLOW) which follows symbolic links for all path elements but
+        the rightmost one
+    (2) readlink() which follows symbolic links for all path elements but the
+        rightmost one
+    
+    This patch converts local_readlink() to rely on open_nofollow() to fix (1)
+    and opendir_nofollow(), readlinkat() to fix (2).
+    
+    This partly fixes CVE-2016-9602.
+    
+    Signed-off-by: Greg Kurz <groug@kaod.org>
+    Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>

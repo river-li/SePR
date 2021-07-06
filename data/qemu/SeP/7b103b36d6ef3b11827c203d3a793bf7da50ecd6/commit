@@ -1,0 +1,18 @@
+commit 7b103b36d6ef3b11827c203d3a793bf7da50ecd6
+Author: Stefan Hajnoczi <stefanha@redhat.com>
+Commit: Stefan Hajnoczi <stefanha@redhat.com>
+
+    block/cloop: refuse images with huge offsets arrays (CVE-2014-0144)
+    
+    Limit offsets_size to 512 MB so that:
+    
+    1. g_malloc() does not abort due to an unreasonable size argument.
+    
+    2. offsets_size does not overflow the bdrv_pread() int size argument.
+    
+    This limit imposes a maximum image size of 16 TB at 256 KB block size.
+    
+    Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>
+    Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+    Reviewed-by: Max Reitz <mreitz@redhat.com>
+    Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>

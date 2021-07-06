@@ -1,0 +1,14 @@
+commit e3737b820b45e54b059656dc3f914f895ac7a88b
+Author: Kevin Wolf <kwolf@redhat.com>
+Commit: Stefan Hajnoczi <stefanha@redhat.com>
+
+    bochs: Check catalog_size header field (CVE-2014-0143)
+    
+    It should neither become negative nor allow unbounded memory
+    allocations. This fixes aborts in g_malloc() and an s->catalog_bitmap
+    buffer overflow on big endian hosts.
+    
+    Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+    Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>
+    Reviewed-by: Max Reitz <mreitz@redhat.com>
+    Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>

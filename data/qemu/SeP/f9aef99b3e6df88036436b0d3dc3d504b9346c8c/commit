@@ -1,0 +1,29 @@
+commit f9aef99b3e6df88036436b0d3dc3d504b9346c8c
+Author: Greg Kurz <groug@kaod.org>
+Commit: Greg Kurz <groug@kaod.org>
+
+    9pfs: local: lstat: don't follow symlinks
+    
+    The local_lstat() callback is vulnerable to symlink attacks because it
+    calls:
+    
+    (1) lstat() which follows symbolic links in all path elements but the
+        rightmost one
+    (2) getxattr() which follows symbolic links in all path elements
+    (3) local_mapped_file_attr()->local_fopen()->openat(O_NOFOLLOW) which
+        follows symbolic links in all path elements but the rightmost
+        one
+    
+    This patch converts local_lstat() to rely on opendir_nofollow() and
+    fstatat(AT_SYMLINK_NOFOLLOW) to fix (1), fgetxattrat_nofollow() to
+    fix (2).
+    
+    A new local_fopenat() helper is introduced as a replacement to
+    local_fopen() to fix (3). No effort is made to factor out code
+    because local_fopen() will be dropped when all users have been
+    converted to call local_fopenat().
+    
+    This partly fixes CVE-2016-9602.
+    
+    Signed-off-by: Greg Kurz <groug@kaod.org>
+    Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>

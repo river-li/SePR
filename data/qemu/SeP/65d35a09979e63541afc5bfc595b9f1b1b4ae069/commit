@@ -1,0 +1,15 @@
+commit 65d35a09979e63541afc5bfc595b9f1b1b4ae069
+Author: Aurelien Jarno <aurelien@aurel32.net>
+Commit: Aurelien Jarno <aurelien@aurel32.net>
+
+    CVE-2008-4539: fix a heap overflow in Cirrus emulation
+    
+    The code in hw/cirrus_vga.c has changed a lot between CVE-2007-1320 has
+    been announced and the patch has been applied. As a consequence it has
+    wrongly applied and QEMU is still vulnerable to this bug if using VNC.
+    
+    (noticed by Jan Niehusmann)
+    
+    Signed-off-by: Aurelien Jarno <aurelien@aurel32.net>
+    
+    git-svn-id: svn://svn.savannah.nongnu.org/qemu/trunk@5587 c046a42c-6fe2-441c-8c8c-71466251a162

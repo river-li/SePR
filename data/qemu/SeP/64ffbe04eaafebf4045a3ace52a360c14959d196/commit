@@ -1,0 +1,21 @@
+commit 64ffbe04eaafebf4045a3ace52a360c14959d196
+Author: Wolfgang Bumiller <w.bumiller@proxmox.com>
+Commit: Markus Armbruster <armbru@redhat.com>
+
+    hmp: fix sendkey out of bounds write (CVE-2015-8619)
+    
+    When processing 'sendkey' command, hmp_sendkey routine null
+    terminates the 'keyname_buf' array. This results in an OOB
+    write issue, if 'keyname_len' was to fall outside of
+    'keyname_buf' array.
+    
+    Since the keyname's length is known the keyname_buf can be
+    removed altogether by adding a length parameter to
+    index_from_key() and using it for the error output as well.
+    
+    Reported-by: Ling Liu <liuling-it@360.cn>
+    Signed-off-by: Wolfgang Bumiller <w.bumiller@proxmox.com>
+    Message-Id: <20160113080958.GA18934@olga>
+    [Comparison with "<" dumbed down, test for junk after strtoul()
+    tweaked]
+    Signed-off-by: Markus Armbruster <armbru@redhat.com>

@@ -1,0 +1,19 @@
+commit ae2158ad6ce0845b2fae2a22aa7f19c0d7a71ce5
+Author: Michael S. Tsirkin <mst@redhat.com>
+Commit: Juan Quintela <quintela@redhat.com>
+
+    ahci: fix buffer overrun on invalid state load
+    
+    CVE-2013-4526
+    
+    Within hw/ide/ahci.c, VARRAY refers to ports which is also loaded.  So
+    we use the old version of ports to read the array but then allow any
+    value for ports.  This can cause the code to overflow.
+    
+    There's no reason to migrate ports - it never changes.
+    So just make sure it matches.
+    
+    Reported-by: Anthony Liguori <anthony@codemonkey.ws>
+    Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+    Reviewed-by: Peter Maydell <peter.maydell@linaro.org>
+    Signed-off-by: Juan Quintela <quintela@redhat.com>

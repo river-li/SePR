@@ -1,0 +1,34 @@
+commit 62622c11f230edddcc47aabe2d988555bf125993
+Author: Michael S. Tsirkin <mst@redhat.com>
+Commit: Michael S. Tsirkin <mst@redhat.com>
+
+    MAINTAINERS: addresses for responsible disclosure
+    
+    Adding addresses to MAINTAINERS, as agreed on the last conference call:
+    
+    http://wiki.qemu.org/SecurityProcess
+    
+    People sometimes detect security issues in upstream
+    QEMU and don't know where to report them in a non-public way.
+    Of course whoever just wants full disclosure can just go public,
+    but there's nothing specified for non-public - until recently Anthony
+    was doing this informally.
+    
+    As I started doing this recently anyway, I can handle this on the QEMU side
+    in a more formal way.
+    
+    Adding a secalert mailing list as well - they are the ones who is actually
+    opening CVEs, communicating issues to all downstreams etc,
+    and they are already handling this for upstream, not just Red Hat.
+    
+    Keeping Anthony's address around in case he wants to be informed.
+    
+    Peter Maydell said that he prefers not to be on this contact list at
+    this point.
+    
+    A public mailing list has been created - not listing it here yet -
+    until we know how to set it up in a secure fashion and
+    until there are more people so manually copying everyone
+    becomes unwieldy for reporters.
+    
+    Signed-off-by: Michael S. Tsirkin <mst@redhat.com>

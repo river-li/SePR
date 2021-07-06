@@ -1,0 +1,39 @@
+commit 6cc8a11c84ddc18c64fc88d54c8e9dca24ada489
+Author: Kevin Wolf <kwolf@redhat.com>
+Commit: John Snow <jsnow@redhat.com>
+
+    fdc: Fix MSR.RQM flag
+    
+    The RQM bit in MSR should be set whenever the guest is supposed to
+    access the FIFO, and it should be cleared in all other cases. This is
+    important so the guest can't continue writing/reading the FIFO beyond
+    the length that it's suppossed to access (see CVE-2015-3456).
+    
+    Commit e9077462 fixed the CVE by adding code that avoids the buffer
+    overflow; however it doesn't correct the wrong behaviour of the floppy
+    controller which should already have cleared RQM.
+    
+    Currently, RQM stays set all the time and during all phases while a
+    command is being processed. This is error-prone because the command has
+    to explicitly clear the flag if it doesn't need data (and indeed, the
+    two buggy commands that are the culprits for the CVE just forgot to do
+    that).
+    
+    This patch clears RQM immediately as soon as all bytes that are expected
+    have been received. If the the FIFO is used in the next phase, the flag
+    has to be set explicitly there.
+    
+    It also clear RQM after receiving all bytes even if the phase transition
+    immediately sets it again. While it's technically not necessary at the
+    moment because the state between clearing and setting RQM is not
+    observable by the guest, this is more explicit and matches how real
+    hardware works. It will actually become necessary in qemu once
+    asynchronous code paths are introduced.
+    
+    This alone should have been enough to fix the CVE, but now we have two
+    lines of defense - even better.
+    
+    Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+    Reviewed-by: John Snow <jsnow@redhat.com>
+    Message-id: 1432214378-31891-8-git-send-email-kwolf@redhat.com
+    Signed-off-by: John Snow <jsnow@redhat.com>

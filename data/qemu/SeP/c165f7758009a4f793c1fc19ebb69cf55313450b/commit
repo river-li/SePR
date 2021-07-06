@@ -1,0 +1,15 @@
+commit c165f7758009a4f793c1fc19ebb69cf55313450b
+Author: Stefan Hajnoczi <stefanha@redhat.com>
+Commit: Stefan Hajnoczi <stefanha@redhat.com>
+
+    dmg: sanitize chunk length and sectorcount (CVE-2014-0145)
+    
+    Chunk length and sectorcount are used for decompression buffers as well
+    as the bdrv_pread() count argument.  Ensure that they have reasonable
+    values so neither memory allocation nor conversion from uint64_t to int
+    will cause problems.
+    
+    Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>
+    Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+    Reviewed-by: Max Reitz <mreitz@redhat.com>
+    Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>

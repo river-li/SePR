@@ -1,0 +1,18 @@
+commit 47c9dfee808f9455d732aea7c4390ad0972bbd84
+Merge: 7df9671989 eb8934b041
+Author: Peter Maydell <peter.maydell@linaro.org>
+Commit: Peter Maydell <peter.maydell@linaro.org>
+
+    Merge remote-tracking branch 'remotes/kraxel/tags/pull-cve-2015-5225-20150826-1' into staging
+    
+    vnc: fix memory corruption (CVE-2015-5225)
+    
+    # gpg: Signature made Wed 26 Aug 2015 17:37:21 BST using RSA key ID D3E87138
+    # gpg: Good signature from "Gerd Hoffmann (work) <kraxel@redhat.com>"
+    # gpg:                 aka "Gerd Hoffmann <gerd@kraxel.org>"
+    # gpg:                 aka "Gerd Hoffmann (private) <kraxel@gmail.com>"
+    
+    * remotes/kraxel/tags/pull-cve-2015-5225-20150826-1:
+      vnc: fix memory corruption (CVE-2015-5225)
+    
+    Signed-off-by: Peter Maydell <peter.maydell@linaro.org>

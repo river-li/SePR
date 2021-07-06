@@ -1,0 +1,14 @@
+commit 8c6c0478996e8f77374e69b6df68655b0b4ba689
+Author: Dmitry Fleytman <dmitry@daynix.com>
+Commit: Peter Maydell <peter.maydell@linaro.org>
+
+    vmxnet3: validate interrupt indices coming from guest
+    
+    CVE-2013-4544
+    
+    Signed-off-by: Dmitry Fleytman <dmitry@daynix.com>
+    Reported-by: Michael S. Tsirkin <mst@redhat.com>
+    Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+    Reviewed-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+    Message-id: 1396604722-11902-2-git-send-email-dmitry@daynix.com
+    Signed-off-by: Peter Maydell <peter.maydell@linaro.org>

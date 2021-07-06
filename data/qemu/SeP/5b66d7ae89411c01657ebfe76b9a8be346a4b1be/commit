@@ -1,0 +1,23 @@
+commit 5b66d7ae89411c01657ebfe76b9a8be346a4b1be
+Merge: 5459ef3bff 62d4c6bd52
+Author: Peter Maydell <peter.maydell@linaro.org>
+Commit: Peter Maydell <peter.maydell@linaro.org>
+
+    Merge remote-tracking branch 'remotes/kraxel/tags/pull-vga-20170202-2' into staging
+    
+    cirrus: multiple bugfixes, including CVE-2017-2615 fix.
+    
+    # gpg: Signature made Thu 02 Feb 2017 15:03:35 GMT
+    # gpg:                using RSA key 0x4CB6D8EED3E87138
+    # gpg: Good signature from "Gerd Hoffmann (work) <kraxel@redhat.com>"
+    # gpg:                 aka "Gerd Hoffmann <gerd@kraxel.org>"
+    # gpg:                 aka "Gerd Hoffmann (private) <kraxel@gmail.com>"
+    # Primary key fingerprint: A032 8CFF B93A 17A7 9901  FE7D 4CB6 D8EE D3E8 7138
+    
+    * remotes/kraxel/tags/pull-vga-20170202-2:
+      cirrus: fix oob access issue (CVE-2017-2615)
+      cirrus: fix blit address mask handling
+      cirrus: allow zero source pitch in pattern fill rops
+      cirrus: handle negative pitch in cirrus_invalidate_region()
+    
+    Signed-off-by: Peter Maydell <peter.maydell@linaro.org>

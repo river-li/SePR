@@ -1,0 +1,10 @@
+commit 2067d39e5e53b053bece6fa15711640123c119ed
+Author: Kevin Wolf <kwolf@redhat.com>
+Commit: Kevin Wolf <kwolf@redhat.com>
+
+    Revert "nvme: fix oob access issue(CVE-2018-16847)"
+    
+    This reverts commit 5e3c0220d7e4f0361c4d36c697a8842f2b583402.
+    We have a better fix commited for this now.
+    
+    Signed-off-by: Kevin Wolf <kwolf@redhat.com>

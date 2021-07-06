@@ -1,0 +1,86 @@
+diff --git a/nbd/server.c b/nbd/server.c
+index 02b1ed0801..20754e9ebc 100644
+--- a/nbd/server.c
++++ b/nbd/server.c
+@@ -217,7 +217,7 @@ nbd_negotiate_send_rep_verr(NBDClient *client, uint32_t type,
+ 
+     msg = g_strdup_vprintf(fmt, va);
+     len = strlen(msg);
+-    assert(len < 4096);
++    assert(len < NBD_MAX_STRING_SIZE);
+     trace_nbd_negotiate_send_rep_err(msg);
+     ret = nbd_negotiate_send_rep_len(client, type, len, errp);
+     if (ret < 0) {
+@@ -231,6 +231,19 @@ nbd_negotiate_send_rep_verr(NBDClient *client, uint32_t type,
+     return 0;
+ }
+ 
++/*
++ * Return a malloc'd copy of @name suitable for use in an error reply.
++ */
++static char *
++nbd_sanitize_name(const char *name)
++{
++    if (strnlen(name, 80) < 80) {
++        return g_strdup(name);
++    }
++    /* XXX Should we also try to sanitize any control characters? */
++    return g_strdup_printf("%.80s...", name);
++}
++
+ /* Send an error reply.
+  * Return -errno on error, 0 on success. */
+ static int GCC_FMT_ATTR(4, 5)
+@@ -595,9 +608,11 @@ static int nbd_negotiate_handle_info(NBDClient *client, Error **errp)
+ 
+     exp = nbd_export_find(name);
+     if (!exp) {
++        g_autofree char *sane_name = nbd_sanitize_name(name);
++
+         return nbd_negotiate_send_rep_err(client, NBD_REP_ERR_UNKNOWN,
+                                           errp, "export '%s' not present",
+-                                          name);
++                                          sane_name);
+     }
+ 
+     /* Don't bother sending NBD_INFO_NAME unless client requested it */
+@@ -995,8 +1010,10 @@ static int nbd_negotiate_meta_queries(NBDClient *client,
+ 
+     meta->exp = nbd_export_find(export_name);
+     if (meta->exp == NULL) {
++        g_autofree char *sane_name = nbd_sanitize_name(export_name);
++
+         return nbd_opt_drop(client, NBD_REP_ERR_UNKNOWN, errp,
+-                            "export '%s' not present", export_name);
++                            "export '%s' not present", sane_name);
+     }
+ 
+     ret = nbd_opt_read(client, &nb_queries, sizeof(nb_queries), errp);
+diff --git a/tests/qemu-iotests/143 b/tests/qemu-iotests/143
+index f649b36195..d2349903b1 100755
+--- a/tests/qemu-iotests/143
++++ b/tests/qemu-iotests/143
+@@ -58,6 +58,10 @@ _send_qemu_cmd $QEMU_HANDLE \
+ $QEMU_IO_PROG -f raw -c quit \
+     "nbd+unix:///no_such_export?socket=$SOCK_DIR/nbd" 2>&1 \
+     | _filter_qemu_io | _filter_nbd
++# Likewise, with longest possible name permitted in NBD protocol
++$QEMU_IO_PROG -f raw -c quit \
++    "nbd+unix:///$(printf %4096d 1 | tr ' ' a)?socket=$SOCK_DIR/nbd" 2>&1 \
++    | _filter_qemu_io | _filter_nbd | sed 's/aaaa*aa/aa--aa/'
+ 
+ _send_qemu_cmd $QEMU_HANDLE \
+     "{ 'execute': 'quit' }" \
+diff --git a/tests/qemu-iotests/143.out b/tests/qemu-iotests/143.out
+index 1f4001c601..fc9c0a761f 100644
+--- a/tests/qemu-iotests/143.out
++++ b/tests/qemu-iotests/143.out
+@@ -5,6 +5,8 @@ QA output created by 143
+ {"return": {}}
+ qemu-io: can't open device nbd+unix:///no_such_export?socket=SOCK_DIR/nbd: Requested export not available
+ server reported: export 'no_such_export' not present
++qemu-io: can't open device nbd+unix:///aa--aa1?socket=SOCK_DIR/nbd: Requested export not available
++server reported: export 'aa--aa...' not present
+ { 'execute': 'quit' }
+ {"return": {}}
+ {"timestamp": {"seconds":  TIMESTAMP, "microseconds":  TIMESTAMP}, "event": "SHUTDOWN", "data": {"guest": false, "reason": "host-qmp-quit"}}

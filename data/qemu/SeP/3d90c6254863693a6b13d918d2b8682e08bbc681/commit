@@ -1,0 +1,21 @@
+commit 3d90c6254863693a6b13d918d2b8682e08bbc681
+Author: Gerd Hoffmann <kraxel@redhat.com>
+Commit: Gerd Hoffmann <kraxel@redhat.com>
+
+    vga: stop passing pointers to vga_draw_line* functions
+    
+    Instead pass around the address (aka offset into vga memory).
+    Add vga_read_* helper functions which apply vbe_size_mask to
+    the address, to make sure the address stays within the valid
+    range, similar to the cirrus blitter fixes (commits ffaf857778
+    and 026aeffcb4).
+    
+    Impact:  DoS for privileged guest users.  qemu crashes with
+    a segfault, when hitting the guard page after vga memory
+    allocation, while reading vga memory for display updates.
+    
+    Fixes: CVE-2017-13672
+    Cc: P J P <ppandit@redhat.com>
+    Reported-by: David Buchanan <d@vidbuchanan.co.uk>
+    Signed-off-by: Gerd Hoffmann <kraxel@redhat.com>
+    Message-id: 20170828122906.18993-1-kraxel@redhat.com

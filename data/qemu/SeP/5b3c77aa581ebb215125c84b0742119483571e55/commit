@@ -1,0 +1,21 @@
+commit 5b3c77aa581ebb215125c84b0742119483571e55
+Author: Greg Kurz <groug@kaod.org>
+Commit: Greg Kurz <groug@kaod.org>
+
+    9p: take write lock on fid path updates (CVE-2018-19364)
+    
+    Recent commit 5b76ef50f62079a fixed a race where v9fs_co_open2() could
+    possibly overwrite a fid path with v9fs_path_copy() while it is being
+    accessed by some other thread, ie, use-after-free that can be detected
+    by ASAN with a custom 9p client.
+    
+    It turns out that the same can happen at several locations where
+    v9fs_path_copy() is used to set the fid path. The fix is again to
+    take the write lock.
+    
+    Fixes CVE-2018-19364.
+    
+    Cc: P J P <ppandit@redhat.com>
+    Reported-by: zhibin hu <noirfate@gmail.com>
+    Reviewed-by: Prasad J Pandit <pjp@fedoraproject.org>
+    Signed-off-by: Greg Kurz <groug@kaod.org>

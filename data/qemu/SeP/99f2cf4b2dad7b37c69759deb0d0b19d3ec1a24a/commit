@@ -1,0 +1,16 @@
+commit 99f2cf4b2dad7b37c69759deb0d0b19d3ec1a24a
+Author: Greg Kurz <groug@kaod.org>
+Commit: Greg Kurz <groug@kaod.org>
+
+    9pfs: local: renameat: don't follow symlinks
+    
+    The local_renameat() callback is currently a wrapper around local_rename()
+    which is vulnerable to symlink attacks.
+    
+    This patch rewrites local_renameat() to have its own implementation, based
+    on local_opendir_nofollow() and renameat().
+    
+    This partly fixes CVE-2016-9602.
+    
+    Signed-off-by: Greg Kurz <groug@kaod.org>
+    Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>

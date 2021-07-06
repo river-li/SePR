@@ -1,0 +1,27 @@
+commit 71d0770c4cec9f1dc04f4dadcbf7fd6c335030a9
+Author: Anthony Liguori <anthony@codemonkey.ws>
+Commit: Anthony Liguori <anthony@codemonkey.ws>
+
+    Fix CVE-2008-0928 - insufficient block device address range checking (Anthony Liguori)
+    
+    Introduce a growable flag that's set by bdrv_file_open().  Block devices should
+    never be growable, only files that are being used by block devices.
+    
+    I went through Fabrice's early comments about the patch that was first applied.
+    While I disagree with that patch, I also disagree with Fabrice's suggestion.
+    
+    There's no good reason to do the checks in the block drivers themselves.  It
+    just increases the possibility that this bug could show up again.  Since we're
+    calling bdrv_getlength() to determine the length, we're giving the block drivers
+    a chance to chime in and let us know what range is valid.
+    
+    Basically, this patch makes the BlockDriver API guarantee that all requests are
+    within 0..bdrv_getlength() which to me seems like a Good Thing.
+    
+    What do others think?
+    
+    Signed-off-by: Anthony Liguori <aliguori@us.ibm.com>
+    Signed-off-by: Anthony Liguori <aliguori@us.ibm.com>
+    
+    
+    git-svn-id: svn://svn.savannah.nongnu.org/qemu/trunk@6677 c046a42c-6fe2-441c-8c8c-71466251a162

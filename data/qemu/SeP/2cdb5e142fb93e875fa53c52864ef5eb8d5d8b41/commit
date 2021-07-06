@@ -1,0 +1,23 @@
+commit 2cdb5e142fb93e875fa53c52864ef5eb8d5d8b41
+Author: Daniel P. Berrangé <berrange@redhat.com>
+Commit: Gerd Hoffmann <kraxel@redhat.com>
+
+    CVE-2015-1779: limit size of HTTP headers from websockets clients
+    
+    The VNC server websockets decoder will read and buffer data from
+    websockets clients until it sees the end of the HTTP headers,
+    as indicated by \r\n\r\n. In theory this allows a malicious to
+    trick QEMU into consuming an arbitrary amount of RAM. In practice,
+    because QEMU runs g_strstr_len() across the buffered header data,
+    it will spend increasingly long burning CPU time searching for
+    the substring match and less & less time reading data. So while
+    this does cause arbitrary memory growth, the bigger problem is
+    that QEMU will be burning 100% of available CPU time.
+    
+    A novnc websockets client typically sends headers of around
+    512 bytes in length. As such it is reasonable to place a 4096
+    byte limit on the amount of data buffered while searching for
+    the end of HTTP headers.
+    
+    Signed-off-by: Daniel P. Berrange <berrange@redhat.com>
+    Signed-off-by: Gerd Hoffmann <kraxel@redhat.com>

@@ -1,0 +1,13 @@
+commit 69dd5c9ffd5c0c6a01ad14b9c6a8d7135ccc2b9a
+Author: Anthony Liguori <anthony@codemonkey.ws>
+Commit: Anthony Liguori <anthony@codemonkey.ws>
+
+    Properly handle the case of SetPixelEncodings with a length of zero.
+    
+    This commit addresses CORE-2008-1210/CVE-2008-2382.
+    
+    Signed-off-by: Anthony Liguori <aliguori@us.ibm.com>
+    
+    
+    
+    git-svn-id: svn://svn.savannah.nongnu.org/qemu/trunk@6121 c046a42c-6fe2-441c-8c8c-71466251a162

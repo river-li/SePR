@@ -1,0 +1,15 @@
+commit d6812d60e7932de3cd0f602c0ee63dd3d09f1847
+Author: Stefan Hajnoczi <stefanha@redhat.com>
+Commit: Stefan Hajnoczi <stefanha@redhat.com>
+
+    rtl8139: drop tautologous if (ip) {...} statement (CVE-2015-5165)
+    
+    The previous patch stopped using the ip pointer as an indicator that the
+    IP header is present.  When we reach the if (ip) {...} statement we know
+    ip is always non-NULL.
+    
+    Remove the if statement to reduce nesting.
+    
+    Reported-by: 朱东海(启路) <donghai.zdh@alibaba-inc.com>
+    Reviewed-by: Jason Wang <jasowang@redhat.com>
+    Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>

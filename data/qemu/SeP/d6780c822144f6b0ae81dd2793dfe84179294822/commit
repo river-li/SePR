@@ -1,0 +1,32 @@
+commit d6780c822144f6b0ae81dd2793dfe84179294822
+Merge: 7dc3bc7a04 b003fc0d8a
+Author: Peter Maydell <peter.maydell@linaro.org>
+Commit: Peter Maydell <peter.maydell@linaro.org>
+
+    Merge remote-tracking branch 'remotes/gkurz/tags/fixes-for-2.9' into staging
+    
+    Fixes issues that got merged with the latest pull request:
+    - missing O_NOFOLLOW flag for CVE-2016-960
+    - build break with older glibc that don't have O_PATH and AT_EMPTY_PATH
+    - various bugs reported by Coverity
+    
+    # gpg: Signature made Mon 06 Mar 2017 17:51:29 GMT
+    # gpg:                using DSA key 0x02FC3AEB0101DBC2
+    # gpg: Good signature from "Greg Kurz <groug@kaod.org>"
+    # gpg:                 aka "Greg Kurz <groug@free.fr>"
+    # gpg:                 aka "Greg Kurz <gkurz@linux.vnet.ibm.com>"
+    # gpg:                 aka "Gregory Kurz (Groug) <groug@free.fr>"
+    # gpg:                 aka "[jpeg image of size 3330]"
+    # gpg: WARNING: This key is not certified with a trusted signature!
+    # gpg:          There is no indication that the signature belongs to the owner.
+    # Primary key fingerprint: 2BD4 3B44 535E C0A7 9894  DBA2 02FC 3AEB 0101 DBC2
+    
+    * remotes/gkurz/tags/fixes-for-2.9:
+      9pfs: fix vulnerability in openat_dir() and local_unlinkat_common()
+      9pfs: fix O_PATH build break with older glibc versions
+      9pfs: don't use AT_EMPTY_PATH in local_set_cred_passthrough()
+      9pfs: fail local_statfs() earlier
+      9pfs: fix fd leak in local_opendir()
+      9pfs: fix bogus fd check in local_remove()
+    
+    Signed-off-by: Peter Maydell <peter.maydell@linaro.org>
