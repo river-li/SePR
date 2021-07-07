@@ -5,6 +5,21 @@ import pandas as pd
 from model.preprocessing import parse_patch
 from util.pretty_print import error, log
 
+def parse_commit(csv_path, flag=True):
+    csv_path = os.path.abspath(csv_path)
+
+    df = pd.read_csv(csv_path)
+
+    if flag:
+        del (df['Unnamed: 0'])
+
+    nsep = df.loc[df['vulnerability'] == 0]
+    sep = df.loc[df['vulnerability'] == 1]
+
+    sep_commit = sep['commit_msf']
+    nsep_commit = nsep['commit_msf']
+
+    return sep_commit, nsep_commit
 
 def parse_csv(csv_path,flag=True):
     # qemu.csv need to delete a line
