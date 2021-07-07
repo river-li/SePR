@@ -2,16 +2,21 @@
 
 ---
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+![](https://img.shields.io/badge/todo-2-blue)
 
 *SePR* is a tool to Recognize Security Patches among open-source repository's patches.
 
 ## Journal
 
-- [x] script to extract CVE related patches
-- [ ] try to use One-Class SVM to learn patch mode
+- [x]  script to extract CVE related patches
+- [x]  extract 32-dims features from vulnerability related patches
+- [x]  extract features from samples that *SPI: Automated Identification of Security Patches via Commits* offered 
+- [x]  try to use One-Class SVM to learn patch mode
+- [ ]  try to use full-connected neural network to recognize patches
+- [ ]  try to use static taint analysis on source code
 
 
-## Usage
+## So far Usage
 
 1. **Generate *SeP* samples from a git repository**
 ```
