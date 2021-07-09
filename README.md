@@ -13,7 +13,9 @@
 - [x]  try to use One-Class SVM to learn patch mode.
 - [x]  try to use full-connected neural network to recognize patches.
 - [ ]  try to use static taint analysis on source code.
-    - [ ]  
+    - [x] control flow dependency analysis
+    - [ ] variable‘s static taint analysis 
+    - [ ] security constrains match analysis
 - [ ]  try to use word2vec to classify git commit messages.
 
 
