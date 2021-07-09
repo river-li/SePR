@@ -1,6 +1,5 @@
 # SePR
 
----
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 ![](https://img.shields.io/badge/todo-2-blue)
 
@@ -12,8 +11,9 @@
 - [x]  extract 32-dims features from vulnerability related patches.
 - [x]  extract features from samples that *SPI: Automated Identification of Security Patches via Commits* offered .
 - [x]  try to use One-Class SVM to learn patch mode.
-- [ ]  try to use full-connected neural network to recognize patches.
+- [x]  try to use full-connected neural network to recognize patches.
 - [ ]  try to use static taint analysis on source code.
+    - [ ]  
 - [ ]  try to use word2vec to classify git commit messages.
 
 
